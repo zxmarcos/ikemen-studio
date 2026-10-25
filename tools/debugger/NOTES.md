@@ -12,7 +12,8 @@ upstream `develop` (e9bfe112):
 | Commit | What |
 |---|---|
 | 2383ca8f | Engine side: `src/script_debugger.go` (new, ~210 lines), and one or two lines each in `compiler.go`, `bytecode.go`, `script.go` |
-| (next) | `tools/debugger`: the debugger program, the mod, the scripts and these notes; `CLAUDE.md` |
+| 2014c20a | `tools/debugger`: the debugger program, the mod, the scripts and these notes |
+| aff8c4e2 | `CLAUDE.md`: rules and environment for Claude sessions in this clone |
 
 
 Files:
