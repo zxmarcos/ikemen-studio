@@ -880,6 +880,7 @@ func (s *System) await(fps int) bool {
 	if !s.frameSkip && !s.window.renderingPaused {
 		// Render the finished frame
 		gfx.EndFrame()
+		editorFrameCapture()
 		if gfx.GetName()[:6] == "OpenGL" {
 			s.window.SwapBuffers()
 		} else {
