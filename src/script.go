@@ -891,6 +891,7 @@ func luaKeyToString(k lua.LValue) string {
 func systemScriptInit(l *lua.LState) {
 	triggerRedirection(l)
 	triggerFunctions(l)
+	debuggerFunctions(l)
 	luaRegister(l, "addChar", func(l *lua.LState) int {
 		/*Add a character definition to the select screen.
 		@function addChar

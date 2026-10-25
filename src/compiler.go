@@ -7261,6 +7261,7 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 
 		c.i++
 		// Parse the statedef properties
+		defLine := int32(c.i) // the statedef header, 1-based
 		is, err := c.parseSection(nil)
 		if err != nil {
 			return errmes(err)
@@ -7269,6 +7270,7 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 		if old, ok := states[c.stateNo]; ok && c.stateNo < 0 {
 			*sbc = *old
 		}
+		sbc.src = debugSource(filename, defLine, "statedef", c.stateNo)
 		// Interpret the statedef properties
 		if err := c.stateDef(is, sbc); err != nil {
 			return errmes(err)
@@ -7287,6 +7289,8 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 				c.i--
 				break
 			}
+			scLine := int32(c.i + 1) // the [State] header, 1-based
+			scType := ""
 			c.i++
 
 			// Create this sctrl and get its properties
@@ -7316,6 +7320,7 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 					if !ok {
 						return Error("Invalid state controller: " + data)
 					}
+					scType = data
 				case "persistent":
 					if c.stateNo >= 0 {
 						c.block.persistent = Atoi(data)
@@ -7520,11 +7525,11 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 				//if len(c.block.trigger) == 0 && c.block.persistentIndex < 0 &&
 				if len(c.block.trigger) == 0 && c.block.persistent == 1 && !c.block.ignorehitpause {
 					if _, ok := sctrl.(NullStateController); !ok {
-						sbc.block.ctrls = append(sbc.block.ctrls, sctrl)
+						sbc.block.ctrls = append(sbc.block.ctrls, c.traced(sctrl, scLine, scType))
 					}
 				} else {
 					if _, ok := sctrl.(NullStateController); !ok {
-						c.block.ctrls = append(c.block.ctrls, sctrl)
+						c.block.ctrls = append(c.block.ctrls, c.traced(sctrl, scLine, scType))
 					}
 					sbc.block.ctrls = append(sbc.block.ctrls, c.block)
 					if c.block.ignorehitpause {
@@ -8327,7 +8332,8 @@ func (c *CharCompiler) stateBlock(line *string, bl *StateBlock, root bool,
 				c.token = "helper"
 			}
 			if ok {
-				//scname := c.token
+				scname := c.token
+				scLine := int32(c.i) // ZSS: c.i is already the 1-based line of the token
 				c.scan(line)
 				if err := c.needToken("{"); err != nil {
 					return err
@@ -8354,7 +8360,7 @@ func (c *CharCompiler) stateBlock(line *string, bl *StateBlock, root bool,
 				if sctrl, err := scf(is, sc); err != nil {
 					return err
 				} else {
-					*ctrls = append(*ctrls, sctrl)
+					*ctrls = append(*ctrls, c.traced(sctrl, scLine, scname))
 				}
 				c.scan(line)
 				continue
@@ -8432,6 +8438,7 @@ func (c *CharCompiler) stateCompileZSS(states map[int32]*StateBytecode, filename
 		case "":
 			return errmes(c.wrongClosureToken())
 		case "statedef":
+			defLine := int32(c.i)
 			var err error
 			if c.stateNo, err = c.scanStateDef(&line, constants); err != nil {
 				return errmes(err)
@@ -8463,6 +8470,7 @@ func (c *CharCompiler) stateCompileZSS(states map[int32]*StateBytecode, filename
 			if old, ok := states[c.stateNo]; ok && c.stateNo < 0 {
 				*sbc = *old
 			}
+			sbc.src = debugSource(filename, defLine, "statedef", c.stateNo)
 			c.vars = make(map[string]uint8)
 			if err := c.stateDef(is, sbc); err != nil {
 				return errmes(err)

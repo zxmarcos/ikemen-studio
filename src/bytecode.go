@@ -17037,6 +17037,7 @@ type StateBytecode struct {
 	block        StateBlock
 	ctrlsps      []int32
 	numVars      int32
+	src          int32 // Debugger source index of the statedef (see script_debugger.go)
 }
 
 // StateDef bytecode creation function
