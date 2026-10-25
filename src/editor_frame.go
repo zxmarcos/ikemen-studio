@@ -11,8 +11,9 @@ import (
 // Frames for an external editor (started with "-ikdbg"): after each frame is
 // drawn, the picture is copied into shared memory together with where the
 // players and helpers are in it, so the editor shows the game in its own
-// window and can tell what the mouse is over. The editor sends input back
-// through the same memory (a ring of events read at the same point).
+// window and can tell what the mouse is over. The editor sends input and Lua
+// commands back through the same memory, read at the same point of every
+// frame (menus included), as many as it sent.
 //
 // Shared memory "Local\IkemenFrame<pid>" (Windows only for now):
 //
@@ -20,7 +21,9 @@ import (
 //	  0 magic "IKFR", 4 version, 8 slot size, 12 pixel bytes per slot,
 //	  16 slot of the last finished frame, 20 frames finished so far,
 //	  24 offset of the event ring, 28 its size in events,
-//	  32 events written (by the editor), 36 events read (by the game)
+//	  32 events written (by the editor), 36 events read (by the game),
+//	  40 offset of the command ring, 44 its size in bytes,
+//	  48 bytes written (by the editor), 52 bytes read (by the game)
 //	  64 + 32*slot: sequence (odd while the slot is written), width, height,
 //	  geometry length, frame counter
 //	slot n at 4096 + n*slot size: width*height RGBA pixels, bottom row first,
@@ -31,10 +34,13 @@ import (
 //	  the size of the game's picture; "ax" and boxes are in its pixels.
 //	event ring after the slots: events of 4 int32 values, kind first:
 //	  1 key: SDL key code, 1 pressed / 0 released, SDL key modifiers
+//	  2 window: 1 to size the game's (hidden) window as the game's picture, 0 to leave it
+//	command ring after it: a uint32 length then Lua code, padded to 4 bytes;
+//	both may wrap around the end of the ring
 
 const (
 	editorFrameMagic    = 0x52464B49 // "IKFR"
-	editorFrameVersion  = 1
+	editorFrameVersion  = 2
 	editorFrameMaxW     = 3840
 	editorFrameMaxH     = 2160
 	editorFrameHeader   = 4096
@@ -44,7 +50,9 @@ const (
 	editorFrameSlotSize = editorFramePixels + editorFrameGeomSize
 	editorFrameRing     = editorFrameHeader + editorFrameSlots*editorFrameSlotSize
 	editorFrameEvents   = 4096
-	editorFrameMemSize  = editorFrameRing + editorFrameEvents*16
+	editorFrameCmds     = editorFrameRing + editorFrameEvents*16
+	editorFrameCmdSize  = 1 << 20
+	editorFrameMemSize  = editorFrameCmds + editorFrameCmdSize
 )
 
 type EditorFrame struct {
@@ -54,6 +62,8 @@ type EditorFrame struct {
 	count uint32
 	geom  []byte
 	boxes DebugClsn
+	fit   bool // size the window as the game's picture
+	cmd   []byte
 }
 
 var edFrame EditorFrame
@@ -76,13 +86,20 @@ func editorFrameCapture() {
 		binary.LittleEndian.PutUint32(f.mem[12:], editorFramePixels)
 		binary.LittleEndian.PutUint32(f.mem[24:], editorFrameRing)
 		binary.LittleEndian.PutUint32(f.mem[28:], editorFrameEvents)
+		binary.LittleEndian.PutUint32(f.mem[40:], editorFrameCmds)
+		binary.LittleEndian.PutUint32(f.mem[44:], editorFrameCmdSize)
 		atomic.StoreUint32(f.u32(0), editorFrameMagic)
 	}
 	if f.mem == nil {
 		return
 	}
 	f.readEvents()
+	f.readCommands()
 	w, h := sys.window.GetDrawablePixelSize()
+	if f.fit && (w != sys.scrrect[2] || h != sys.scrrect[3]) && sys.scrrect[2] > 0 && sys.scrrect[3] > 0 {
+		// Takes effect on a later frame; until then this one is shared as it is
+		sys.window.Window.SetSize(sys.scrrect[2], sys.scrrect[3])
+	}
 	if w <= 0 || h <= 0 || w > editorFrameMaxW || h > editorFrameMaxH {
 		return
 	}
@@ -123,9 +140,44 @@ func (f *EditorFrame) readEvents() {
 			} else {
 				OnKeyReleased(Key(a), ModifierKey(c))
 			}
+		case 2:
+			f.fit = a != 0
 		}
 	}
 	atomic.StoreUint32(f.u32(36), read)
+}
+
+// ringCopy copies len(dst) bytes of the command ring from a position, wrapping around.
+func (f *EditorFrame) ringCopy(dst []byte, pos uint32) {
+	ring := f.mem[editorFrameCmds:][:editorFrameCmdSize]
+	n := copy(dst, ring[pos%editorFrameCmdSize:])
+	copy(dst[n:], ring)
+}
+
+// readCommands runs the Lua commands the editor sent since the last frame.
+func (f *EditorFrame) readCommands() {
+	written := atomic.LoadUint32(f.u32(48))
+	read := atomic.LoadUint32(f.u32(52))
+	var head [4]byte
+	for written-read >= 4 && written-read <= editorFrameCmdSize {
+		f.ringCopy(head[:], read)
+		n := binary.LittleEndian.Uint32(head[:])
+		if n > written-read-4 {
+			read = written // a broken length: drop everything
+			break
+		}
+		if cap(f.cmd) < int(n) {
+			f.cmd = make([]byte, n)
+		}
+		f.cmd = f.cmd[:n]
+		f.ringCopy(f.cmd, read+4)
+		read += 4 + (n+3)&^3
+		// DoString runs under PCall: Lua errors and Go panics come back as errors
+		if err := sys.luaLState.DoString(string(f.cmd)); err != nil {
+			LogMessage("Editor command: " + err.Error())
+		}
+	}
+	atomic.StoreUint32(f.u32(52), read)
 }
 
 // editorFrameGeometry writes where the players and helpers are, in the game picture's pixels.

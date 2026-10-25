@@ -195,6 +195,20 @@ func debuggerFunctions(l *lua.LState) {
 		}
 		return 0
 	})
+	luaRegister(l, "debugMoveBy", func(l *lua.LState) int {
+		/*[redirectable] Move the character by pixels of the game's picture (an editor dragging it).
+		@function debugMoveBy
+		@tparam float32 dx
+		@tparam float32 dy*/
+		c := sys.debugWC
+		kx := sys.cam.Scale * sys.widthScale * c.localscl
+		ky := sys.cam.Scale * sys.heightScale * c.localscl
+		if kx > 0 && ky > 0 {
+			c.setPosX(c.pos[0]+float32(numArg(l, 1))/kx, true)
+			c.setPosY(c.pos[1]+float32(numArg(l, 2))/ky, true)
+		}
+		return 0
+	})
 	luaRegister(l, "setVel", func(l *lua.LState) int {
 		/*[redirectable] Set the character's velocity.
 		@function setVel
