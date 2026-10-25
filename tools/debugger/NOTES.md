@@ -4,6 +4,34 @@ Handoff notes for whoever continues this work (people or Claude sessions).
 [README.md](README.md) describes the debugger for its users.
 Last updated 2026-10-25.
 
+## Where it is going
+
+The goal grew from a debugger into an editor of everything Ikemen GO lets
+people customize (characters, stages, screenpacks...), with the engine showing
+the result live and the things on screen clickable. Decisions taken with the
+user (2026-10-25):
+
+- **The editor stays a separate program**, and the game's frames are shown
+  inside it (window Game) through shared memory; the editor draws its
+  overlays and does the picking itself, from geometry the engine sends with
+  each frame. Not ImGui inside the engine, not an overlay window.
+- **Maybe upstream later**: engine code stays in new files (`src/editor_*.go`,
+  `src/script_debugger.go`) with one-line calls elsewhere, inert without
+  `-ikdbg`.
+- **Characters first**, then stages, then screenpacks.
+
+Phase 0, the infrastructure: frames and geometry in shared memory (done),
+keys from the editor (done), the game's window hidden (done). Still to do: a
+command channel that is not limited to one stdin line per frame during a
+match (the event ring in the shared memory can carry it, drained on the
+main thread every frame, menus included), mouse events for the game, the
+game's window size following the Game window.
+
+Phase 1, characters: drag to move a player; the code editor with Apply (Go:
+recompile one character's states, commands, constants and animations
+without restarting the match); the animation editor with Clsn boxes dragged
+on the Game window; sprites, sounds, commands.
+
 ## Where things are
 
 Branch `debugger-bridge` of this clone (local only, never pushed), on top of
@@ -20,11 +48,14 @@ Files:
 
 ```
 src/script_debugger.go   engine side: controller sources and trace, setters, Lua functions
+src/editor_frame.go      engine side: frames, geometry and input events in shared memory
+src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: settings, protocol handling, every window
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
+  src/frame.cpp/.h       reads the shared frames, writes input events
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -49,7 +80,11 @@ helper "Bag"):
   exactly for CNS and ZSS;
 - editing `var`/`fvar` (double-click), position and velocity;
 - the patched Ikemen without `-ikdbg` plays normally (controllers are not
-  wrapped, no sources recorded).
+  wrapped, no sources recorded, no frames shared);
+- window Game (patched Ikemen, OpenGL renderers): the game's frames, Clsn1
+  and Clsn2 boxes and axes drawn over them, hover and click to select a
+  player or helper; while it has focus, keys go to the game. The game's own
+  window is hidden.
 
 ## Build environment (this machine)
 
@@ -86,6 +121,8 @@ helper "Bag"):
 - The screen is at 125%: test scripts must call `SetProcessDPIAware`. Never
   capture the screen with `CopyFromScreen`: it once captured the user's
   browser instead of the game.
+- More `test_ui.ps1` actions: `down:RIGHT`/`up:RIGHT` (hold and release a
+  key), `visible` (is the game's window shown), `game:hide|show|min|off`.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and
   `~*kb` to find it.
@@ -116,6 +153,24 @@ Lua bridge:
   `textImgNew`/`textImgDraw`, `animNew`/`animDraw`, `sffNew`, `stageVar`,
   `getStageInfo`, `replayRecord`, `reload`, `saveState`/`loadState`. Ikemen's
   own debug keys are in `external/script/debug.lua`.
+
+Frames (`editor_frame.go`):
+
+- `System.await` ends the frame (`gfx.EndFrame()`, the post-processing pass
+  into the window's framebuffer) then swaps; the frame is read between the
+  two with `gfx.ReadPixels` (window size, rows bottom first). It costs a
+  synchronous read per frame; the renderers' async PBO path
+  (`BeginScreenshot`/`FinishScreenshot`) is used by screenshots.
+- A hidden window (SW_HIDE) keeps drawing and its frames read fine; a
+  minimized one does not (the picture freezes). Vulkan is not handled yet.
+- Clsn boxes are placed as `DebugClsn.Add`/`draw` place them: game units to
+  the game picture's pixels with `(x + gameWidth/2) * widthScale`,
+  `y * heightScale`; the window shows the picture at
+  `GetScaledViewportSize()`. Not checked yet: the full-resolution
+  composition (`shouldComposeFullResolution`, e.g. with the debug display),
+  where the draw uses another aspect state.
+- Keys: `OnKeyPressed`/`OnKeyReleased` take SDL key codes; the game does not
+  pause without focus, but it lowers its volume (`FocusLossVolume`).
 
 Compiler (`compiler.go`):
 

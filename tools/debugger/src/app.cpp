@@ -3,6 +3,8 @@
 #include "app.h"
 
 #include <algorithm>
+#include <cfloat>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -14,6 +16,8 @@
 #include <vector>
 
 #include "bridge.h"
+#include "frame.h"
+#include <GL/gl.h>
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
@@ -93,6 +97,7 @@ struct Settings {
     std::string exe; // default: the Ikemen_GO.exe of the checkout this exe was built in
     std::string p1 = "kfm", p2 = "kfm", stage = "stage0", extra = "-windowed";
     bool ai1 = false, ai2 = true;
+    bool gameWindow = false; // keep the game's own window shown although its frames are in Game
 };
 
 Bridge g_bridge;
@@ -128,6 +133,23 @@ std::map<std::string, SourceFile> g_files;
 std::string g_codeFile;                  // file shown in the Code window
 int g_codeLine = 0, g_codeScrollTo = 0;  // line to highlight / to scroll to (1-based)
 bool g_codeHold;                         // keep the view on a breakpoint instead of following the state
+
+// A player or helper as drawn in the last frame, in the game picture's pixels.
+struct FrameEntity {
+    int id = 0, pn = 0;
+    bool helper = false;
+    ImVec2 axis;
+    std::vector<ImVec4> c1, c2; // x, y, w, h
+};
+
+FrameLink g_frameLink;                   // frames shared by the patched Ikemen
+GameFrame g_frame;
+GLuint g_frameTex;
+int g_texW, g_texH;
+ImVec4 g_frameVp;                        // where the game picture is in the frame
+ImVec2 g_frameScr;                       // size of the game picture
+std::vector<FrameEntity> g_frameEnts;
+unsigned g_framesRead;
 
 const size_t kHistory = 1200, kTrace = 4000, kLog = 4000;
 
@@ -300,6 +322,8 @@ void Launch() {
     g_ran.clear();
     g_files.clear();
     g_selTick = -1;
+    g_frameLink.Close();
+    g_frameEnts.clear();
     for (auto &b : g_ctrlBreaks) b.hits = 0;
     std::string error;
     if (!g_bridge.Launch(s.exe, args, error)) {
@@ -492,6 +516,277 @@ void HelpMarker(const char *text) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Game: the game's frames, with the players' boxes over them
+// ---------------------------------------------------------------------------
+
+void ReadBoxes(const Json &j, std::vector<ImVec4> &out) {
+    for (size_t n = 0; n + 3 < j.size(); n += 4)
+        out.push_back(ImVec4((float)j[n].num(), (float)j[n + 1].num(), (float)j[n + 2].num(), (float)j[n + 3].num()));
+}
+
+// The game's own window: hidden while its frames are shown in Game (unless the settings say
+// otherwise). Hidden, not minimized: a minimized window stops drawing.
+void UpdateGameWindow() {
+    static double lastCheck;
+    if (ImGui::GetTime() - lastCheck < 0.5) return;
+    lastCheck = ImGui::GetTime();
+    struct Find {
+        DWORD pid;
+        HWND hwnd;
+    } find = {g_bridge.Pid(), nullptr};
+    EnumWindows(
+        [](HWND hwnd, LPARAM param) -> BOOL {
+            Find *f = (Find *)param;
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            if (pid != f->pid || GetWindow(hwnd, GW_OWNER)) return TRUE;
+            char cls[64];
+            GetClassNameA(hwnd, cls, sizeof(cls));
+            if (strcmp(cls, "SDL_app") != 0) return TRUE;
+            f->hwnd = hwnd;
+            return FALSE;
+        },
+        (LPARAM)&find);
+    if (!find.hwnd) return;
+    bool show = g_settings.gameWindow || !g_frameLink.IsOpen();
+    if (show != (IsWindowVisible(find.hwnd) != 0)) ShowWindow(find.hwnd, show ? SW_SHOWNOACTIVATE : SW_HIDE);
+}
+
+// SDL key code (SDL_keycode.h) of a key, 0 for those not sent to the game.
+int SdlKey(ImGuiKey k) {
+    const int sc = 1 << 30; // SDLK_SCANCODE_MASK: keys without a character
+    if (k >= ImGuiKey_A && k <= ImGuiKey_Z) return 'a' + (k - ImGuiKey_A);
+    if (k >= ImGuiKey_0 && k <= ImGuiKey_9) return '0' + (k - ImGuiKey_0);
+    if (k >= ImGuiKey_F1 && k <= ImGuiKey_F12) return sc | (58 + (k - ImGuiKey_F1));
+    switch (k) {
+    case ImGuiKey_Enter: return 13;
+    case ImGuiKey_Escape: return 27;
+    case ImGuiKey_Backspace: return 8;
+    case ImGuiKey_Tab: return 9;
+    case ImGuiKey_Space: return ' ';
+    case ImGuiKey_Minus: return '-';
+    case ImGuiKey_Equal: return '=';
+    case ImGuiKey_Period: return '.';
+    case ImGuiKey_Comma: return ',';
+    case ImGuiKey_Delete: return 127;
+    case ImGuiKey_Insert: return sc | 73;
+    case ImGuiKey_Home: return sc | 74;
+    case ImGuiKey_PageUp: return sc | 75;
+    case ImGuiKey_End: return sc | 77;
+    case ImGuiKey_PageDown: return sc | 78;
+    case ImGuiKey_RightArrow: return sc | 79;
+    case ImGuiKey_LeftArrow: return sc | 80;
+    case ImGuiKey_DownArrow: return sc | 81;
+    case ImGuiKey_UpArrow: return sc | 82;
+    case ImGuiKey_KeypadSubtract: return sc | 86;
+    case ImGuiKey_KeypadAdd: return sc | 87;
+    case ImGuiKey_KeypadEnter: return sc | 88;
+    case ImGuiKey_LeftCtrl: return sc | 224;
+    case ImGuiKey_LeftShift: return sc | 225;
+    case ImGuiKey_LeftAlt: return sc | 226;
+    default: return 0;
+    }
+}
+
+// While Game has focus, keys go to the game (but the debugger's F5, F10 and F11).
+void ForwardKeys(bool focused) {
+    static std::vector<ImGuiKey> held;
+    ImGuiIO &io = ImGui::GetIO();
+    int mods = (io.KeyShift ? 0x1 : 0) | (io.KeyCtrl ? 0x40 : 0) | (io.KeyAlt ? 0x100 : 0); // SDL KMOD_L*
+    if (!focused || io.WantTextInput || !g_frameLink.IsOpen()) {
+        for (ImGuiKey k : held) g_frameLink.SendKey(SdlKey(k), false, mods);
+        held.clear();
+        return;
+    }
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++) {
+        ImGuiKey key = (ImGuiKey)k;
+        int sdl = SdlKey(key);
+        if (!sdl || key == ImGuiKey_F5 || key == ImGuiKey_F10 || key == ImGuiKey_F11) continue;
+        bool down = std::find(held.begin(), held.end(), key) != held.end();
+        if (ImGui::IsKeyDown(key) && !down) {
+            g_frameLink.SendKey(sdl, true, mods);
+            held.push_back(key);
+        } else if (!ImGui::IsKeyDown(key) && down) {
+            g_frameLink.SendKey(sdl, false, mods);
+            held.erase(std::find(held.begin(), held.end(), key));
+        }
+    }
+}
+
+void PollFrames() {
+    if (!g_bridge.Running()) {
+        g_frameLink.Close();
+        return;
+    }
+    UpdateGameWindow();
+    if (!g_frameLink.IsOpen()) {
+        static double lastTry;
+        if (ImGui::GetTime() - lastTry < 0.25) return;
+        lastTry = ImGui::GetTime();
+        if (!g_frameLink.Open(g_bridge.Pid())) return;
+    }
+    if (!g_frameLink.Read(g_frame)) return;
+    g_framesRead++;
+
+    // The game's alpha is not meant to be seen
+    for (size_t n = 3; n < g_frame.pixels.size(); n += 4) g_frame.pixels[n] = 255;
+    if (!g_frameTex) glGenTextures(1, &g_frameTex);
+    glBindTexture(GL_TEXTURE_2D, g_frameTex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    if (g_texW != g_frame.width || g_texH != g_frame.height) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_frame.width, g_frame.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     g_frame.pixels.data());
+        g_texW = g_frame.width;
+        g_texH = g_frame.height;
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_frame.width, g_frame.height, GL_RGBA, GL_UNSIGNED_BYTE,
+                        g_frame.pixels.data());
+    }
+
+    Json j;
+    if (!Json::Parse(g_frame.geometry.c_str(), j)) return;
+    const Json &vp = j["vp"], &scr = j["scr"];
+    g_frameVp = ImVec4((float)vp[size_t(0)].num(), (float)vp[1].num(), (float)vp[2].num(), (float)vp[3].num());
+    g_frameScr = ImVec2((float)scr[size_t(0)].num(1), (float)scr[1].num(1));
+    g_frameEnts.clear();
+    for (const auto &e : j["e"].items) {
+        FrameEntity f;
+        f.id = e["id"].i();
+        f.pn = e["pn"].i();
+        f.helper = e["h"].truthy();
+        f.axis = ImVec2((float)e["ax"][size_t(0)].num(), (float)e["ax"][1].num());
+        ReadBoxes(e["c1"], f.c1);
+        ReadBoxes(e["c2"], f.c2);
+        g_frameEnts.push_back(std::move(f));
+    }
+}
+
+void GameWindow() {
+    if (!ImGui::Begin("Game", nullptr, ImGuiWindowFlags_NoNavInputs)) {
+        ForwardKeys(false);
+        ImGui::End();
+        return;
+    }
+    bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    ForwardKeys(focused);
+    static bool showBoxes = true, showAxes = true, onlySelected = false;
+    ImGui::Checkbox("Boxes", &showBoxes);
+    ImGui::SameLine();
+    ImGui::Checkbox("Axes", &showAxes);
+    ImGui::SameLine();
+    ImGui::Checkbox("Only the selected one", &onlySelected);
+    if (g_frameTex) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
+        ImGui::SameLine();
+        if (focused)
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1), "keys go to the game");
+        else
+            ImGui::TextDisabled("click the picture to play");
+    }
+    if (!g_frameTex || !g_bridge.Running()) {
+        ImGui::TextDisabled(!g_bridge.Running()    ? "Launch the game from the Session window."
+                            : !g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
+                                                    : "Waiting for the first frame...");
+        ImGui::End();
+        return;
+    }
+
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float scale = std::max(0.01f, std::min(avail.x / g_texW, avail.y / g_texH));
+    ImVec2 size(g_texW * scale, g_texH * scale);
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    p0.x += (avail.x - size.x) * 0.5f;
+    ImGui::SetCursorScreenPos(p0);
+    // Rows come bottom first
+    ImGui::Image(ImTextureRef((ImTextureID)(intptr_t)g_frameTex), size, ImVec2(0, 1), ImVec2(1, 0));
+    bool hovered = ImGui::IsItemHovered();
+    bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+
+    // Game picture pixels to the screen
+    float kx = g_frameVp.z / g_frameScr.x * scale, ky = g_frameVp.w / g_frameScr.y * scale;
+    auto toScreen = [&](float x, float y) {
+        return ImVec2(p0.x + g_frameVp.x * scale + x * kx, p0.y + g_frameVp.y * scale + y * ky);
+    };
+
+    // What the mouse is over: the smallest box under it, else the nearest axis
+    int hoverId = -1;
+    if (hovered) {
+        ImVec2 m = ImGui::GetMousePos();
+        float best = FLT_MAX;
+        for (const auto &e : g_frameEnts)
+            for (const auto *boxes : {&e.c2, &e.c1})
+                for (const auto &b : *boxes) {
+                    ImVec2 a = toScreen(b.x, b.y), c = toScreen(b.x + b.z, b.y + b.w);
+                    float area = std::fabs((c.x - a.x) * (c.y - a.y));
+                    if (m.x >= std::min(a.x, c.x) && m.x <= std::max(a.x, c.x) && m.y >= std::min(a.y, c.y) &&
+                        m.y <= std::max(a.y, c.y) && area < best) {
+                        best = area;
+                        hoverId = e.id;
+                    }
+                }
+        if (hoverId < 0) {
+            float reach = ImGui::GetFontSize() * 1.5f;
+            best = reach * reach;
+            for (const auto &e : g_frameEnts) {
+                ImVec2 a = toScreen(e.axis.x, e.axis.y);
+                float d = (a.x - m.x) * (a.x - m.x) + (a.y - m.y) * (a.y - m.y);
+                if (d < best) {
+                    best = d;
+                    hoverId = e.id;
+                }
+            }
+        }
+        if (clicked && hoverId >= 0) g_selId = hoverId;
+        if (hoverId >= 0) {
+            const Entity *ent = FindEntity(hoverId);
+            ImGui::SetTooltip("%s  %s\nstate %d, anim %d", ent ? Who(ent->pn, ent->helper, ent->id).c_str() : "?",
+                              ent ? ent->name.c_str() : "", ent ? ent->st : 0, ent ? ent->anim : 0);
+        }
+    }
+
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
+    float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
+    for (const auto &e : g_frameEnts) {
+        bool sel = e.id == g_selId, hot = e.id == hoverId;
+        if (onlySelected && !sel && !hot) continue;
+        if (showBoxes) {
+            for (int group = 1; group <= 2; group++) {
+                ImU32 line = group == 1 ? IM_COL32(255, 70, 70, sel || hot ? 255 : 170)
+                                        : IM_COL32(80, 140, 255, sel || hot ? 255 : 170);
+                ImU32 fill = group == 1 ? IM_COL32(255, 70, 70, hot ? 70 : 35) : IM_COL32(80, 140, 255, hot ? 70 : 35);
+                for (const auto &b : group == 1 ? e.c1 : e.c2) {
+                    ImVec2 a = toScreen(b.x, b.y), c = toScreen(b.x + b.z, b.y + b.w);
+                    ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
+                    draw->AddRectFilled(lo, hi, fill);
+                    draw->AddRect(lo, hi, line, 0, sel ? thick * 2 : thick);
+                }
+            }
+        }
+        if (showAxes || sel || hot) {
+            ImVec2 a = toScreen(e.axis.x, e.axis.y);
+            float r = ImGui::GetFontSize() * (sel ? 0.8f : 0.5f);
+            ImU32 col = sel ? IM_COL32(255, 220, 60, 255) : hot ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 255, 255, 160);
+            draw->AddLine(ImVec2(a.x - r, a.y), ImVec2(a.x + r, a.y), col, sel ? thick * 2 : thick);
+            draw->AddLine(ImVec2(a.x, a.y - r), ImVec2(a.x, a.y + r), col, sel ? thick * 2 : thick);
+            if (sel || hot) {
+                const Entity *ent = FindEntity(e.id);
+                std::string label = ent ? Who(ent->pn, ent->helper, ent->id) + "  " + std::to_string(ent->st) : "";
+                draw->AddText(ImVec2(a.x + r * 0.6f, a.y + r * 0.3f), col, label.c_str());
+            }
+        }
+    }
+    draw->PopClipRect();
+    if (focused) draw->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), IM_COL32(90, 200, 90, 200), 0, thick);
+    ImGui::End();
+}
+
 void SessionWindow() {
     if (!ImGui::Begin("Session")) {
         ImGui::End();
@@ -514,6 +809,8 @@ void SessionWindow() {
     ImGui::InputText("Extra", &s.extra);
     HelpMarker("Leave P1 or P2 empty to start at the title screen. Any other Ikemen GO command line flags go "
                "in Extra.");
+    ImGui::Checkbox("Show the game's own window", &s.gameWindow);
+    HelpMarker("With the patched Ikemen GO the game is shown in the Game window and its own window is hidden.");
 
     bool running = g_bridge.Running();
     if (ImGui::Button(running ? "Restart" : "Launch")) Launch();
@@ -1307,13 +1604,14 @@ void DefaultLayout(ImGuiID dock) {
     ImGuiID left, rest, right, center, top, bottom, control, players, leftTop, leftBottom;
     ImGui::DockBuilderSplitNode(dock, ImGuiDir_Left, 0.19f, &left, &rest);
     ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.3f, &right, &center);
-    ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.62f, &bottom, &top);
-    ImGui::DockBuilderSplitNode(top, ImGuiDir_Up, 0.38f, &control, &players);
+    ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.36f, &bottom, &top);
+    ImGui::DockBuilderSplitNode(top, ImGuiDir_Up, 0.16f, &control, &players);
     ImGui::DockBuilderSplitNode(left, ImGuiDir_Up, 0.45f, &leftTop, &leftBottom);
     ImGui::DockBuilderDockWindow("Session", leftTop);
+    ImGui::DockBuilderDockWindow("Players", leftBottom);
     ImGui::DockBuilderDockWindow("Breakpoints", leftBottom);
     ImGui::DockBuilderDockWindow("Control", control);
-    ImGui::DockBuilderDockWindow("Players", players);
+    ImGui::DockBuilderDockWindow("Game", players);
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Code", bottom);
     ImGui::DockBuilderDockWindow("Frame data", bottom);
@@ -1337,6 +1635,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
     else if (key == "Extra") s.extra = value;
     else if (key == "AI1") s.ai1 = value == "1";
     else if (key == "AI2") s.ai2 = value == "1";
+    else if (key == "GameWindow") s.gameWindow = value == "1";
     else if (key == "Breakpoint") {
         // target|enabled|condition
         int t = 0, on = 1, used = 0;
@@ -1353,8 +1652,8 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
 void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffer *buf) {
     const Settings &s = g_settings;
     buf->appendf("[%s][Settings]\n", handler->TypeName);
-    buf->appendf("Exe=%s\nP1=%s\nP2=%s\nStage=%s\nExtra=%s\nAI1=%d\nAI2=%d\n", s.exe.c_str(), s.p1.c_str(),
-                 s.p2.c_str(), s.stage.c_str(), s.extra.c_str(), s.ai1, s.ai2);
+    buf->appendf("Exe=%s\nP1=%s\nP2=%s\nStage=%s\nExtra=%s\nAI1=%d\nAI2=%d\nGameWindow=%d\n", s.exe.c_str(),
+                 s.p1.c_str(), s.p2.c_str(), s.stage.c_str(), s.extra.c_str(), s.ai1, s.ai2, s.gameWindow);
     for (const auto &b : g_breakpoints) buf->appendf("Breakpoint=%d|%d|%s\n", b.target, b.enabled, b.cond.c_str());
     for (const auto &b : g_ctrlBreaks) buf->appendf("CtrlBreak=%d|%d|%s\n", b.enabled, b.line, b.file.c_str());
     buf->append("\n");
@@ -1406,6 +1705,8 @@ void App_Frame() {
         g_firstRun = false;
     }
     ImGui::DockSpaceOverViewport(dock);
+    PollFrames();
+    GameWindow();
     SessionWindow();
     ControlWindow();
     PlayersWindow();

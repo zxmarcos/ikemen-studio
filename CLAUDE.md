@@ -14,8 +14,10 @@ build environment and tests.
   tracks upstream.
 - At most two background subagents at a time, on disjoint files.
 - Videos sent to the user: 30 MB at most.
-- Keep engine changes small and inert without `-ikdbg`: new code goes in
-  `src/script_debugger.go` (or new files), with one-line calls elsewhere.
+- Keep engine changes inert without `-ikdbg` and easy to upstream: new code
+  goes in `src/script_debugger.go` or new `src/editor_*.go` files, with
+  one-line calls elsewhere. The goal is now a live editor (see NOTES.md,
+  "Where it is going").
 
 ## Environment
 

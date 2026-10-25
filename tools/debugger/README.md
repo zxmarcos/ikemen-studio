@@ -53,6 +53,7 @@ Windows:
 | Window | What it does |
 |---|---|
 | Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state |
+| Game (engine side) | The game itself: its frames, with the collision boxes and axes over them; hover a player or helper to see it, click to select it. While the window has focus, the keyboard goes to the game (but F5, F10, F11). The game's own window is hidden unless Session says otherwise |
 | Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
 | Players | Every player and helper: state, previous state, animation, element, time, types, ctrl, position, velocity, life, power |
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
@@ -67,13 +68,18 @@ Settings, breakpoints and the window layout are saved in
 
 ## Engine side
 
-`src/script_debugger.go` holds everything; the other files only call it:
+`src/script_debugger.go` and `src/editor_*.go` hold everything; the other files only call them:
 
 - `compiler.go` records where each state controller and statedef comes from
   (CNS and ZSS) and wraps the controller (`CharCompiler.traced`), only under
   `-ikdbg`;
 - `bytecode.go` keeps the statedef's source in `StateBytecode.src`;
 - `script.go` registers the new Lua functions.
+
+`editor_frame.go` shares each frame drawn with the debugger, with the boxes of
+the players and helpers in it, and takes keys back (shared memory
+`Local\IkemenFrame<pid>`, its layout is at the top of the file); `system.go`
+calls it once per frame.
 
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
