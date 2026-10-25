@@ -210,6 +210,21 @@ func debuggerFunctions(l *lua.LState) {
 		}
 		return 0
 	})
+	luaRegister(l, "debugSetAnimElem", func(l *lua.LState) int {
+		/*[redirectable] Go to an element of the character's current animation (helpers too).
+		@function debugSetAnimElem
+		@tparam int32 elem 1 for the first element.
+		@tparam[opt=0] int32 time Ticks into the element.*/
+		c := sys.debugWC
+		if c.anim != nil {
+			time := int32(0)
+			if !nilArg(l, 2) {
+				time = int32(numArg(l, 2))
+			}
+			c.setAnimElem(int32(numArg(l, 1)), time)
+		}
+		return 0
+	})
 	luaRegister(l, "setVel", func(l *lua.LState) int {
 		/*[redirectable] Set the character's velocity.
 		@function setVel

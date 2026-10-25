@@ -29,7 +29,8 @@ import (
 //	slot n at 4096 + n*slot size: width*height RGBA pixels, bottom row first,
 //	then the geometry, JSON:
 //	  {"f": frame, "vp": [x, y, w, h], "scr": [w, h], "e": [{"id", "pn", "h",
-//	   "ax": [x, y], "c1": [l, t, w, h, ...], "c2": [...]}]}
+//	   "ax": [x, y], "an": action, "el": element, "apn": player of the action,
+//	   "k": [x, y] pixels per AIR unit, "c1": [l, t, w, h, ...], "c2": [...]}]}
 //	  "vp" is where the game's picture is in the frame (top-left origin), "scr"
 //	  the size of the game's picture; "ax" and boxes are in its pixels.
 //	event ring after the slots: events of 4 int32 values, kind first:
@@ -233,6 +234,21 @@ func editorFrameGeometry(winW, winH int32) []byte {
 			b = append(b, ',')
 			num(((y*sys.cam.Scale - sys.cam.Pos[1]) + sys.cam.GroundLevel()) * sy)
 			b = append(b, ']')
+			if c.anim != nil {
+				// The animation shown, and pixels per unit of its AIR file (Clsn boxes: axis + k * box)
+				cs := c.clsnScaleLocal()
+				b = append(b, `,"an":`...)
+				b = strconv.AppendInt(b, int64(c.animNo), 10)
+				b = append(b, `,"el":`...)
+				b = strconv.AppendInt(b, int64(c.anim.curelem+1), 10)
+				b = append(b, `,"apn":`...)
+				b = strconv.AppendInt(b, int64(c.animPN+1), 10)
+				b = append(b, `,"k":[`...)
+				b = strconv.AppendFloat(b, float64(cs[0]*c.animlocalscl*sys.cam.Scale*sx*c.facing), 'f', 4, 32)
+				b = append(b, ',')
+				b = strconv.AppendFloat(b, float64(cs[1]*c.animlocalscl*sys.cam.Scale*sy), 'f', 4, 32)
+				b = append(b, ']')
+			}
 			for group := int32(1); group <= 2; group++ {
 				f.boxes.rects = f.boxes.rects[:0]
 				f.boxes.Add(c.getClsnWorld(group), x, y, c.facing)
