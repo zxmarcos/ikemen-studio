@@ -59,7 +59,7 @@ Windows:
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
-| Code (engine side) | The controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick), and the source file of the state: lines that ran are green, a dot marks each controller, clicking left of one sets a breakpoint. Follows the selected entity's state |
+| Code | An editor of the character's files (syntax colours, completion and documentation of triggers and controllers, undo). **Save and apply** (Ctrl+S) saves the changed files and the game loads and compiles the characters again without restarting the match (engine side); when that fails, the game keeps the previous version and the line of the error turns red. Engine side, also: the controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick); in the file, lines that ran are green, a dot marks each controller, clicking the dot sets a breakpoint. Follows the selected entity's state, but not while you type |
 | Breakpoints | A Lua condition over Ikemen's triggers, for anyone, one player, or one player and its helpers; the game pauses on the tick the condition becomes true. Engine side: breakpoints on state controllers, the game pauses after a tick in which one ran. Both are saved with the settings |
 | Console | Any Lua, run in the game (`player(2); return stateNo(), var(3)`). Ikemen's own log is shown too |
 
@@ -84,7 +84,7 @@ calls it once per frame.
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture).
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match).
 
 ## How it works
 
@@ -107,6 +107,7 @@ Protocol, one line each:
 | game → debugger | `@IKSRC {...}` | engine side: where controllers come from, 300 per frame until all are sent (a character like Ryu by Pots has about 6000) |
 | game → debugger | `@IKBRK {...}` | a breakpoint stopped the game |
 | game → debugger | `@IKRES {...}` | result or error of a command |
+| game → debugger | `@IKRELOAD {...}` | engine side: result of reloading the characters (per player: ok, or the compiler's error) |
 | debugger → game | `if ikdbg then ikdbg.exec('...') end` | Lua, run under `pcall`. Through stdin, or with the engine side through the shared memory (no limit per frame, menus too) |
 
 Snapshots are about 1 KB per tick with two characters.
@@ -135,7 +136,7 @@ Snapshots are about 1 KB per tick with two characters.
 - Breakpoints stop the game after the tick, not in the middle of a state:
   the trace shows exactly which controllers ran and in which order, but
   there is no stepping from one controller to the next.
-- Sprites, animations, sounds and commands are not edited live: edit the
-  files and use **Reload match**.
+- Sprites are not reloaded by **Save and apply** (the SFF in use is kept):
+  use **Reload match** after changing them.
 - The stdin bridge only exists in the normal match loop: not in netplay or
   rollback matches.

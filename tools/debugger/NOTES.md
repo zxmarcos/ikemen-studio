@@ -26,10 +26,12 @@ picture (exact pixels), Lua commands through a ring in the same memory (all
 of them every frame, in menus too; stdin stays for an unpatched Ikemen).
 Mouse events are not sent: Ikemen GO does not use the mouse.
 
-Phase 1, characters: drag to move a player (done); the code editor with Apply (Go:
-recompile one character's states, commands, constants and animations
-without restarting the match); the animation editor with Clsn boxes dragged
-on the Game window; sprites, sounds, commands.
+Phase 1, characters: drag to move a player (done); the code editor with
+Apply (done: `editor_reload.go` recompiles the characters' states, commands,
+constants, animations and sounds without restarting the match; the editor
+widget is `src/editor.cpp`); next, the animation
+editor with Clsn boxes dragged on the Game window; then sprites, sounds,
+commands.
 
 ## Where things are
 
@@ -49,12 +51,14 @@ Files:
 src/script_debugger.go   engine side: controller sources and trace, setters, Lua functions
 src/editor_frame.go      engine side: frames, geometry and input events in shared memory
 src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
+src/editor_reload.go     reloading a character during a match (debugReloadChar)
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: settings, protocol handling, every window
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
-  src/frame.cpp/.h       reads the shared frames, writes input events
+  src/frame.cpp/.h       reads the shared frames, writes input events and commands
+  src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -121,7 +125,12 @@ helper "Bag"):
   capture the screen with `CopyFromScreen`: it once captured the user's
   browser instead of the game.
 - More `test_ui.ps1` actions: `down:RIGHT`/`up:RIGHT` (hold and release a
-  key), `visible` (is the game's window shown), `game:hide|show|min|off`.
+  key), `ctrl:Z`, `drag:x1,y1,x2,y2`, `visible` (is the game's window
+  shown), `game:hide|show|min|off`, `ps:code` (PowerShell, no `|` inside),
+  and `lua:code`: Lua run as if typed in the Console (`WM_COPYDATA`,
+  dwData 0x4D47). The debugger's log, results included, is also written to
+  `build/ikemen-debugger.log`, so a test can read what Lua returned. Click
+  coordinates depend on the layout: take a shot first.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and
   `~*kb` to find it.
@@ -177,6 +186,22 @@ Frames (`editor_frame.go`):
 - The window is sized with `sys.window.Window.SetSize(scrrect)`; the game
   resolution is `GameWidth`/`GameHeight` of `save/config.ini` (1280x720
   here), the window size otherwise follows `WindowWidth`/`WindowHeight`.
+
+Reloading a character (`editor_reload.go`):
+
+- `Char.load(def, gi)` reads the def, constants, SFF (`loadSff` borrows the
+  SFF in use: `findActiveSff`), palettes, AIR, SND; `CharCompiler.Compile`
+  reads the commands into `p.cmd[pn]` (appending: compile into a scratch
+  `Char`) and compiles the states. Neither touches the live `sys.cgi[pn]`.
+- `Compile` clears `sys.stringPool[pn]`, which the running bytecode indexes:
+  it is put back when the compile fails.
+- Swapping: `gi.states` and every `c.ss.sb` of that player's old states
+  (`c.ss.ps` resized), `root.cmd[pn]` keeping its `Buffer` (helpers share
+  the root's slice), constants (gi and `c.size`), `gi.animTable` with
+  `changeAnimEx` + `SetAnimElem` for whoever shows that player's
+  animations, `gi.snd`.
+- CNS compile errors name the line after the statedef's section, not the
+  line of the bad value.
 
 Compiler (`compiler.go`):
 

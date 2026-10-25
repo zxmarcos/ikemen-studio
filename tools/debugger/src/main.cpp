@@ -6,6 +6,7 @@
 
 #include <cfloat>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include <GL/gl.h>
@@ -71,10 +72,17 @@ static ImGuiKey VirtualKeyToImGuiKey(WPARAM vk) {
     }
 }
 
-static void UpdateModifiers(ImGuiIO &io) {
-    io.AddKeyEvent(ImGuiMod_Ctrl, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
-    io.AddKeyEvent(ImGuiMod_Shift, (GetKeyState(VK_SHIFT) & 0x8000) != 0);
-    io.AddKeyEvent(ImGuiMod_Alt, (GetKeyState(VK_MENU) & 0x8000) != 0);
+// Modifiers held according to the key messages received (posted ones too: scripted tests),
+// besides what GetKeyState says.
+static bool g_ctrl, g_shift, g_alt;
+
+static void UpdateModifiers(ImGuiIO &io, WPARAM vk, bool down) {
+    if (vk == VK_CONTROL) g_ctrl = down;
+    if (vk == VK_SHIFT) g_shift = down;
+    if (vk == VK_MENU) g_alt = down;
+    io.AddKeyEvent(ImGuiMod_Ctrl, g_ctrl || (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+    io.AddKeyEvent(ImGuiMod_Shift, g_shift || (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+    io.AddKeyEvent(ImGuiMod_Alt, g_alt || (GetKeyState(VK_MENU) & 0x8000) != 0);
 }
 
 static void MouseButton(HWND hwnd, int button, bool down) {
@@ -114,7 +122,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP: {
         bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-        UpdateModifiers(io);
+        UpdateModifiers(io, wParam, down);
         ImGuiKey key = wParam == VK_RETURN && (HIWORD(lParam) & KF_EXTENDED) ? ImGuiKey_KeypadEnter
                                                                               : VirtualKeyToImGuiKey(wParam);
         if (key != ImGuiKey_None) io.AddKeyEvent(key, down);
@@ -130,6 +138,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
+        g_ctrl = g_shift = g_alt = false;
         io.AddFocusEvent(msg == WM_SETFOCUS);
         return 0;
     case WM_SETCURSOR:
@@ -159,6 +168,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_APP + 0x4D48: // scripted tests: save the next frame as shot_<wParam>.bmp
         g_shotRequest = (int)wParam;
         return 0;
+    case WM_COPYDATA: { // scripted tests: dwData 0x4D47, UTF-8 Lua run as if typed in the Console
+        const COPYDATASTRUCT *cd = (const COPYDATASTRUCT *)lParam;
+        if (cd->dwData != 0x4D47 || !cd->lpData) return FALSE;
+        std::string lua((const char *)cd->lpData, cd->cbData);
+        App_Console(lua.c_str());
+        return TRUE;
+    }
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;

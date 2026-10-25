@@ -10,6 +10,7 @@
 --   @IKBRK {...}     a breakpoint stopped the game
 --   @IKRES {...}     result of an ikdbg.exec call
 --   @IKSRC {...}     where state controllers come from (needs the debugger patch)
+--   @IKRELOAD {...}  result of ikdbg.reload (needs the debugger patch)
 -- In (stdin): Ikemen runs each line as Lua, once per frame. The debugger
 -- only sends "if ikdbg then ikdbg.exec('...') end", so a bad command is
 -- reported instead of raising a Lua error (which would stop the engine).
@@ -208,6 +209,24 @@ end
 
 function ikdbg.brkDel(bid)
 	ikdbg.breakpoints[bid] = nil
+end
+
+-- Loads and compiles every player's files again (the debugger saved them); the
+-- answer is @IKRELOAD {items = [{pn, ok, err}]}. Needs the patched Ikemen.
+function ikdbg.reload()
+	local items = {_array = true}
+	if debugReloadChar == nil then
+		table.insert(items, {pn = 0, ok = false, err = 'this Ikemen GO cannot reload characters (no debugger patch)'})
+	else
+		for pn = 1, 8 do
+			local ok, err = debugReloadChar(pn)
+			if ok or not tostring(err):find('^no player') then
+				table.insert(items, {pn = pn, ok = ok, err = err})
+			end
+		end
+	end
+	send('@IKRELOAD', {items = items})
+	ikdbg.dirty = true
 end
 
 -- A breakpoint on a state controller: the game stops after a tick in which it ran.

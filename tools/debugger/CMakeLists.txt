@@ -29,7 +29,8 @@ add_executable(ikemen-debugger WIN32
   src/main.cpp
   src/app.cpp
   src/bridge.cpp
-  src/frame.cpp)
+  src/frame.cpp
+  src/editor.cpp)
 target_compile_definitions(ikemen-debugger PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX UNICODE _UNICODE)
 if(MSVC)
   target_compile_options(ikemen-debugger PRIVATE /W3 /utf-8 /EHsc)

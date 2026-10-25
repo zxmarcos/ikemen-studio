@@ -7,7 +7,9 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 # Actions, '|'-separated: key:F5 (key:F10*3 repeats) | wait:2 | click:x,y | dclick:x,y | type:text | shot:name
 #   | game:hide, game:show, game:min, game:off (the game window: hidden, shown, minimized, moved off screen)
 #   | down:RIGHT, up:RIGHT (hold and release a key; letters, digits, arrows) | visible (prints whether the game window is shown)
-#   | drag:x1,y1,x2,y2 (left button held from one point to the other)
+#   | drag:x1,y1,x2,y2 (left button held from one point to the other) | ps:code (PowerShell, e.g. to edit a file)
+#   | lua:code (run in the game as if typed in the Console; the result goes to the Console)
+#   | ctrl:Z (a key with Ctrl held)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -22,6 +24,9 @@ public class W {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [StructLayout(LayoutKind.Sequential)] public struct COPYDATA { public IntPtr dwData; public int cbData; public IntPtr lpData; }
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, ref COPYDATA l);
+  public static void Lua(IntPtr h, string s) { byte[] b = Encoding.UTF8.GetBytes(s); IntPtr p = Marshal.AllocHGlobal(b.Length); Marshal.Copy(b, 0, p, b.Length); COPYDATA d = new COPYDATA(); d.dwData = (IntPtr)0x4D47; d.cbData = b.Length; d.lpData = p; SendMessage(h, 0x004A, IntPtr.Zero, ref d); Marshal.FreeHGlobal(p); }
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
 }
@@ -50,6 +55,9 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'key' { $name, $times = $arg -split '\*'; if (-not $times) { $times = 1 }; for ($r = 0; $r -lt [int]$times; $r++) { $code = $vk[$name]; [W]::PostMessage($hd, 0x100, [IntPtr]$code, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$code, [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 30 } }
     'dclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 40; foreach ($k in 1..2) { [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null; Start-Sleep -Milliseconds 40 } }
     'drag' { $x1, $y1, $x2, $y2 = $arg -split ',' | ForEach-Object { [int]$_ }; $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; foreach ($s in 1..10) { $x = $x1 + ($x2 - $x1) * $s / 10; $y = $y1 + ($y2 - $y1) * $s / 10; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](([int]$y -shl 16) -bor [int]$x)) | Out-Null; Start-Sleep -Milliseconds 40 }; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, [IntPtr](($y2 -shl 16) -bor $x2)) | Out-Null }
+    'ps' { Invoke-Expression $arg }
+    'lua' { [W]::Lua($hd, $arg) }
+    'ctrl' { [W]::PostMessage($hd, 0x100, [IntPtr]0x11, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x101, [IntPtr]0x11, [IntPtr]0xC0000001) | Out-Null }
     'down' { [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null }
     'up' { [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null }
     'visible' { "game window visible: " + [W]::IsWindowVisible($game.MainWindowHandle) }
