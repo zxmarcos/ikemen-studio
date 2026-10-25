@@ -160,10 +160,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         break;
     case WM_APP + 0x4D47:
-        // Scripted tests: wParam 0 move, 1/2 left down/up; lParam x | y << 16. Posted WM_MOUSE*
-        // messages would be undone by WM_MOUSELEAVE, the real cursor being elsewhere.
+        // Scripted tests: wParam 0 move, 1/2 left down/up, 3/4 right down/up, 5/6 wheel up/down;
+        // lParam x | y << 16. Posted WM_MOUSE* messages would be undone by WM_MOUSELEAVE, the real
+        // cursor being elsewhere.
         io.AddMousePosEvent((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
         if (wParam == 1 || wParam == 2) io.AddMouseButtonEvent(0, wParam == 1);
+        if (wParam == 3 || wParam == 4) io.AddMouseButtonEvent(1, wParam == 3);
+        if (wParam == 5 || wParam == 6) io.AddMouseWheelEvent(0, wParam == 5 ? 1.0f : -1.0f);
         return 0;
     case WM_APP + 0x4D48: // scripted tests: save the next frame as shot_<wParam>.bmp
         g_shotRequest = (int)wParam;

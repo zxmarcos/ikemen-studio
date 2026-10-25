@@ -679,7 +679,7 @@ void PollFrames() {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     if (g_texW != g_frame.width || g_texH != g_frame.height) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); // zoomed: the game's pixels
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_frame.width, g_frame.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
@@ -720,6 +720,9 @@ void PollFrames() {
 // ---------------------------------------------------------------------------
 
 bool g_boxEdit = true;    // the selected player's boxes can be dragged on the Game window
+bool g_followSel = true;  // a zoomed Game window keeps the selected player in view
+int g_animDrag = 0;       // what a drag on the selected player changes: 0 its boxes, 1 the sprite's offset
+bool g_onion = true;      // the previous element's boxes are drawn too, faint
 bool g_animFollow = true; // the Animation window shows what the selected player shows
 int g_animAction = 0, g_animElem = 1;
 
@@ -863,9 +866,18 @@ void AnimationWindow() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
     if (ImGui::InputInt("Action", &g_animAction, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue)) g_animFollow = false;
-    ImGui::Checkbox("Drag its boxes on the game", &g_boxEdit);
-    HelpMarker("Pause the game (F5) and drag the edges, the corners or the inside of a box of the selected "
-               "player's element. Changes go to the game at once; Save writes the AIR file.");
+    ImGui::Checkbox("On the game, drag", &g_boxEdit);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!g_boxEdit);
+    ImGui::RadioButton("its boxes", &g_animDrag, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("the sprite", &g_animDrag, 1);
+    ImGui::SameLine();
+    ImGui::Checkbox("Previous element's boxes", &g_onion);
+    ImGui::EndDisabled();
+    HelpMarker("Pause the game (F5). Boxes: drag the edges, the corners or the inside of a box of the selected "
+               "player's element. The sprite: drag near the player to move the element's offset. Changes go to "
+               "the game at once; Save writes the AIR file. Mouse wheel on the game: zoom; right button: pan.");
     if (!t.sf) {
         ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", t.pn);
         ImGui::End();
@@ -886,6 +898,59 @@ void AnimationWindow() {
         ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
         ImGui::End();
         return;
+    }
+
+    // The action: show it on the player, copy, renumber, delete
+    static int newNo;
+    if (ImGui::Button("Show on the player")) {
+        ExecOn(t.e->id, "changeAnim(" + std::to_string(g_animAction) + ")");
+        g_animFollow = true;
+    }
+    ImGui::SetItemTooltip("ChangeAnim on the selected player (not on helpers); pause first to keep it.");
+    ImGui::SameLine();
+    if (ImGui::Button("Copy as...")) {
+        newNo = g_animAction + 1;
+        ImGui::OpenPopup("copy");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Renumber...")) {
+        newNo = g_animAction;
+        ImGui::OpenPopup("renumber");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete action")) ImGui::OpenPopup("delete");
+    for (const char *popup : {"copy", "renumber"}) {
+        if (!ImGui::BeginPopup(popup)) continue;
+        bool copy = popup[0] == 'c';
+        ImGui::TextUnformatted(copy ? "A copy of this action, numbered" : "This action's new number");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        bool ok = ImGui::InputInt("##no", &newNo, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        ok |= ImGui::Button("OK");
+        bool taken = AirOf(sf).actions.count(newNo) != 0;
+        if (taken) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "Action %d exists already.", newNo);
+        if (ok && !taken) {
+            if (copy ? Air_CopyAction(sf.text, *t.act, newNo) : Air_RenumberAction(sf.text, *t.act, newNo)) {
+                ApplyAnims(sf);
+                g_animAction = newNo;
+                g_animFollow = false;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        if (!copy) ImGui::TextDisabled("States that use the old number are not changed.");
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("delete")) {
+        ImGui::Text("Delete action %d?", g_animAction);
+        if (ImGui::Button("Delete")) {
+            if (Air_DeleteAction(sf.text, *t.act)) ApplyAnims(sf);
+            g_animFollow = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     // The elements; a click shows one on the game (pause first to keep it there)
@@ -912,6 +977,39 @@ void AnimationWindow() {
             }
         }
         if (cur) ImGui::PopStyleColor();
+    }
+
+    // The element: duplicate, delete, move, loop from it
+    int index = t.elem - 1, count = (int)t.act->elems.size();
+    int goTo = 0; // element to show after an edit
+    if (ImGui::SmallButton("Duplicate") && Air_DuplicateElem(sf.text, *t.act, index)) goTo = t.elem + 1;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(count < 2);
+    if (ImGui::SmallButton("Delete") && Air_DeleteElem(sf.text, *t.act, index)) goTo = std::max(1, t.elem - 1);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(index == 0);
+    if (ImGui::SmallButton("<") && Air_MoveElem(sf.text, *t.act, index, -1)) goTo = t.elem - 1;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(index == count - 1);
+    if (ImGui::SmallButton(">") && Air_MoveElem(sf.text, *t.act, index, 1)) goTo = t.elem + 1;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    bool loopHere = t.act->loopStart == index;
+    if (ImGui::SmallButton(loopHere ? "No loop start" : "Loop from here") &&
+        Air_SetLoopStart(sf.text, *t.act, loopHere ? -1 : index))
+        goTo = t.elem;
+    if (goTo) {
+        ApplyAnims(sf);
+        g_animElem = goTo;
+        if (t.fe && t.fe->action == g_animAction) {
+            char lua[96];
+            snprintf(lua, sizeof(lua), "ikdbg.with(%d, function() debugSetAnimElem(%d) end)", t.e->id, goTo);
+            SendRaw(lua);
+        }
+        ImGui::End();
+        return; // the lines changed
     }
 
     const AirElem &el = t.act->elems[t.elem - 1];
@@ -1021,6 +1119,60 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     };
     ImVec2 m = ImGui::GetMousePos();
     float grab = ImGui::GetFontSize() * 0.45f;
+    float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
+
+    // The previous element's boxes, faint (the last element's before the first)
+    if (g_onion && t.act->elems.size() > 1) {
+        const AirElem &prev = t.act->elems[t.elem >= 2 ? t.elem - 2 : t.act->elems.size() - 1];
+        for (int g = 0; g < 2; g++)
+            for (const auto &b : prev.clsn[g]) {
+                ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+                draw->AddRect(ImVec2(std::min(a.x, c.x), std::min(a.y, c.y)), ImVec2(std::max(a.x, c.x), std::max(a.y, c.y)),
+                              g == 0 ? IM_COL32(255, 120, 120, 90) : IM_COL32(140, 180, 255, 90), 0, thick);
+            }
+    }
+
+    // Sprite mode: a drag near the player moves the element's offset, sent to the game as it goes
+    if (g_animDrag == 1) {
+        static bool active;
+        static ImVec2 start;
+        static int x0, y0, sentX, sentY;
+        ImVec2 lo = airToScreen(0, 0), hi = lo;
+        for (int g = 0; g < 2; g++)
+            for (const auto &b : el.clsn[g])
+                for (ImVec2 p : {airToScreen((float)b.x1, (float)b.y1), airToScreen((float)b.x2, (float)b.y2)}) {
+                    lo = ImVec2(std::min(lo.x, p.x), std::min(lo.y, p.y));
+                    hi = ImVec2(std::max(hi.x, p.x), std::max(hi.y, p.y));
+                }
+        float pad = ImGui::GetFontSize() * 2;
+        bool nearby = m.x >= lo.x - pad && m.x <= hi.x + pad && m.y >= lo.y - pad && m.y <= hi.y + pad;
+        if (!active && hovered && nearby && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            active = true;
+            start = screenToAir(m);
+            x0 = sentX = el.x, y0 = sentY = el.y;
+        }
+        if (active && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) active = false;
+        if (active) {
+            ImVec2 a = screenToAir(m);
+            int nx = x0 + (int)lroundf(a.x - start.x), ny = y0 + (int)lroundf(a.y - start.y);
+            if ((nx != sentX || ny != sentY) && Air_SetElem(t.sf->text, el, el.group, el.image, nx, ny, el.time)) {
+                ApplyAnims(*t.sf);
+                sentX = nx, sentY = ny;
+            }
+            char label[48];
+            snprintf(label, sizeof(label), "offset %d, %d", sentX, sentY);
+            draw->AddText(ImVec2(m.x + grab * 2, m.y + grab * 2), IM_COL32(255, 255, 255, 255), label);
+        }
+        if (active || (hovered && nearby)) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        for (int g = 0; g < 2; g++)
+            for (const auto &b : el.clsn[g]) {
+                ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+                draw->AddRect(ImVec2(std::min(a.x, c.x), std::min(a.y, c.y)), ImVec2(std::max(a.x, c.x), std::max(a.y, c.y)),
+                              g == 0 ? IM_COL32(255, 70, 70, 200) : IM_COL32(80, 140, 255, 200), 0, thick);
+            }
+        return active || (hovered && nearby);
+    }
+
     int hitG = -1, hitI = -1, hitEdges = 0;
     float hitArea = FLT_MAX;
     for (int g = 0; g < 2; g++)
@@ -1070,7 +1222,6 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     else if (cursorEdges & 12)
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
 
-    float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
     for (int g = 0; g < 2; g++)
         for (size_t i = 0; i < el.clsn[g].size(); i++) {
             bool dragging = g_boxDrag.active && g_boxDrag.g == g && g_boxDrag.i == (int)i;
@@ -1107,6 +1258,9 @@ void GameWindow() {
     ImGui::Checkbox("Axes", &showAxes);
     ImGui::SameLine();
     ImGui::Checkbox("Only the selected one", &onlySelected);
+    ImGui::SameLine();
+    ImGui::Checkbox("Follow it", &g_followSel);
+    ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
     if (g_frameTex) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
@@ -1124,24 +1278,68 @@ void GameWindow() {
         return;
     }
 
+    // The frame fits the window; zoomed, a part of it fills the same area. view is the frame
+    // pixel at the top left.
+    static float zoom = 1;
+    static ImVec2 view;
+    static bool panning;
     ImVec2 avail = ImGui::GetContentRegionAvail();
-    float scale = std::max(0.01f, std::min(avail.x / g_texW, avail.y / g_texH));
-    ImVec2 size(g_texW * scale, g_texH * scale);
+    float fit = std::max(0.01f, std::min(avail.x / g_texW, avail.y / g_texH));
+    ImVec2 size(g_texW * fit, g_texH * fit);
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     p0.x += (avail.x - size.x) * 0.5f;
+    float s = fit * zoom; // screen pixels per frame pixel
+    ImVec2 viewSize(size.x / s, size.y / s);
+    float fx = g_frameVp.z / g_frameScr.x, fy = g_frameVp.w / g_frameScr.y; // frame pixels per picture pixel
+    if (g_followSel && zoom > 1)
+        if (const FrameEntity *fe = FindFrameEntity(g_selId)) {
+            // The middle of its boxes, else of its axis
+            ImVec2 lo = fe->axis, hi = fe->axis;
+            for (const auto *boxes : {&fe->c1, &fe->c2})
+                for (const auto &b : *boxes) {
+                    lo = ImVec2(std::min(lo.x, std::min(b.x, b.x + b.z)), std::min(lo.y, std::min(b.y, b.y + b.w)));
+                    hi = ImVec2(std::max(hi.x, std::max(b.x, b.x + b.z)), std::max(hi.y, std::max(b.y, b.y + b.w)));
+                }
+            view.x = g_frameVp.x + (lo.x + hi.x) * 0.5f * fx - viewSize.x * 0.5f;
+            view.y = g_frameVp.y + (lo.y + hi.y) * 0.5f * fy - viewSize.y * 0.5f;
+        }
+    view.x = std::max(0.0f, std::min(view.x, g_texW - viewSize.x));
+    view.y = std::max(0.0f, std::min(view.y, g_texH - viewSize.y));
     ImGui::SetCursorScreenPos(p0);
     // Rows come bottom first
-    ImGui::Image(ImTextureRef((ImTextureID)(intptr_t)g_frameTex), size, ImVec2(0, 1), ImVec2(1, 0));
+    ImGui::Image(ImTextureRef((ImTextureID)(intptr_t)g_frameTex), size,
+                 ImVec2(view.x / g_texW, 1 - view.y / g_texH),
+                 ImVec2((view.x + viewSize.x) / g_texW, 1 - (view.y + viewSize.y) / g_texH));
     bool hovered = ImGui::IsItemHovered();
     bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
-    // Game picture pixels to the screen
-    float kx = g_frameVp.z / g_frameScr.x * scale, ky = g_frameVp.w / g_frameScr.y * scale;
+    // Wheel: zoom on the point under the mouse; right button: pan
+    ImGuiIO &io = ImGui::GetIO();
+    if (hovered && io.MouseWheel != 0) {
+        ImVec2 m = io.MousePos;
+        ImVec2 at(view.x + (m.x - p0.x) / s, view.y + (m.y - p0.y) / s);
+        zoom = std::max(1.0f, std::min(16.0f, zoom * powf(1.25f, io.MouseWheel)));
+        s = fit * zoom;
+        viewSize = ImVec2(size.x / s, size.y / s);
+        view = ImVec2(at.x - (m.x - p0.x) / s, at.y - (m.y - p0.y) / s);
+        view.x = std::max(0.0f, std::min(view.x, g_texW - viewSize.x));
+        view.y = std::max(0.0f, std::min(view.y, g_texH - viewSize.y));
+    }
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) panning = true;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) panning = false;
+    if (panning) {
+        g_followSel = false;
+        view.x = std::max(0.0f, std::min(view.x - io.MouseDelta.x / s, g_texW - viewSize.x));
+        view.y = std::max(0.0f, std::min(view.y - io.MouseDelta.y / s, g_texH - viewSize.y));
+    }
+
+    // Game picture pixels to the screen, and back
+    float kx = fx * s, ky = fy * s;
     auto toScreen = [&](float x, float y) {
-        return ImVec2(p0.x + g_frameVp.x * scale + x * kx, p0.y + g_frameVp.y * scale + y * ky);
+        return ImVec2(p0.x + (g_frameVp.x + x * fx - view.x) * s, p0.y + (g_frameVp.y + y * fy - view.y) * s);
     };
-    auto toPicture = [&](ImVec2 s) {
-        return ImVec2((s.x - p0.x - g_frameVp.x * scale) / kx, (s.y - p0.y - g_frameVp.y * scale) / ky);
+    auto toPicture = [&](ImVec2 q) {
+        return ImVec2(((q.x - p0.x) / s + view.x - g_frameVp.x) / fx, ((q.y - p0.y) / s + view.y - g_frameVp.y) / fy);
     };
 
     // The selected player's boxes, editable (Animation window); they take the mouse first

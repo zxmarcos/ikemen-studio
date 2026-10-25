@@ -152,12 +152,13 @@ void Air_Parse(const std::string &text, AirFile &out) {
         } else {
             AirElem e;
             if (!ReadElem(s, e)) continue;
-            e.line = (int)i + 1;
+            e.line = e.first = (int)i + 1;
             for (int g = 0; g < 2; g++) {
                 if (pendingHeader[g]) {
                     e.clsn[g] = pending[g];
                     e.header[g] = pendingHeader[g];
                     e.own[g] = pendingOwn[g];
+                    if (e.own[g]) e.first = std::min(e.first, pendingHeader[g]);
                 } else {
                     e.clsn[g] = deflt[g];
                     e.header[g] = defaultHeader[g];
@@ -231,6 +232,92 @@ bool Air_SetElem(std::string &text, const AirElem &elem, int group, int image, i
     char buf[96];
     snprintf(buf, sizeof(buf), "%d,%d, %d,%d, %d", group, image, x, y, time);
     line = line.substr(0, pos) + buf + line.substr(end);
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_DuplicateElem(std::string &text, const AirAction &act, int index) {
+    if (index < 0 || index >= (int)act.elems.size()) return false;
+    const AirElem &e = act.elems[index];
+    std::vector<std::string> lines = SplitLines(text);
+    if (e.line > (int)lines.size()) return false;
+    std::vector<std::string> block(lines.begin() + e.first - 1, lines.begin() + e.line);
+    lines.insert(lines.begin() + e.line, block.begin(), block.end());
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_DeleteElem(std::string &text, const AirAction &act, int index) {
+    if (index < 0 || index >= (int)act.elems.size()) return false;
+    const AirElem &e = act.elems[index];
+    std::vector<std::string> lines = SplitLines(text);
+    if (e.line > (int)lines.size()) return false;
+    lines.erase(lines.begin() + e.first - 1, lines.begin() + e.line);
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_MoveElem(std::string &text, const AirAction &act, int index, int dir) {
+    int other = index + (dir < 0 ? -1 : 1);
+    if (index < 0 || index >= (int)act.elems.size() || other < 0 || other >= (int)act.elems.size()) return false;
+    const AirElem &a = act.elems[std::min(index, other)], &b = act.elems[std::max(index, other)];
+    std::vector<std::string> lines = SplitLines(text);
+    if (b.line > (int)lines.size()) return false;
+    // lines: ... [a.first, a.line] gap [b.first, b.line] ...  ->  ... b gap a ...
+    std::vector<std::string> blockA(lines.begin() + a.first - 1, lines.begin() + a.line);
+    std::vector<std::string> gap(lines.begin() + a.line, lines.begin() + b.first - 1);
+    std::vector<std::string> blockB(lines.begin() + b.first - 1, lines.begin() + b.line);
+    std::vector<std::string> mid;
+    mid.insert(mid.end(), blockB.begin(), blockB.end());
+    mid.insert(mid.end(), gap.begin(), gap.end());
+    mid.insert(mid.end(), blockA.begin(), blockA.end());
+    lines.erase(lines.begin() + a.first - 1, lines.begin() + b.line);
+    lines.insert(lines.begin() + a.first - 1, mid.begin(), mid.end());
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_SetLoopStart(std::string &text, const AirAction &act, int index) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.last > (int)lines.size()) return false;
+    int at = index >= 0 && index < (int)act.elems.size() ? act.elems[index].first - 1 : -1;
+    for (int i = act.last - 1; i >= act.line; i--)
+        if (StartsWith(Clean(lines[i]), "loopstart")) {
+            lines.erase(lines.begin() + i);
+            if (at > i) at--;
+        }
+    if (at >= 0) lines.insert(lines.begin() + at, Indent(lines[at]) + "Loopstart");
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_CopyAction(std::string &text, const AirAction &act, int newNo) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.last > (int)lines.size()) return false;
+    while (!lines.empty() && lines.back().find_first_not_of(" \t\r") == std::string::npos) lines.pop_back();
+    lines.push_back("");
+    lines.push_back("[Begin Action " + std::to_string(newNo) + "]");
+    for (int i = act.line; i < act.last; i++) lines.push_back(lines[i]);
+    lines.push_back("");
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_DeleteAction(std::string &text, const AirAction &act) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.last > (int)lines.size()) return false;
+    lines.erase(lines.begin() + act.line - 1, lines.begin() + act.last);
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_RenumberAction(std::string &text, const AirAction &act, int newNo) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.line > (int)lines.size()) return false;
+    std::string &line = lines[act.line - 1];
+    size_t open = line.find('['), close = line.find(']');
+    if (open == std::string::npos || close == std::string::npos) return false;
+    line = line.substr(0, open) + "[Begin Action " + std::to_string(newNo) + "]" + line.substr(close + 1);
     text = JoinLines(lines);
     return true;
 }

@@ -9,7 +9,7 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 #   | down:RIGHT, up:RIGHT (hold and release a key; letters, digits, arrows) | visible (prints whether the game window is shown)
 #   | drag:x1,y1,x2,y2 (left button held from one point to the other) | ps:code (PowerShell, e.g. to edit a file)
 #   | lua:code (run in the game as if typed in the Console; the result goes to the Console)
-#   | ctrl:Z (a key with Ctrl held)
+#   | ctrl:Z (a key with Ctrl held) | wheel:x,y,n (n notches, up when positive)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -56,6 +56,7 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'dclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 40; foreach ($k in 1..2) { [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null; Start-Sleep -Milliseconds 40 } }
     'drag' { $x1, $y1, $x2, $y2 = $arg -split ',' | ForEach-Object { [int]$_ }; $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; foreach ($s in 1..10) { $x = $x1 + ($x2 - $x1) * $s / 10; $y = $y1 + ($y2 - $y1) * $s / 10; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](([int]$y -shl 16) -bor [int]$x)) | Out-Null; Start-Sleep -Milliseconds 40 }; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, [IntPtr](($y2 -shl 16) -bor $x2)) | Out-Null }
     'ps' { Invoke-Expression $arg }
+    'wheel' { $x, $y, $n = $arg -split ',' | ForEach-Object { [int]$_ }; $m = 0x8000 + 0x4D47; $l = [IntPtr](($y -shl 16) -bor $x); [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 40; foreach ($k in 1..[Math]::Abs($n)) { [W]::PostMessage($hd, $m, [IntPtr]($(if ($n -gt 0) { 5 } else { 6 })), $l) | Out-Null; Start-Sleep -Milliseconds 40 } }
     'lua' { [W]::Lua($hd, $arg) }
     'ctrl' { [W]::PostMessage($hd, 0x100, [IntPtr]0x11, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x101, [IntPtr]0x11, [IntPtr]0xC0000001) | Out-Null }
     'down' { [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null }

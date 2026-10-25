@@ -16,6 +16,7 @@ struct AirBox {
 
 struct AirElem {
     int line = 0;
+    int first = 0; // its first line: its own box groups come before it
     int group = 0, image = 0, x = 0, y = 0, time = 0;
     std::vector<AirBox> clsn[2]; // Clsn1, Clsn2 in effect for this element
     int header[2] = {};          // line of the "ClsnN: n" / "ClsnNDefault: n" they come from, 0: none
@@ -40,3 +41,12 @@ bool Air_SetBox(std::string &text, const AirBox &box, int x1, int y1, int x2, in
 // Gives the element its own group of boxes (written before its line, replacing an own group).
 bool Air_SetOwnBoxes(std::string &text, const AirElem &elem, int group, const std::vector<AirBox> &boxes);
 bool Air_SetElem(std::string &text, const AirElem &elem, int group, int image, int x, int y, int time);
+
+// Elements and actions. An element moves with its own box groups.
+bool Air_DuplicateElem(std::string &text, const AirAction &act, int index); // the copy goes after it
+bool Air_DeleteElem(std::string &text, const AirAction &act, int index);
+bool Air_MoveElem(std::string &text, const AirAction &act, int index, int dir); // -1 earlier, 1 later
+bool Air_SetLoopStart(std::string &text, const AirAction &act, int index);      // -1: none
+bool Air_CopyAction(std::string &text, const AirAction &act, int newNo);        // at the end of the file
+bool Air_DeleteAction(std::string &text, const AirAction &act);
+bool Air_RenumberAction(std::string &text, const AirAction &act, int newNo);

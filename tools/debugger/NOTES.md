@@ -30,10 +30,13 @@ Phase 1, characters: drag to move a player (done); the code editor with
 Apply (done: `editor_reload.go` recompiles the characters' states, commands,
 constants, animations and sounds without restarting the match; the editor
 widget is `src/editor.cpp`); the animation editor
-(done, first part: window Animation, Clsn boxes dragged on the Game window,
-`src/air.cpp` parses and edits AIR text; to do: the sprite offset dragged,
-new actions and elements, onion skin, a canvas of its own); then sprites,
-sounds, commands.
+(done: window Animation; Clsn boxes and the sprite's offset dragged on the
+Game window, which zooms and pans; the previous element's boxes; elements
+duplicated, deleted, moved, loop start; actions copied, renumbered,
+deleted; `src/air.cpp` parses and edits AIR text, `tests/air_test.cpp`
+tests it. Not done: a sprite onion skin and a canvas of its own, which need
+the app to draw sprites, i.e. an SFF reader); then sprites, sounds,
+commands.
 
 ## Where things are
 
@@ -111,6 +114,8 @@ helper "Bag"):
 
 ## Testing
 
+- `scripts/build.ps1 test`: unit tests of the parts without a window
+  (`tests/air_test.cpp`, AIR parsing and edits).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -132,7 +137,9 @@ helper "Bag"):
   shown), `game:hide|show|min|off`, `ps:code` (PowerShell, no `|` inside),
   and `lua:code`: Lua run as if typed in the Console (`WM_COPYDATA`,
   dwData 0x4D47). The debugger's log, results included, is also written to
-  `build/ikemen-debugger.log`, so a test can read what Lua returned. Click
+  `build/ikemen-debugger.log`, so a test can read what Lua returned. Also
+  `wheel:x,y,n` (the test mouse message takes 3/4 right button, 5/6 wheel).
+  Click
   coordinates depend on the layout: take a shot first.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and

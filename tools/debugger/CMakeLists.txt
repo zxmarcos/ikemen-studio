@@ -52,3 +52,7 @@ add_custom_command(
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mod/ikdbg.lua"
   VERBATIM)
 target_sources(ikemen-debugger PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ikdbg.lua")
+
+# Tests of the parts that do not need a window: scripts/build.ps1 test
+add_executable(air-test tests/air_test.cpp src/air.cpp)
+target_include_directories(air-test PRIVATE src)
