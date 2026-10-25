@@ -7,6 +7,7 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 # Actions, '|'-separated: key:F5 (key:F10*3 repeats) | wait:2 | click:x,y | dclick:x,y | type:text | shot:name
 #   | game:hide, game:show, game:min, game:off (the game window: hidden, shown, minimized, moved off screen)
 #   | down:RIGHT, up:RIGHT (hold and release a key; letters, digits, arrows) | visible (prints whether the game window is shown)
+#   | drag:x1,y1,x2,y2 (left button held from one point to the other)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -48,6 +49,7 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
   switch ($kind) {
     'key' { $name, $times = $arg -split '\*'; if (-not $times) { $times = 1 }; for ($r = 0; $r -lt [int]$times; $r++) { $code = $vk[$name]; [W]::PostMessage($hd, 0x100, [IntPtr]$code, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$code, [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 30 } }
     'dclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 40; foreach ($k in 1..2) { [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null; Start-Sleep -Milliseconds 40 } }
+    'drag' { $x1, $y1, $x2, $y2 = $arg -split ',' | ForEach-Object { [int]$_ }; $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, [IntPtr](($y1 -shl 16) -bor $x1)) | Out-Null; Start-Sleep -Milliseconds 80; foreach ($s in 1..10) { $x = $x1 + ($x2 - $x1) * $s / 10; $y = $y1 + ($y2 - $y1) * $s / 10; [W]::PostMessage($hd, $m, [IntPtr]0, [IntPtr](([int]$y -shl 16) -bor [int]$x)) | Out-Null; Start-Sleep -Milliseconds 40 }; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, [IntPtr](($y2 -shl 16) -bor $x2)) | Out-Null }
     'down' { [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null }
     'up' { [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null }
     'visible' { "game window visible: " + [W]::IsWindowVisible($game.MainWindowHandle) }
@@ -55,7 +57,7 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'wait' { Start-Sleep -Milliseconds ([int]([double]$arg * 1000)) }
     'click' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null }
     'type' { foreach ($ch in $arg.ToCharArray()) { [W]::PostMessage($hd, 0x102, [IntPtr][int]$ch, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 15 } }
-    'shot' { $script:shotN++; Remove-Item "$dir\shot_$shotN.bmp" -ErrorAction SilentlyContinue; [W]::PostMessage($hd, 0x8000 + 0x4D48, [IntPtr]$shotN, [IntPtr]0) | Out-Null; Start-Sleep -Milliseconds 400; $img = [System.Drawing.Image]::FromFile("$dir\shot_$shotN.bmp"); $out = Join-Path $shots "$arg.png"; $img.Save($out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose(); Remove-Item "$dir\shot_$shotN.bmp"; $out }
+    'shot' { $script:shotN++; Remove-Item "$dir\shot_$shotN.bmp" -ErrorAction SilentlyContinue; [W]::PostMessage($hd, 0x8000 + 0x4D48, [IntPtr]$shotN, [IntPtr]0) | Out-Null; $tw = Get-Date; while (-not (Test-Path "$dir\shot_$shotN.bmp") -and ((Get-Date) - $tw).TotalSeconds -lt 3) { Start-Sleep -Milliseconds 50 }; Start-Sleep -Milliseconds 100; $img = [System.Drawing.Image]::FromFile("$dir\shot_$shotN.bmp"); $out = Join-Path $shots "$arg.png"; $img.Save($out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose(); Remove-Item "$dir\shot_$shotN.bmp"; $out }
     
   }
   Start-Sleep -Milliseconds 150

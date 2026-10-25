@@ -77,14 +77,14 @@ Settings, breakpoints and the window layout are saved in
 - `script.go` registers the new Lua functions.
 
 `editor_frame.go` shares each frame drawn with the debugger, with the boxes of
-the players and helpers in it, and takes keys back (shared memory
+the players and helpers in it, and takes keys and Lua commands back (shared memory
 `Local\IkemenFrame<pid>`, its layout is at the top of the file); `system.go`
 calls it once per frame.
 
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`.
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture).
 
 ## How it works
 
@@ -107,7 +107,7 @@ Protocol, one line each:
 | game → debugger | `@IKSRC {...}` | engine side: where controllers come from, 300 per frame until all are sent (a character like Ryu by Pots has about 6000) |
 | game → debugger | `@IKBRK {...}` | a breakpoint stopped the game |
 | game → debugger | `@IKRES {...}` | result or error of a command |
-| debugger → game | `if ikdbg then ikdbg.exec('...') end` | Lua, run under `pcall` |
+| debugger → game | `if ikdbg then ikdbg.exec('...') end` | Lua, run under `pcall`. Through stdin, or with the engine side through the shared memory (no limit per frame, menus too) |
 
 Snapshots are about 1 KB per tick with two characters.
 

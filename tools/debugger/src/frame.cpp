@@ -1,12 +1,13 @@
 #include "frame.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
 namespace {
 
 const unsigned kMagic = 0x52464B49; // "IKFR"
-const unsigned kVersion = 1;
+const unsigned kVersion = 2;
 const size_t kHeader = 4096;
 
 unsigned Load(const unsigned char *p) { return *(const volatile unsigned *)p; }
@@ -77,3 +78,24 @@ bool FrameLink::SendEvent(int kind, int a, int b, int c) {
 }
 
 bool FrameLink::SendKey(int sdlKey, bool down, int sdlMods) { return SendEvent(1, sdlKey, down ? 1 : 0, sdlMods); }
+bool FrameLink::SendWindowFit(bool fit) { return SendEvent(2, fit ? 1 : 0, 0, 0); }
+
+bool FrameLink::SendCommand(const std::string &lua) {
+    if (!base_) return false;
+    unsigned ring = Load(base_ + 40), size = Load(base_ + 44);
+    unsigned written = Load(base_ + 48), read = Load(base_ + 52);
+    unsigned len = (unsigned)lua.size(), total = 4 + ((len + 3) & ~3u);
+    if (!size || lua.size() > size || size - (written - read) < total) return false;
+    unsigned char *data = base_ + ring;
+    auto put = [&](unsigned pos, const void *src, unsigned n) {
+        pos %= size;
+        unsigned first = std::min(n, size - pos);
+        memcpy(data + pos, src, first);
+        memcpy(data, (const char *)src + first, n - first);
+    };
+    put(written, &len, 4);
+    put(written + 4, lua.data(), len);
+    MemoryBarrier();
+    Store(base_ + 48, written + total);
+    return true;
+}

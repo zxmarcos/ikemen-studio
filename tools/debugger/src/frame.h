@@ -27,6 +27,10 @@ public:
     bool Read(GameFrame &out);
     // Sends a key to the game, read before its next frame: an SDL key code and SDL modifiers.
     bool SendKey(int sdlKey, bool down, int sdlMods);
+    // Has the game size its window as its picture (it is hidden, its frames are shown here).
+    bool SendWindowFit(bool fit);
+    // Lua the game runs before its next frame (in menus too); false when it does not fit.
+    bool SendCommand(const std::string &lua);
 
 private:
     bool SendEvent(int kind, int a, int b, int c);

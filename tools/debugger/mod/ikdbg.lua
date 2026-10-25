@@ -13,6 +13,8 @@
 -- In (stdin): Ikemen runs each line as Lua, once per frame. The debugger
 -- only sends "if ikdbg then ikdbg.exec('...') end", so a bad command is
 -- reported instead of raising a Lua error (which would stop the engine).
+-- The patched Ikemen also takes the same lines through shared memory
+-- (editor_frame.go): all of them every frame, in menus too.
 --
 -- With an Ikemen GO that has the debugger patch (script_debugger.go), the
 -- snapshots also list the state controllers that ran on the tick, and
@@ -23,7 +25,7 @@ if getCommandLineValue('-ikdbg') == nil then
 end
 
 ikdbg = {
-	version = '0.2',
+	version = '0.3',
 	caps = {
 		trace = debugTraceEnable ~= nil and debugTraceEnable(true),
 		set = setVar ~= nil,
@@ -106,12 +108,12 @@ end
 -- Runs f with the trigger context on the entity with this id; restores the
 -- previous context afterwards.
 function ikdbg.with(eid, f)
-	local oldid = id()
+	local hasOld, oldid = pcall(id)
 	local ok, a, b = false, nil, nil
 	if playerId(eid) then
 		ok, a, b = pcall(f)
 	end
-	playerId(oldid)
+	if hasOld then playerId(oldid) end
 	return ok, a, b
 end
 
@@ -166,9 +168,10 @@ function ikdbg.exec(code)
 		send('@IKRES', {ok = false, r = tostring(err), code = code})
 		return
 	end
-	local oldid = id()
+	-- Outside a match there is no character to go back to
+	local hasOld, oldid = pcall(id)
 	local res = {pcall(f)}
-	playerId(oldid)
+	if hasOld then pcall(playerId, oldid) end
 	local out = {}
 	for i = 2, #res do out[#out + 1] = tostring(res[i]) end
 	send('@IKRES', {ok = res[1], r = table.concat(out, ', '), code = code})

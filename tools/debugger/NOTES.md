@@ -20,14 +20,13 @@ user (2026-10-25):
   `-ikdbg`.
 - **Characters first**, then stages, then screenpacks.
 
-Phase 0, the infrastructure: frames and geometry in shared memory (done),
-keys from the editor (done), the game's window hidden (done). Still to do: a
-command channel that is not limited to one stdin line per frame during a
-match (the event ring in the shared memory can carry it, drained on the
-main thread every frame, menus included), mouse events for the game, the
-game's window size following the Game window.
+Phase 0, the infrastructure, is done: frames and geometry in shared memory,
+keys from the editor, the game's window hidden and sized as the game's
+picture (exact pixels), Lua commands through a ring in the same memory (all
+of them every frame, in menus too; stdin stays for an unpatched Ikemen).
+Mouse events are not sent: Ikemen GO does not use the mouse.
 
-Phase 1, characters: drag to move a player; the code editor with Apply (Go:
+Phase 1, characters: drag to move a player (done); the code editor with Apply (Go:
 recompile one character's states, commands, constants and animations
 without restarting the match); the animation editor with Clsn boxes dragged
 on the Game window; sprites, sounds, commands.
@@ -84,7 +83,7 @@ helper "Bag"):
 - window Game (patched Ikemen, OpenGL renderers): the game's frames, Clsn1
   and Clsn2 boxes and axes drawn over them, hover and click to select a
   player or helper; while it has focus, keys go to the game. The game's own
-  window is hidden.
+  window is hidden. Dragging a player or helper moves it (`debugMoveBy`).
 
 ## Build environment (this machine)
 
@@ -171,6 +170,13 @@ Frames (`editor_frame.go`):
   where the draw uses another aspect state.
 - Keys: `OnKeyPressed`/`OnKeyReleased` take SDL key codes; the game does not
   pause without focus, but it lowers its volume (`FocusLossVolume`).
+- Commands from the ring run with `sys.luaLState.DoString` inside `await`:
+  gopher-lua's `PCall` turns Go panics into errors, so a trigger called
+  without a character (in menus) fails cleanly. `id()` then fails: the mod
+  calls it under `pcall`.
+- The window is sized with `sys.window.Window.SetSize(scrrect)`; the game
+  resolution is `GameWidth`/`GameHeight` of `save/config.ini` (1280x720
+  here), the window size otherwise follows `WindowWidth`/`WindowHeight`.
 
 Compiler (`compiler.go`):
 

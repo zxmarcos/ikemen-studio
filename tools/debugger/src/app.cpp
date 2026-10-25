@@ -177,8 +177,12 @@ const Entity *FindEntity(int id) {
 
 bool Connected() { return g_bridge.Running() && g_hello; }
 
+// Lua for the mod. Through the shared memory when the game has it (no limit per frame, menus
+// too), else through stdin (one line per frame, matches only).
 void SendRaw(const std::string &lua) {
-    if (!g_bridge.Send("if ikdbg then " + lua + " end")) Log(LogLine::Error, "The game is not running.");
+    std::string line = "if ikdbg then " + lua + " end";
+    if (g_frameLink.IsOpen() && g_frameLink.SendCommand(line)) return;
+    if (!g_bridge.Send(line)) Log(LogLine::Error, "The game is not running.");
 }
 
 // Runs Lua in the game; the answer comes back as @IKRES.
@@ -625,7 +629,10 @@ void PollFrames() {
         if (ImGui::GetTime() - lastTry < 0.25) return;
         lastTry = ImGui::GetTime();
         if (!g_frameLink.Open(g_bridge.Pid())) return;
+        g_frameLink.SendWindowFit(!g_settings.gameWindow);
     }
+    static bool fit;
+    if (fit != !g_settings.gameWindow && g_frameLink.SendWindowFit(!g_settings.gameWindow)) fit = !g_settings.gameWindow;
     if (!g_frameLink.Read(g_frame)) return;
     g_framesRead++;
 
@@ -714,6 +721,27 @@ void GameWindow() {
         return ImVec2(p0.x + g_frameVp.x * scale + x * kx, p0.y + g_frameVp.y * scale + y * ky);
     };
 
+    // Dragging a player or helper moves it (debugMoveBy takes pixels of the game picture)
+    static int dragId = -1;
+    static ImVec2 dragRest;
+    if (dragId >= 0) {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !FindEntity(dragId)) {
+            dragId = -1;
+        } else {
+            ImVec2 d = ImGui::GetIO().MouseDelta;
+            dragRest.x += d.x / kx;
+            dragRest.y += d.y / ky;
+            float dx = std::trunc(dragRest.x), dy = std::trunc(dragRest.y);
+            if (dx != 0 || dy != 0) {
+                char lua[128];
+                snprintf(lua, sizeof(lua), "ikdbg.with(%d, function() debugMoveBy(%g, %g) end)", dragId, dx, dy);
+                SendRaw(lua);
+                dragRest.x -= dx;
+                dragRest.y -= dy;
+            }
+        }
+    }
+
     // What the mouse is over: the smallest box under it, else the nearest axis
     int hoverId = -1;
     if (hovered) {
@@ -742,8 +770,12 @@ void GameWindow() {
                 }
             }
         }
-        if (clicked && hoverId >= 0) g_selId = hoverId;
-        if (hoverId >= 0) {
+        if (clicked && hoverId >= 0) {
+            g_selId = hoverId;
+            dragId = hoverId;
+            dragRest = ImVec2(0, 0);
+        }
+        if (hoverId >= 0 && dragId < 0) {
             const Entity *ent = FindEntity(hoverId);
             ImGui::SetTooltip("%s  %s\nstate %d, anim %d", ent ? Who(ent->pn, ent->helper, ent->id).c_str() : "?",
                               ent ? ent->name.c_str() : "", ent ? ent->st : 0, ent ? ent->anim : 0);
