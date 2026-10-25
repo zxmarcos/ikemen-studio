@@ -71,6 +71,7 @@ func (c *CharCompiler) traced(sctrl StateController, line int32, typ string) Sta
 }
 
 func debuggerFunctions(l *lua.LState) {
+	editorReloadFunctions(l)
 	luaRegister(l, "debugTraceEnable", func(l *lua.LState) int {
 		/*Start or stop recording the state controllers that run.
 		@function debugTraceEnable
