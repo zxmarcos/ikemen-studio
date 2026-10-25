@@ -1,0 +1,58 @@
+﻿param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [string]$Exe = (Resolve-Path "$PSScriptRoot\..\..\..\Ikemen_GO.exe").Path, [string]$P1 = "kfm", [string]$P2 = "kfm", [string]$IniExtra = "", [string]$Shots = "$PSScriptRoot\..\build\shots")
+# UI test: starts build\ikemen-debugger.exe --launch, lays out both windows, runs actions and saves
+# the debugger's frames as PNGs in $Shots. -Fresh writes a new ini (AI on both sides).
+# Clicks are WM_APP+0x4D47 messages (wParam 0 move, 1/2 left down/up; lParam x|y<<16) and frames
+# are saved by the app itself on WM_APP+0x4D48, so the real mouse and screen are never used.
+# Coordinates are client pixels of the debugger window (sized to 1600x1000).
+# Actions, '|'-separated: key:F5 (key:F10*3 repeats) | wait:2 | click:x,y | dclick:x,y | type:text | shot:name
+Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+Add-Type @"
+using System; using System.Runtime.InteropServices; using System.Text;
+public class W {
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint f);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+}
+"@
+[W]::SetProcessDPIAware() | Out-Null
+$dir = (Resolve-Path "$PSScriptRoot\..\build").Path
+$shots = $Shots
+New-Item -ItemType Directory -Force $shots | Out-Null
+if ($Fresh) { "[IkemenDebugger][Settings]`nExe=$Exe`nP1=$P1`nP2=$P2`nStage=stage0`nExtra=-windowed -nosound`nAI1=1`nAI2=1`n$IniExtra" | Set-Content "$dir\ikemen-debugger.ini" -Encoding ascii }
+Get-Process Ikemen_GO, ikemen-debugger -ErrorAction SilentlyContinue | Stop-Process -Force
+$dbg = Start-Process "$dir\ikemen-debugger.exe" -ArgumentList "--launch" -PassThru
+$t0 = Get-Date
+while (((Get-Date) - $t0).TotalSeconds -lt 20) { $dbg.Refresh(); if ($dbg.MainWindowHandle -ne 0) { break }; Start-Sleep -Milliseconds 200 }
+$hd = $dbg.MainWindowHandle
+[W]::SetWindowPos($hd, [IntPtr]::Zero, 0, 0, 1600, 1000, 0x0040) | Out-Null
+$game = $null
+while (((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($game) { break }; Start-Sleep -Milliseconds 300 }
+if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } else { "game window not found" }
+Start-Sleep -Seconds $Wait
+
+$shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F5 = 0x74; F10 = 0x79; F11 = 0x7A; RETURN = 0x0D }
+foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
+  $kind, $arg = $a -split ':', 2
+  switch ($kind) {
+    'key' { $name, $times = $arg -split '\*'; if (-not $times) { $times = 1 }; for ($r = 0; $r -lt [int]$times; $r++) { $code = $vk[$name]; [W]::PostMessage($hd, 0x100, [IntPtr]$code, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$code, [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 30 } }
+    'dclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 40; foreach ($k in 1..2) { [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null; Start-Sleep -Milliseconds 40 } }
+    'wait' { Start-Sleep -Milliseconds ([int]([double]$arg * 1000)) }
+    'click' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null }
+    'type' { foreach ($ch in $arg.ToCharArray()) { [W]::PostMessage($hd, 0x102, [IntPtr][int]$ch, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 15 } }
+    'shot' { $script:shotN++; Remove-Item "$dir\shot_$shotN.bmp" -ErrorAction SilentlyContinue; [W]::PostMessage($hd, 0x8000 + 0x4D48, [IntPtr]$shotN, [IntPtr]0) | Out-Null; Start-Sleep -Milliseconds 400; $img = [System.Drawing.Image]::FromFile("$dir\shot_$shotN.bmp"); $out = Join-Path $shots "$arg.png"; $img.Save($out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose(); Remove-Item "$dir\shot_$shotN.bmp"; $out }
+    
+  }
+  Start-Sleep -Milliseconds 150
+}
+if (-not $Keep) {
+  $dbg.CloseMainWindow() | Out-Null; Start-Sleep -Seconds 2
+  Get-Process Ikemen_GO, ikemen-debugger -ErrorAction SilentlyContinue | Stop-Process -Force
+}
+"done"
