@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "bridge.h"
+#include "air.h"
 #include "editor.hpp"
 #include "frame.h"
 #include <GL/gl.h>
@@ -149,6 +151,9 @@ struct FrameEntity {
     bool helper = false;
     ImVec2 axis;
     std::vector<ImVec4> c1, c2; // x, y, w, h
+    int action = -1, elem = 0;  // the animation shown; elem 1-based
+    int animPn = 0;             // the player whose AIR file it comes from
+    ImVec2 k;                   // pixels per AIR unit (x has the facing's sign)
 };
 
 FrameLink g_frameLink;                   // frames shared by the patched Ikemen
@@ -160,7 +165,14 @@ ImVec2 g_frameScr;                       // size of the game picture
 std::vector<FrameEntity> g_frameEnts;
 unsigned g_framesRead;
 
+std::map<int, std::map<std::string, std::vector<std::string>>> g_charFiles; // pn -> [Files] key -> paths
+std::map<int, double> g_filesAsked;
+
 const size_t kHistory = 1200, kTrace = 4000, kLog = 4000;
+
+SourceFile &LoadSource(const std::string &file); // Code window
+void ReadSource(SourceFile &sf);
+bool SaveSource(SourceFile &sf);
 
 FILE *g_logFile; // the log also goes to ikemen-debugger.log next to the exe (read by test scripts)
 
@@ -343,6 +355,8 @@ void Launch() {
     g_selTick = -1;
     g_frameLink.Close();
     g_frameEnts.clear();
+    g_charFiles.clear();
+    g_filesAsked.clear();
     for (auto &b : g_ctrlBreaks) b.hits = 0;
     std::string error;
     if (!g_bridge.Launch(s.exe, args, error)) {
@@ -454,6 +468,7 @@ void OnSnapshot(const Json &j) {
 }
 
 void OnReload(const Json &j); // Code window
+void OnFiles(const Json &j);  // Animation window
 
 void OnLine(const Bridge::Line &line) {
     const std::string &text = line.text;
@@ -499,6 +514,8 @@ void OnLine(const Bridge::Line &line) {
             if (b.enabled) SendCtrlBreak(b, true, from);
     } else if (tag == "@IKRELOAD") {
         OnReload(j);
+    } else if (tag == "@IKFILES") {
+        OnFiles(j);
     } else if (tag == "@IKRES") {
         bool ok = j["ok"].truthy();
         std::string r = j["r"].str();
@@ -686,10 +703,394 @@ void PollFrames() {
         f.pn = e["pn"].i();
         f.helper = e["h"].truthy();
         f.axis = ImVec2((float)e["ax"][size_t(0)].num(), (float)e["ax"][1].num());
+        if (!e["an"].isNull()) {
+            f.action = e["an"].i();
+            f.elem = e["el"].i();
+            f.animPn = e["apn"].i();
+            f.k = ImVec2((float)e["k"][size_t(0)].num(), (float)e["k"][1].num());
+        }
         ReadBoxes(e["c1"], f.c1);
         ReadBoxes(e["c2"], f.c2);
         g_frameEnts.push_back(std::move(f));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Animation: the selected player's AIR element, its boxes edited here and on the game
+// ---------------------------------------------------------------------------
+
+bool g_boxEdit = true;    // the selected player's boxes can be dragged on the Game window
+bool g_animFollow = true; // the Animation window shows what the selected player shows
+int g_animAction = 0, g_animElem = 1;
+
+void OnFiles(const Json &j) {
+    for (const auto &p : j["players"].items) {
+        auto &files = g_charFiles[p["pn"].i()];
+        files.clear();
+        for (const auto &kv : p["files"].fields)
+            for (const auto &f : kv.second.items) files[kv.first].push_back(f.str());
+    }
+}
+
+// The AIR file of a player's animations ("" until the game has told).
+std::string AirPath(int pn) {
+    auto it = g_charFiles.find(pn);
+    if (it == g_charFiles.end()) {
+        if (Connected() && g_canTrace && ImGui::GetTime() - g_filesAsked[pn] > 2.0) {
+            g_filesAsked[pn] = ImGui::GetTime();
+            SendRaw("ikdbg.files()");
+        }
+        return "";
+    }
+    auto f = it->second.find("anim");
+    return f == it->second.end() || f->second.empty() ? "" : f->second[0];
+}
+
+// Parsed AIR files, parsed again when their text changes.
+struct AirCache {
+    std::string text;
+    bool parsed = false;
+    AirFile air;
+};
+std::map<std::string, AirCache> g_airs;
+
+const AirFile &AirOf(const SourceFile &sf) {
+    AirCache &c = g_airs[NormPath(sf.path)];
+    if (!c.parsed || c.text != sf.text) {
+        c.text = sf.text;
+        Air_Parse(c.text, c.air);
+        c.parsed = true;
+    }
+    return c.air;
+}
+
+const FrameEntity *FindFrameEntity(int id) {
+    for (const auto &f : g_frameEnts)
+        if (f.id == id) return &f;
+    return nullptr;
+}
+
+// What the Animation window works on: the selected entity's AIR file, action and element.
+struct AnimTarget {
+    const Entity *e = nullptr;
+    const FrameEntity *fe = nullptr;
+    int pn = 0; // the player whose AIR file it is
+    SourceFile *sf = nullptr;
+    const AirAction *act = nullptr;
+    int elem = 0;      // 1-based
+    bool live = false; // that element is the one on the game now
+};
+
+AnimTarget GetAnimTarget() {
+    AnimTarget t;
+    t.e = FindEntity(g_selId);
+    t.fe = FindFrameEntity(g_selId);
+    t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : t.e ? t.e->pn : 0;
+    if (t.pn <= 0) return t;
+    std::string path = AirPath(t.pn);
+    if (path.empty()) return t;
+    t.sf = &LoadSource(path);
+    const AirFile &air = AirOf(*t.sf);
+    if (g_animFollow && t.fe && t.fe->action >= 0) {
+        g_animAction = t.fe->action;
+        g_animElem = t.fe->elem;
+    }
+    auto it = air.actions.find(g_animAction);
+    if (it == air.actions.end() || it->second.elems.empty()) return t;
+    t.act = &it->second;
+    t.elem = std::max(1, std::min(g_animElem, (int)t.act->elems.size()));
+    t.live = t.fe && t.fe->action == g_animAction && t.fe->elem == t.elem;
+    return t;
+}
+
+// The changed AIR text goes to every player using that file (the file itself is saved apart).
+void ApplyAnims(SourceFile &sf) {
+    sf.version++; // the Code window's editor takes the new text
+    char dir[MAX_PATH];
+    GetTempPathA(MAX_PATH, dir);
+    for (const auto &kv : g_charFiles) {
+        auto f = kv.second.find("anim");
+        if (f == kv.second.end() || f->second.empty() || NormPath(f->second[0]) != NormPath(sf.path)) continue;
+        std::string tmp = std::string(dir) + "ikdbg_anim_" + std::to_string(kv.first) + ".air";
+        std::ofstream out(tmp, std::ios::binary);
+        out << sf.text;
+        out.close();
+        SendRaw("ikdbg.anims(" + std::to_string(kv.first) + ", " + LuaQuote(tmp) + ")");
+    }
+}
+
+void AddBox(AnimTarget &t, int g) {
+    const AirElem &el = t.act->elems[t.elem - 1];
+    std::vector<AirBox> boxes = el.clsn[g];
+    AirBox b;
+    if (boxes.empty()) {
+        b.x1 = -15, b.y1 = -80, b.x2 = 15, b.y2 = 0;
+    } else {
+        b = boxes.back();
+        b.y1 -= 10, b.y2 -= 10;
+    }
+    boxes.push_back(b);
+    if (Air_SetOwnBoxes(t.sf->text, el, g, boxes)) ApplyAnims(*t.sf);
+}
+
+void DeleteBox(AnimTarget &t, int g, int index) {
+    const AirElem &el = t.act->elems[t.elem - 1];
+    std::vector<AirBox> boxes = el.clsn[g];
+    boxes.erase(boxes.begin() + index);
+    if (Air_SetOwnBoxes(t.sf->text, el, g, boxes)) ApplyAnims(*t.sf);
+}
+
+// Number of elements of the action whose boxes come from that header line.
+int SharedBy(const AirAction &act, int g, int header) {
+    int n = 0;
+    for (const auto &e : act.elems) n += e.header[g] == header;
+    return n;
+}
+
+void AnimationWindow() {
+    if (!ImGui::Begin("Animation")) {
+        ImGui::End();
+        return;
+    }
+    AnimTarget t = GetAnimTarget();
+    if (!t.e) {
+        ImGui::TextDisabled("Pick a player in the Game or Players window.");
+        ImGui::End();
+        return;
+    }
+    ImGui::Text("%s  %s", Who(t.e->pn, t.e->helper, t.e->id).c_str(), t.e->name.c_str());
+    ImGui::Checkbox("Follow the player", &g_animFollow);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    if (ImGui::InputInt("Action", &g_animAction, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue)) g_animFollow = false;
+    ImGui::Checkbox("Drag its boxes on the game", &g_boxEdit);
+    HelpMarker("Pause the game (F5) and drag the edges, the corners or the inside of a box of the selected "
+               "player's element. Changes go to the game at once; Save writes the AIR file.");
+    if (!t.sf) {
+        ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", t.pn);
+        ImGui::End();
+        return;
+    }
+    SourceFile &sf = *t.sf;
+    ImGui::BeginDisabled(!sf.Dirty());
+    if (ImGui::Button("Save")) SaveSource(sf);
+    ImGui::SameLine();
+    if (ImGui::Button("Revert")) {
+        ReadSource(sf);
+        ApplyAnims(sf);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
+    if (!t.act) {
+        ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
+        ImGui::End();
+        return;
+    }
+
+    // The elements; a click shows one on the game (pause first to keep it there)
+    ImGui::SeparatorText("Elements");
+    for (int n = 1; n <= (int)t.act->elems.size(); n++) {
+        if (n > 1) ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 2) ImGui::NewLine();
+        bool cur = n == t.elem;
+        if (t.act->loopStart == n - 1) {
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+        }
+        if (cur) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        char label[16];
+        snprintf(label, sizeof(label), "%d", n);
+        if (ImGui::SmallButton(label)) {
+            g_animElem = n;
+            if (t.fe && t.fe->action == g_animAction) {
+                char lua[96];
+                snprintf(lua, sizeof(lua), "ikdbg.with(%d, function() debugSetAnimElem(%d) end)", t.e->id, n);
+                SendRaw(lua);
+            } else {
+                g_animFollow = false;
+            }
+        }
+        if (cur) ImGui::PopStyleColor();
+    }
+
+    const AirElem &el = t.act->elems[t.elem - 1];
+    ImGui::SeparatorText("Element");
+    int v[5] = {el.group, el.image, el.x, el.y, el.time};
+    const char *names[5] = {"group", "image", "x", "y", "time"};
+    bool done = false;
+    for (int n = 0; n < 5; n++) {
+        if (n) ImGui::SameLine();
+        ImGui::PushID(n);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 3.5f);
+        if (ImGui::DragInt(names[n], &v[n], 0.2f)) Air_SetElem(sf.text, el, v[0], v[1], v[2], v[3], v[4]);
+        done |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::PopID();
+    }
+    if (done) ApplyAnims(sf);
+    ImGui::TextDisabled("line %d", el.line);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Show in Code")) {
+        g_codeFile = sf.path;
+        g_codeLine = g_codeScrollTo = el.line;
+    }
+
+    for (int g = 1; g >= 0; g--) {
+        ImGui::PushID(g);
+        ImGui::SeparatorText(g == 1 ? "Clsn2 (can be hit)" : "Clsn1 (hits)");
+        if (el.header[g] == 0)
+            ImGui::TextDisabled("none");
+        else if (el.own[g])
+            ImGui::TextDisabled("its own, line %d", el.header[g]);
+        else
+            ImGui::TextDisabled("the action's default (line %d), shared by %d elements", el.header[g],
+                                SharedBy(*t.act, g, el.header[g]));
+        for (size_t i = 0; i < el.clsn[g].size(); i++) {
+            const AirBox &b = el.clsn[g][i];
+            ImGui::PushID((int)i);
+            int r[4] = {b.x1, b.y1, b.x2, b.y2};
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14);
+            if (ImGui::DragInt4("##box", r, 0.2f)) Air_SetBox(sf.text, b, r[0], r[1], r[2], r[3]);
+            if (ImGui::IsItemDeactivatedAfterEdit()) ApplyAnims(sf);
+            ImGui::SameLine();
+            bool del = ImGui::SmallButton("x");
+            ImGui::SetItemTooltip("Delete this box (the element gets its own boxes)");
+            ImGui::PopID();
+            if (del) {
+                DeleteBox(t, g, (int)i);
+                ImGui::PopID();
+                ImGui::End();
+                return; // the element's lines changed
+            }
+        }
+        if (ImGui::SmallButton("Add a box")) {
+            AddBox(t, g);
+            ImGui::PopID();
+            ImGui::End();
+            return;
+        }
+        ImGui::PopID();
+    }
+    ImGui::End();
+}
+
+// The selected player's boxes on the Game window, with handles: drag an edge, a corner or the
+// inside. Returns true while it has the mouse (the Game window then neither selects nor moves).
+struct BoxDrag {
+    bool active = false;
+    int g = 0, i = 0, edges = 0; // edges: 1 left, 2 right, 4 top, 8 bottom (screen); 15 move
+    ImVec2 start;                // mouse, in AIR units
+    AirBox box;                  // when the drag started
+} g_boxDrag;
+
+bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(float, float)> &toScreen,
+                    const std::function<ImVec2(ImVec2)> &toPicture, bool &shown) {
+    shown = false;
+    AnimTarget t = GetAnimTarget();
+    if (!g_boxEdit || !t.live || !t.fe || t.fe->k.x == 0 || t.fe->k.y == 0) {
+        g_boxDrag.active = false;
+        return false;
+    }
+    shown = true;
+    const AirElem &el = t.act->elems[t.elem - 1];
+    const FrameEntity &fe = *t.fe;
+    auto airToScreen = [&](float x, float y) { return toScreen(fe.axis.x + fe.k.x * x, fe.axis.y + fe.k.y * y); };
+    auto screenToAir = [&](ImVec2 s) {
+        ImVec2 p = toPicture(s);
+        return ImVec2((p.x - fe.axis.x) / fe.k.x, (p.y - fe.axis.y) / fe.k.y);
+    };
+    // The box as dragged so far (AIR units, x1 <= x2, y1 <= y2)
+    auto dragged = [&](ImVec2 m) {
+        AirBox b = g_boxDrag.box;
+        ImVec2 a = screenToAir(m);
+        int dx = (int)lroundf(a.x - g_boxDrag.start.x), dy = (int)lroundf(a.y - g_boxDrag.start.y);
+        int e = g_boxDrag.edges;
+        if (e == 15) {
+            b.x1 += dx, b.x2 += dx, b.y1 += dy, b.y2 += dy;
+        } else {
+            // facing left: the screen's left edge is the box's x2
+            bool flip = fe.k.x < 0;
+            if (e & 1) (flip ? b.x2 : b.x1) += dx;
+            if (e & 2) (flip ? b.x1 : b.x2) += dx;
+            if (e & 4) b.y1 += dy;
+            if (e & 8) b.y2 += dy;
+        }
+        if (b.x1 > b.x2) std::swap(b.x1, b.x2);
+        if (b.y1 > b.y2) std::swap(b.y1, b.y2);
+        return b;
+    };
+    ImVec2 m = ImGui::GetMousePos();
+    float grab = ImGui::GetFontSize() * 0.45f;
+    int hitG = -1, hitI = -1, hitEdges = 0;
+    float hitArea = FLT_MAX;
+    for (int g = 0; g < 2; g++)
+        for (size_t i = 0; i < el.clsn[g].size(); i++) {
+            const AirBox &b = el.clsn[g][i];
+            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
+            if (m.x < lo.x - grab || m.x > hi.x + grab || m.y < lo.y - grab || m.y > hi.y + grab) continue;
+            int edges = (fabsf(m.x - lo.x) < grab ? 1 : 0) | (fabsf(m.x - hi.x) < grab ? 2 : 0) |
+                        (fabsf(m.y - lo.y) < grab ? 4 : 0) | (fabsf(m.y - hi.y) < grab ? 8 : 0);
+            float area = (hi.x - lo.x) * (hi.y - lo.y);
+            if (edges == 0 && (m.x < lo.x || m.x > hi.x || m.y < lo.y || m.y > hi.y)) continue;
+            // An edge beats an inside; among insides the smallest box wins
+            bool better = hitG < 0 || (edges && !hitEdges) || ((edges != 0) == (hitEdges != 0) && area < hitArea);
+            if (better) {
+                hitG = g, hitI = (int)i, hitEdges = edges ? edges : 15, hitArea = area;
+                if (edges == 0) hitEdges = 15;
+            }
+        }
+
+    if (g_boxDrag.active && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        // Released: write the box and send the animations to the game
+        AirBox b = dragged(m);
+        const AirBox &old = g_boxDrag.box;
+        g_boxDrag.active = false;
+        if ((b.x1 != old.x1 || b.y1 != old.y1 || b.x2 != old.x2 || b.y2 != old.y2) && g_boxDrag.g < 2 &&
+            g_boxDrag.i < (int)el.clsn[g_boxDrag.g].size() &&
+            Air_SetBox(t.sf->text, el.clsn[g_boxDrag.g][g_boxDrag.i], b.x1, b.y1, b.x2, b.y2))
+            ApplyAnims(*t.sf);
+        return true;
+    }
+    if (!g_boxDrag.active && hovered && hitG >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        g_boxDrag.active = true;
+        g_boxDrag.g = hitG, g_boxDrag.i = hitI, g_boxDrag.edges = hitEdges;
+        g_boxDrag.start = screenToAir(m);
+        g_boxDrag.box = el.clsn[hitG][hitI];
+    }
+
+    int cursorEdges = g_boxDrag.active ? g_boxDrag.edges : hovered ? hitEdges : 0;
+    if (cursorEdges == 15)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    else if ((cursorEdges & 3) && (cursorEdges & 12))
+        ImGui::SetMouseCursor(((cursorEdges & 1) != 0) == ((cursorEdges & 4) != 0) ? ImGuiMouseCursor_ResizeNWSE
+                                                                                    : ImGuiMouseCursor_ResizeNESW);
+    else if (cursorEdges & 3)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    else if (cursorEdges & 12)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+
+    float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
+    for (int g = 0; g < 2; g++)
+        for (size_t i = 0; i < el.clsn[g].size(); i++) {
+            bool dragging = g_boxDrag.active && g_boxDrag.g == g && g_boxDrag.i == (int)i;
+            bool hot = dragging || (!g_boxDrag.active && hitG == g && hitI == (int)i);
+            AirBox b = dragging ? dragged(m) : el.clsn[g][i];
+            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
+            ImU32 line = g == 0 ? IM_COL32(255, 70, 70, 255) : IM_COL32(80, 140, 255, 255);
+            draw->AddRectFilled(lo, hi, g == 0 ? IM_COL32(255, 70, 70, hot ? 80 : 40) : IM_COL32(80, 140, 255, hot ? 80 : 40));
+            draw->AddRect(lo, hi, line, 0, hot ? thick * 2 : thick);
+            float h = grab * 0.5f;
+            for (ImVec2 p : {lo, hi, ImVec2(lo.x, hi.y), ImVec2(hi.x, lo.y)})
+                draw->AddRectFilled(ImVec2(p.x - h, p.y - h), ImVec2(p.x + h, p.y + h), line);
+            if (dragging) {
+                char label[64];
+                snprintf(label, sizeof(label), "%d, %d, %d, %d", b.x1, b.y1, b.x2, b.y2);
+                draw->AddText(ImVec2(lo.x, hi.y + thick * 2), IM_COL32(255, 255, 255, 255), label);
+            }
+        }
+    return g_boxDrag.active || (hovered && hitG >= 0);
 }
 
 void GameWindow() {
@@ -739,6 +1140,18 @@ void GameWindow() {
     auto toScreen = [&](float x, float y) {
         return ImVec2(p0.x + g_frameVp.x * scale + x * kx, p0.y + g_frameVp.y * scale + y * ky);
     };
+    auto toPicture = [&](ImVec2 s) {
+        return ImVec2((s.x - p0.x - g_frameVp.x * scale) / kx, (s.y - p0.y - g_frameVp.y * scale) / ky);
+    };
+
+    // The selected player's boxes, editable (Animation window); they take the mouse first
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
+    draw->ChannelsSplit(2);
+    draw->ChannelsSetCurrent(1);
+    bool boxesShown = false;
+    bool boxMouse = BoxEditOverlay(draw, hovered, toScreen, toPicture, boxesShown);
+    draw->ChannelsSetCurrent(0);
 
     // Dragging a player or helper moves it (debugMoveBy takes pixels of the game picture)
     static int dragId = -1;
@@ -763,7 +1176,7 @@ void GameWindow() {
 
     // What the mouse is over: the smallest box under it, else the nearest axis
     int hoverId = -1;
-    if (hovered) {
+    if (hovered && !boxMouse) {
         ImVec2 m = ImGui::GetMousePos();
         float best = FLT_MAX;
         for (const auto &e : g_frameEnts)
@@ -801,13 +1214,11 @@ void GameWindow() {
         }
     }
 
-    ImDrawList *draw = ImGui::GetWindowDrawList();
-    draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
     for (const auto &e : g_frameEnts) {
         bool sel = e.id == g_selId, hot = e.id == hoverId;
         if (onlySelected && !sel && !hot) continue;
-        if (showBoxes) {
+        if (showBoxes && !(sel && boxesShown)) {
             for (int group = 1; group <= 2; group++) {
                 ImU32 line = group == 1 ? IM_COL32(255, 70, 70, sel || hot ? 255 : 170)
                                         : IM_COL32(80, 140, 255, sel || hot ? 255 : 170);
@@ -833,6 +1244,7 @@ void GameWindow() {
             }
         }
     }
+    draw->ChannelsMerge();
     draw->PopClipRect();
     if (focused) draw->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), IM_COL32(90, 200, 90, 200), 0, thick);
     ImGui::End();
@@ -1785,6 +2197,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Control", control);
     ImGui::DockBuilderDockWindow("Game", players);
     ImGui::DockBuilderDockWindow("Inspector", right);
+    ImGui::DockBuilderDockWindow("Animation", right);
     ImGui::DockBuilderDockWindow("Code", bottom);
     ImGui::DockBuilderDockWindow("Frame data", bottom);
     ImGui::DockBuilderDockWindow("Trace", bottom);
@@ -1880,6 +2293,7 @@ void App_Frame() {
     ImGui::DockSpaceOverViewport(dock);
     PollFrames();
     GameWindow();
+    AnimationWindow();
     SessionWindow();
     ControlWindow();
     PlayersWindow();

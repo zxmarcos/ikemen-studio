@@ -29,9 +29,11 @@ Mouse events are not sent: Ikemen GO does not use the mouse.
 Phase 1, characters: drag to move a player (done); the code editor with
 Apply (done: `editor_reload.go` recompiles the characters' states, commands,
 constants, animations and sounds without restarting the match; the editor
-widget is `src/editor.cpp`); next, the animation
-editor with Clsn boxes dragged on the Game window; then sprites, sounds,
-commands.
+widget is `src/editor.cpp`); the animation editor
+(done, first part: window Animation, Clsn boxes dragged on the Game window,
+`src/air.cpp` parses and edits AIR text; to do: the sprite offset dragged,
+new actions and elements, onion skin, a canvas of its own); then sprites,
+sounds, commands.
 
 ## Where things are
 
@@ -59,6 +61,7 @@ tools/debugger/
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
   src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
+  src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)

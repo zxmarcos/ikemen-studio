@@ -11,6 +11,7 @@
 --   @IKRES {...}     result of an ikdbg.exec call
 --   @IKSRC {...}     where state controllers come from (needs the debugger patch)
 --   @IKRELOAD {...}  result of ikdbg.reload (needs the debugger patch)
+--   @IKFILES {...}   every player's files (needs the debugger patch)
 -- In (stdin): Ikemen runs each line as Lua, once per frame. The debugger
 -- only sends "if ikdbg then ikdbg.exec('...') end", so a bad command is
 -- reported instead of raising a Lua error (which would stop the engine).
@@ -226,6 +227,25 @@ function ikdbg.reload()
 		end
 	end
 	send('@IKRELOAD', {items = items})
+	ikdbg.dirty = true
+end
+
+-- Every player's files: @IKFILES {players = [{pn, files = {key = [paths]}}]}.
+function ikdbg.files()
+	local players = {_array = true}
+	if debugCharFiles ~= nil then
+		for pn = 1, 8 do
+			local f = debugCharFiles(pn)
+			if f.def then table.insert(players, {pn = pn, files = f}) end
+		end
+	end
+	send('@IKFILES', {players = players})
+end
+
+-- Compiles a player's animations from unsaved text (a file the debugger wrote).
+function ikdbg.anims(pn, textFile)
+	local ok, err = debugReloadAnims(pn, textFile)
+	if not ok then send('@IKRES', {ok = false, r = 'animations of P' .. pn .. ': ' .. tostring(err)}) end
 	ikdbg.dirty = true
 end
 

@@ -1,0 +1,42 @@
+// AIR files (character animations): the actions, their elements and Clsn boxes
+// with the lines they are on, and edits of the text that keep everything else.
+// Boxes follow Ikemen's reading (anim.go): an element takes the "ClsnN:" or
+// "ClsnNDefault:" group read since the element before it, else the last
+// "ClsnNDefault:" group of the action.
+#pragma once
+
+#include <map>
+#include <string>
+#include <vector>
+
+struct AirBox {
+    int line = 0; // 1-based
+    int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+};
+
+struct AirElem {
+    int line = 0;
+    int group = 0, image = 0, x = 0, y = 0, time = 0;
+    std::vector<AirBox> clsn[2]; // Clsn1, Clsn2 in effect for this element
+    int header[2] = {};          // line of the "ClsnN: n" / "ClsnNDefault: n" they come from, 0: none
+    bool own[2] = {};            // that header is the element's own (not a default)
+};
+
+struct AirAction {
+    int no = 0;
+    int line = 0, last = 0; // of "[Begin Action]" and its last line
+    int loopStart = -1;     // element index
+    std::vector<AirElem> elems;
+};
+
+struct AirFile {
+    std::map<int, AirAction> actions;
+};
+
+void Air_Parse(const std::string &text, AirFile &out);
+
+// Edits ('\n' line ends). Each returns false when it could not be done.
+bool Air_SetBox(std::string &text, const AirBox &box, int x1, int y1, int x2, int y2);
+// Gives the element its own group of boxes (written before its line, replacing an own group).
+bool Air_SetOwnBoxes(std::string &text, const AirElem &elem, int group, const std::vector<AirBox> &boxes);
+bool Air_SetElem(std::string &text, const AirElem &elem, int group, int image, int x, int y, int time);

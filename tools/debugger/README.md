@@ -56,6 +56,7 @@ Windows:
 | Game (engine side) | The game itself: its frames, with the collision boxes and axes over them; hover a player or helper to see it, click to select it. While the window has focus, the keyboard goes to the game (but F5, F10, F11). The game's own window is hidden unless Session says otherwise |
 | Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
 | Players | Every player and helper: state, previous state, animation, element, time, types, ctrl, position, velocity, life, power |
+| Animation (engine side) | The selected entity's animation element in its AIR file: the elements (a click shows one on the game), the element's sprite, offset and time, its Clsn1 and Clsn2 boxes (own, or the action's default and how many elements share it), add and delete boxes. With **Drag its boxes on the game**, the boxes are drawn on the Game window with handles: drag an edge, a corner or the inside. Every change goes to the game at once (only the animations are compiled again); **Save** writes the AIR file, which the Code window edits too |
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
@@ -84,7 +85,7 @@ calls it once per frame.
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match).
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`.
 
 ## How it works
 
@@ -108,6 +109,7 @@ Protocol, one line each:
 | game → debugger | `@IKBRK {...}` | a breakpoint stopped the game |
 | game → debugger | `@IKRES {...}` | result or error of a command |
 | game → debugger | `@IKRELOAD {...}` | engine side: result of reloading the characters (per player: ok, or the compiler's error) |
+| game → debugger | `@IKFILES {...}` | engine side: every player's files ([Files] of the def, resolved) |
 | debugger → game | `if ikdbg then ikdbg.exec('...') end` | Lua, run under `pcall`. Through stdin, or with the engine side through the shared memory (no limit per frame, menus too) |
 
 Snapshots are about 1 KB per tick with two characters.
