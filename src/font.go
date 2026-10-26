@@ -621,6 +621,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32,
 	if len(txt) == 0 || xscl == 0 || yscl == 0 {
 		return
 	}
+	editorFontDrawn(f)
 
 	var bt int32
 	if f.BankType == "sprite" {

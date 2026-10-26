@@ -39,6 +39,7 @@ type editorFightDrawn struct {
 	n    int        // quads drawn
 	// The action of the def it shows (Begin Action) and its element (1-based), -1: none (a sprite, a text)
 	action, elem int32
+	font         int32 // a text's font: 1 + its index in edFont.files, 0 none
 }
 
 type EditorFight struct {
@@ -47,10 +48,8 @@ type EditorFight struct {
 	index   map[editorFightSource]int32
 	cur     int // 1 + the index in drawn of the Layout being drawn, 0 for none
 	drawn   []editorFightDrawn
-	keep    bool            // reloading after an edit of the text: the files in use are borrowed
-	newSff  bool            // reloading after an edit of the SFF: it is read again, keep or not
-	fonts   map[string]*Fnt // the fonts fight screens and motifs loaded, by file name and height
-	inFont  bool
+	keep    bool // reloading after an edit of the text: the files in use are borrowed
+	newSff  bool // reloading after an edit of the SFF: it is read again, keep or not
 }
 
 // editorSourceIndex: 1 + the index of a source in the table, added when new.
@@ -112,30 +111,6 @@ func editorKeptSnd(filename string) *Snd {
 		return s
 	}
 	return nil
-}
-
-// editorKeptFont runs in loadFnt: the fonts of fight screens and motifs are kept, and not read
-// again while the editor reloads one after an edit of its text.
-func editorKeptFont(filename string, height int32) *Fnt {
-	e := &edFight
-	if (e.section == "" && !edMotif.loading && !edStoryboard.loading) || e.inFont {
-		return nil
-	}
-	key := filename + "|" + strconv.Itoa(int(height))
-	if f := e.fonts[key]; f != nil && (e.keep || edMotif.keep || edStoryboard.keep) {
-		return f
-	}
-	e.inFont = true
-	f, err := loadFnt(filename, height)
-	e.inFont = false
-	if err != nil {
-		return nil
-	}
-	if e.fonts == nil {
-		e.fonts = make(map[string]*Fnt)
-	}
-	e.fonts[key] = f
-	return f
 }
 
 // editorFightSection runs in loadFightScreen for each section it reads, and with "" when it ends.
@@ -213,16 +188,18 @@ func editorRenderSprite(rp *RenderParams) {
 // editorScreenGeometry adds the fight screen and the motif to the frame geometry and starts the
 // next frame's list:
 //
-//	"fight": {"def", "sff", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem, tag], ...]}: its
-//	  SFF's file, and in drawing order,
+//	"fight": {"def", "sff", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem, tag, font], ...]}:
+//	  its SFF's file, and in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
 //	  rectangle in the game picture's pixels and the pixels per unit of the def's positions, 0 (bg),
 //	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1, and
-//	  which place of the scripts' it was drawn at (debugAnimTag; 0 none);
+//	  which place of the scripts' it was drawn at (debugAnimTag; 0 none), a text's font (1 + its
+//	  index in "fonts", 0 none);
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
 //	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem, 0] (kx, ky: per unit of its start);
 //	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go);
-//	"select": the motif's select.def (editor_select.go).
+//	"select": the motif's select.def (editor_select.go);
+//	"fonts": the font files loaded, in the order they were first loaded (editor_font.go).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
 	block := func(name, def string, sff *Sff, file int8) {
@@ -256,7 +233,7 @@ func editorScreenGeometry(b []byte) []byte {
 				b = append(b, ',')
 				b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
 			}
-			for _, v := range [...]int32{src.bg, d.action, d.elem, src.tag} {
+			for _, v := range [...]int32{src.bg, d.action, d.elem, src.tag, d.font} {
 				b = append(b, ',')
 				b = strconv.AppendInt(b, int64(v), 10)
 			}
@@ -273,6 +250,14 @@ func editorScreenGeometry(b []byte) []byte {
 		b = append(b, `,"select":`...)
 		b = editorJSONString(b, sys.motif.Files.Select)
 	}
+	b = append(b, `,"fonts":[`...)
+	for i, f := range edFont.files {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = editorJSONString(b, f)
+	}
+	b = append(b, ']')
 	edFight.drawn = edFight.drawn[:0]
 	edFight.cur = 0
 	return b
