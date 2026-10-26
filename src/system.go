@@ -990,6 +990,7 @@ func (s *System) renderFrame() {
 
 	x, y, scl := s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale/s.cam.BaseScale()
 	dx, dy, dscl := s.zoom.computeCamera(x, y, scl)
+	dx, dy, dscl = editorCamera(dx, dy, dscl)
 	s.draw(dx, dy, dscl)
 
 	// Lua

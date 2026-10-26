@@ -188,6 +188,11 @@ func (f *EditorFrame) readCommands() {
 func editorFrameGeometry(winW, winH int32) []byte {
 	f := &edFrame
 	b := f.geom[:0]
+	// Where things are as drawn: with the camera the frame was drawn with (zoom effects, the
+	// editor's free camera), which DebugClsn.Add and the code below read from sys.cam
+	oldPos, oldScale := sys.cam.Pos, sys.cam.Scale
+	sys.cam.Pos[0], sys.cam.Pos[1], sys.cam.Scale = editorDrawCamera()
+	defer func() { sys.cam.Pos, sys.cam.Scale = oldPos, oldScale }()
 	num := func(v float32) {
 		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
 			v = 0
