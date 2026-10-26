@@ -59,6 +59,7 @@ Windows:
 | Animation (engine side) | The selected entity's animation element in its AIR file: the elements (a click shows one on the game), the element's sprite, offset and time, its Clsn1 and Clsn2 boxes (own, or the action's default and how many elements share it), add and delete boxes. The action can be shown on the player, copied, renumbered or deleted; an element duplicated, deleted, moved or made the loop start. With **On the game, drag its boxes**, the boxes are drawn on the Game window with handles: drag an edge, a corner or the inside; with **the sprite**, a drag near the player moves the element's offset. The previous element's boxes can be shown faint. Every change goes to the game at once (only the animations are compiled again); **Save** writes the AIR file, which the Code window edits too |
 | Sprites (engine side) | The selected player's SFF file (v1 or v2): the sprites, filtered by group; a preview (wheel: zoom, drag: move the axis) with any of the palettes; renumber, axis, replace with a PNG, save as a PNG, delete; add PNG files (to the character's palette 1,1, or with palettes of their own). **Save** writes SFF v2 (the first time the old file is kept as `.bak`) and the game reads it again at once. The Animation window picks an element's sprite among thumbnails and can show the previous element's sprite faint on the game |
 | Sounds (engine side) | The selected player's SND file: every sound with its length and format, played here (Play, Stop); renumber, replace with a WAV file, save as a WAV file, delete, add WAV files. **Save** writes the file (the first time the old one is kept as `.bak`) and the game reads it again at once |
+| Commands (engine side) | The selected player's input as the game reads it: the keys held now (hover one: for how many frames) and before, with how many frames each lasted. The [Command] sections of its CMD file: the steps done of each command under way, green while `command = "name"` is true (fading for a second after), how many times each was completed. The selected command's name, keys, time, buffer.time and steptime are edited here (empty: the default); duplicate, delete, add, show in Code. **Apply** (Ctrl+S) saves and the game compiles the characters again, as in Code |
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
@@ -82,7 +83,8 @@ Settings, breakpoints and the window layout are saved in
 `editor_frame.go` shares each frame drawn with the debugger, with the boxes of
 the players and helpers in it, and takes keys and Lua commands back (shared memory
 `Local\IkemenFrame<pid>`, its layout is at the top of the file); `system.go`
-calls it once per frame.
+calls it once per frame. `editor_input.go` adds each player's input buffer
+and the commands under way to that geometry.
 
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,

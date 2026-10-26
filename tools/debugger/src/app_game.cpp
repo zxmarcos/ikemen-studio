@@ -159,6 +159,9 @@ void PollFrames() {
         }
         ReadBoxes(e["c1"], f.c1);
         ReadBoxes(e["c2"], f.c2);
+        for (const auto &v : e["in"].items) f.held.push_back(v.i());
+        for (const auto &c : e["cm"].items)
+            f.cmds.push_back({c[size_t(0)].str(), c[1].i(), c[2].i(), c[3].i(), c[4].i(), c[5].i(), c[6].i()});
         g_frameEnts.push_back(std::move(f));
     }
 }

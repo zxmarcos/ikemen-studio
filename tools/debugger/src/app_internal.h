@@ -5,6 +5,7 @@
 //   app_sprites.cpp  Sprites: the SFF file
 //   app_sounds.cpp   Sounds: the SND file
 //   app_code.cpp     Code: the source files, Apply
+//   app_cmd.cpp      Commands: input, the commands under way, the CMD file
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -120,6 +121,14 @@ struct FrameEntity {
     int action = -1, elem = 0;  // the animation shown; elem 1-based
     int animPn = 0;             // the player whose AIR file it comes from
     ImVec2 k;                   // pixels per AIR unit (x has the facing's sign)
+    // Players only: frames each of U, D, B, F, a, b, c, x, y, z, s, d, w, m is held (> 0) or
+    // released (< 0), and the commands under way or buffered (editor_input.go)
+    std::vector<int> held;
+    struct Cmd {
+        std::string name;
+        int n, done, steps, time, maxtime, buffer; // n: the n-th definition of that name
+    };
+    std::vector<Cmd> cmds;
 };
 
 extern Bridge g_bridge;
@@ -243,12 +252,18 @@ void SpritesWindow();
 void SoundsWindow();
 
 // Code
+extern bool g_applying;          // waiting for the game's answer to Apply
+extern std::string g_applyError; // of the last Apply that failed
 std::string GamePath(const std::string &file);
 SourceFile &LoadSource(const std::string &file);
 void ReadSource(SourceFile &sf);
 bool SaveSource(SourceFile &sf);
+void SaveAndApply(); // saves the files changed, the game compiles its characters again
 void OnReload(const Json &j);
 void CodeWindow();
+
+// Commands
+void CommandsWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void SessionWindow();

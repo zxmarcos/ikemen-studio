@@ -39,7 +39,11 @@ the app to draw sprites, i.e. an SFF reader); sprites (done: window
 Sprites, `src/sff.cpp` with checked
 decoders and lodepng; `debugReloadSprites`; the sprite picker and the onion
 sprite in Animation); sounds (done: window Sounds, `src/snd.cpp`,
-`debugReloadSounds`; played by the app with PlaySound); next, commands.
+`debugReloadSounds`; played by the app with PlaySound); commands (done:
+window Commands; `editor_input.go` sends each player's input buffer and the
+commands under way with the frame geometry; `src/cmd.cpp` parses and edits
+the [Command] sections, applied with the Code window's reload). Next: live
+trigger values in Code, then stages (phase 2).
 
 ## Where things are
 
@@ -60,6 +64,7 @@ src/script_debugger.go   engine side: controller sources and trace, setters, Lua
 src/editor_frame.go      engine side: frames, geometry and input events in shared memory
 src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
 src/editor_reload.go     reloading a character during a match (debugReloadChar)
+src/editor_input.go      engine side: players' input buffers and commands under way, for the geometry
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -70,6 +75,7 @@ tools/debugger/
   src/app_sprites.cpp    Sprites window (SFF), file dialogs
   src/app_sounds.cpp     Sounds window (SND)
   src/app_code.cpp       Code window: source files, Apply
+  src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -77,8 +83,9 @@ tools/debugger/
   src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
+  src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
-  tests/                 air_test.cpp, sff_test.cpp, snd_test.cpp (scripts/build.ps1 test)
+  tests/                 air_test, sff_test, snd_test, cmd_test .cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -132,7 +139,8 @@ helper "Bag"):
   (`tests/air_test.cpp`, AIR parsing and edits; `tests/sff_test.cpp`, every
   sprite of kfm.sff (v2) and ryusprite.sff (v1) decoded, written as v2 and
   read back with the same pixels, a sprite through PNG and back;
-  `tests/snd_test.cpp`, kfm.snd read and written back to the same bytes).
+  `tests/snd_test.cpp`, kfm.snd read and written back to the same bytes;
+  `tests/cmd_test.cpp`, CMD parsing and edits, kfm.cmd's 37 commands).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -155,9 +163,12 @@ helper "Bag"):
   and `lua:code`: Lua run as if typed in the Console (`WM_COPYDATA`,
   dwData 0x4D47). The debugger's log, results included, is also written to
   `build/ikemen-debugger.log`, so a test can read what Lua returned. Also
-  `wheel:x,y,n` (the test mouse message takes 3/4 right button, 5/6 wheel).
-  Click
-  coordinates depend on the layout: take a shot first.
+  `wheel:x,y,n` (the test mouse message takes 3/4 right button, 5/6 wheel),
+  and `keys:+DOWN,+RIGHT,-DOWN,+A,-A,-RIGHT` (50 ms apart: every other
+  action is followed by 150 ms, too slow for a motion within 15 frames). Keys
+  reach the game only while Game has focus: click the picture first. P1's
+  keyboard (`save/config.ini`): arrows, a b c = Z X C, x y z = A S D.
+  Click coordinates depend on the layout: take a shot first.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and
   `~*kb` to find it.
@@ -236,6 +247,21 @@ Reloading a character (`editor_reload.go`):
   `loadPalettes` for the ACT files) and compiles the animations again (they
   hold the SFF); `debugReloadSounds` uses `LoadSndFiltered`.
 
+Input and commands (`input.go`):
+
+- A player's `InputBuffer` (shared by all of its `cmd[]` lists) counts, per
+  key, frames held (> 0) or released (< 0): `Ub Db Bb Fb` (B/F already
+  follow the facing) and `ab`..`mb`. The keys held "since" = the smallest
+  absolute count, so the app rebuilds an exact history even when it skips
+  frames.
+- `c.cmd[c.playerNo].Commands[Names[name]]` holds every definition of a
+  name, in the CMD file's order, then the common commands
+  (`sys.cfg.Common.Cmd`) appended after. `completed[i]` marks steps done
+  (only the last one done stays set), `curtime` runs from the first step,
+  `curbuftime` > 0 is what `command = "name"` tests.
+- A ";" in a `command =` value starts a comment (kfm's SmashKFUpper has a
+  second motion after one that is never read).
+
 Compiler (`compiler.go`):
 
 - CNS: the `[State]` header line is `c.i + 1` (0-based index); for a
@@ -255,10 +281,8 @@ Limits today:
 
 - Breakpoints stop after the tick; no stepping between controllers (that
   would need the match loop to yield in the middle of `Char.update`).
-- No live editing of sprites, animations, sounds, commands or states: edit
-  the files, then Reload match (`reload()`, Shift+F4).
 - Not in netplay or rollback matches (no stdin bridge there).
-- The game draws in its own window; the debugger cannot draw over it.
+- Frames are shared with the OpenGL renderers only (not Vulkan).
 
 Cheap next steps (mod and app only): breakpoints on entering a state; an
 "only if" condition on controller breakpoints; a Watch list of Lua

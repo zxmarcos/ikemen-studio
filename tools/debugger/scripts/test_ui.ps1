@@ -10,6 +10,7 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 #   | drag:x1,y1,x2,y2 (left button held from one point to the other) | ps:code (PowerShell, e.g. to edit a file)
 #   | lua:code (run in the game as if typed in the Console; the result goes to the Console)
 #   | ctrl:Z (a key with Ctrl held) | wheel:x,y,n (n notches, up when positive)
+#   | keys:+DOWN,+RIGHT,-DOWN,+A,-A,-RIGHT (pressed +, released -, 50 ms apart: a motion for the game)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -61,6 +62,7 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'ctrl' { [W]::PostMessage($hd, 0x100, [IntPtr]0x11, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 60; [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null; Start-Sleep -Milliseconds 40; [W]::PostMessage($hd, 0x101, [IntPtr]0x11, [IntPtr]0xC0000001) | Out-Null }
     'down' { [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null }
     'up' { [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null }
+    'keys' { foreach ($k in $arg -split ',') { $code = $vk[$k.Substring(1)]; if ($k[0] -eq '+') { [W]::PostMessage($hd, 0x100, [IntPtr]$code, [IntPtr]1) | Out-Null } else { [W]::PostMessage($hd, 0x101, [IntPtr]$code, [IntPtr]0xC0000001) | Out-Null }; Start-Sleep -Milliseconds 50 } }
     'visible' { "game window visible: " + [W]::IsWindowVisible($game.MainWindowHandle) }
     'game' { $g = $game.MainWindowHandle; switch ($arg) { 'hide' { [W]::ShowWindow($g, 0) | Out-Null } 'show' { [W]::ShowWindow($g, 5) | Out-Null } 'min' { [W]::ShowWindow($g, 6) | Out-Null } 'off' { [W]::SetWindowPos($g, [IntPtr]::Zero, -5000, -5000, 0, 0, 0x0001 -bor 0x0004 -bor 0x0010) | Out-Null } } }
     'wait' { Start-Sleep -Milliseconds ([int]([double]$arg * 1000)) }
