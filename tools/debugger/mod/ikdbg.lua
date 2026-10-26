@@ -27,7 +27,7 @@ if getCommandLineValue('-ikdbg') == nil then
 end
 
 ikdbg = {
-	version = '0.4',
+	version = '0.5',
 	caps = {
 		trace = debugTraceEnable ~= nil and debugTraceEnable(true),
 		set = setVar ~= nil,
@@ -394,5 +394,18 @@ hook.add('loop', 'ikdbg', function()
 		send('@IKRES', {ok = false, r = 'ikdbg: ' .. tostring(err)})
 	end
 end)
+
+-- Portraits are animations the scripts make from a character's sprites, with a motif
+-- property's parameters: they take that property's source, so the editor can pick them.
+if debugAnimSource and start and start.f_animGet then
+	local animGet = start.f_animGet
+	start.f_animGet = function(ref, side, member, params, ...)
+		local a = animGet(ref, side, member, params, ...)
+		if a and type(params) == 'table' and params.AnimData then
+			pcall(debugAnimSource, a, params.AnimData)
+		end
+		return a
+	end
+end
 
 send('@IKHELLO', {v = ikdbg.version, ik = version(), trace = ikdbg.caps.trace, set = ikdbg.caps.set})

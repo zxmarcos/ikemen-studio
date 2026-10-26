@@ -305,6 +305,19 @@ func editorReloadMotif(l *lua.LState, textFile string, keep bool) (err error) {
 }
 
 func editorMotifFunctions(l *lua.LState) {
+	luaRegister(l, "debugAnimSource", func(l *lua.LState) int {
+		/*Give an animation the source (the def's keys) of another: a portrait made from a
+		character's sprites by the scripts, with the motif property's AnimData.
+		@function debugAnimSource
+		@tparam Anim anim
+		@tparam Anim from*/
+		a, ok1 := toUserData(l, 1).(*Anim)
+		from, ok2 := toUserData(l, 2).(*Anim)
+		if ok1 && ok2 && a != nil && from != nil && debuggerAttached() {
+			a.editor = from.editor
+		}
+		return 0
+	})
 	luaRegister(l, "debugReloadMotif", func(l *lua.LState) int {
 		/*Load the motif's def file again (through loadMotif) and use it at once, in place.
 		@function debugReloadMotif

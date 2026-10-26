@@ -121,7 +121,9 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
         size_t dot = p.rfind('.', p.size() - 2); // the one before the last part
         p = dot == std::string::npos ? "" : p.substr(0, dot + 1);
     }
-    if (!motif || prefix.empty()) tries.push_back("pos");
+    // [Select Info]'s pos places its grid, the cells
+    if (!motif || prefix.empty() || (s && s->lower == "select info" && prefix.compare(0, 5, "cell.") == 0))
+        tries.push_back("pos");
     if (s)
         for (const std::string &k : tries)
             if (s->Field(k.c_str())) return k;

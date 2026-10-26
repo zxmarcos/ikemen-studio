@@ -73,7 +73,9 @@ Motif, the same editing, its texts and animations picked in menus and
 screens (`editor_motif.go`), reloaded in place (~400 ms, so a drag writes
 when let go); its screens' BGs (`[TitleBGdef]` and its `[TitleBG ...]`, a
 `BGDef`: one line around each BG in `BGDef.draw`) picked and dragged by
-their `start`. Next: the select screen's cells and portraits, storyboards,
+their `start`; the select screen (cells, names, cursors; portraits: the
+mod wraps `start.f_animGet` and `debugAnimSource` gives the new animation
+the source of the property's `AnimData`). Next: storyboards,
 the fight screen's animations (its `[Begin Action]` sections) in the
 Animation window.
 
@@ -188,6 +190,10 @@ helper "Bag"):
   checkbox is at `click:940,155`. Motif tests: `-P1 "" -P2 ""` starts in
   the menus (a demo match first: `click:740,350|key:RETURN` shows the title
   menu); the motif in use is `data/ikemen1/system.def` (`save/config.ini`).
+  When the demo has not started yet that key picks Arcade instead: for a
+  repeatable path, set `[Demo Mode] enabled = 0` in a backed-up copy, then
+  `click:740,350|key:Z|wait:1.5|key:Z|wait:10` reaches the select screen (Z is
+  P1's a, which confirms in menus; Enter does not).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
