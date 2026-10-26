@@ -182,8 +182,8 @@ tools/debugger/
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
-  src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef; CNS or ZSS
-  src/app_create.cpp     Create window (the menu bar's Create): a move
+  src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
+  src/app_create.cpp     Create window (the menu bar's Create): a move, a character
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol

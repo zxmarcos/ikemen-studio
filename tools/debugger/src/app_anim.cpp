@@ -14,12 +14,23 @@ bool g_onionSprite = false; // and its sprite
 bool g_animFollow = true; // the Animation window shows what the selected player shows
 int g_animAction = 0, g_animElem = 1;
 
+std::map<int, std::pair<std::string, double>> g_swapWanted;
+
 void OnFiles(const Json &j) {
     for (const auto &p : j["players"].items) {
-        auto &files = g_charFiles[p["pn"].i()];
+        int pn = p["pn"].i();
+        auto &files = g_charFiles[pn];
         files.clear();
         for (const auto &kv : p["files"].fields)
             for (const auto &f : kv.second.items) files[kv.first].push_back(f.str());
+        // Still the character before a swap (asked for before the match started again): asked again
+        auto want = g_swapWanted.find(pn);
+        if (want == g_swapWanted.end()) continue;
+        const std::string &name = want->second.first;
+        std::string def = files.count("def") && !files["def"].empty() ? NormPath(files["def"][0]) : "";
+        std::string expected = NormPath("chars/" + (name.find('/') == std::string::npos ? name + "/" + name + ".def" : name));
+        if (def == expected || ImGui::GetTime() - want->second.second > 15) g_swapWanted.erase(want);
+        else g_charFiles.erase(pn);
     }
 }
 

@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <vector>
 
+#include "air.h"
 #include "cns.h"
+#include "ini.h"
 
 namespace {
 
@@ -185,4 +187,133 @@ std::string Make_MoveState(const MakeMove &m, bool zss) {
         t += Ctrl(zss, m.state, "End", zss ? "changeState" : "ChangeState", zss ? "animTime = 0" : "AnimTime = 0",
                   {{"value", kind == 1 ? "11" : "0"}, {"ctrl", "1"}});
     return t;
+}
+namespace {
+
+bool CommentLine(const std::string &line, bool zss) {
+    size_t a = line.find_first_not_of(" \t\r");
+    return a != std::string::npos && line[a] == (zss ? '#' : ';');
+}
+
+// Where each block starts (0-based line indices): its header, or the comment lines just above it
+std::vector<size_t> BlockStarts(const std::vector<std::string> &lines, const std::vector<int> &headers, bool zss) {
+    std::vector<size_t> starts;
+    size_t floor = 0;
+    for (int h : headers) {
+        size_t at = h - 1;
+        while (at > floor && CommentLine(lines[at - 1], zss)) at--;
+        starts.push_back(at);
+        floor = h;
+    }
+    return starts;
+}
+
+std::string Lines(const std::vector<std::string> &lines, size_t from, size_t to) { // [from, to)
+    std::string t;
+    for (size_t i = from; i < to && i < lines.size(); i++) t += lines[i] + "\n";
+    return t;
+}
+
+} // namespace
+
+std::string Make_Head(const std::string &text, bool zss) {
+    CnsFile f;
+    Cns_Parse(text, zss, f);
+    if (f.states.empty()) return text;
+    std::vector<std::string> lines = SplitLines(text);
+    return Lines(lines, 0, BlockStarts(lines, {f.states[0].line}, zss)[0]);
+}
+
+std::string Make_KeepStates(const std::string &text, bool zss, int *count, bool *taunt) {
+    CnsFile f;
+    Cns_Parse(text, zss, f);
+    std::vector<std::string> lines = SplitLines(text);
+    std::vector<int> headers;
+    for (const CnsState &s : f.states) headers.push_back(s.line);
+    std::vector<size_t> starts = BlockStarts(lines, headers, zss);
+    std::string out;
+    for (size_t i = 0; i < f.states.size(); i++) {
+        const CnsState &s = f.states[i];
+        bool keep = !s.function.empty() || (s.literal && s.no >= 0 && s.no < 200);
+        if (!keep) continue;
+        std::string block = Lines(lines, starts[i], i + 1 < starts.size() ? starts[i + 1] : lines.size());
+        while (block.size() >= 2 && block[block.size() - 1] == '\n' && block[block.size() - 2] == '\n') block.pop_back();
+        out += block + "\n";
+        if (s.function.empty()) {
+            if (count) ++*count;
+            if (taunt && s.no == 195) *taunt = true;
+        }
+    }
+    return out;
+}
+
+std::string Make_KeepActions(const std::string &air, int *count) {
+    AirFile f;
+    Air_Parse(air, f);
+    std::vector<std::string> lines = SplitLines(air);
+    std::vector<const AirAction *> acts;
+    for (const auto &kv : f.actions) acts.push_back(&kv.second);
+    std::sort(acts.begin(), acts.end(), [](const AirAction *a, const AirAction *b) { return a->line < b->line; });
+    std::vector<int> headers;
+    for (const AirAction *a : acts) headers.push_back(a->line);
+    std::vector<size_t> starts = BlockStarts(lines, headers, false);
+    std::string out;
+    for (size_t i = 0; i < acts.size(); i++) {
+        if (acts[i]->no >= 200 && acts[i]->no < 5000) continue;
+        std::string block = Lines(lines, starts[i], i + 1 < starts.size() ? starts[i + 1] : lines.size());
+        while (block.size() >= 2 && block[block.size() - 1] == '\n' && block[block.size() - 2] == '\n') block.pop_back();
+        out += block + "\n";
+        if (count) ++*count;
+    }
+    return out;
+}
+
+std::string Make_CommandFile(const std::string &name, bool taunt) {
+    std::string s;
+    s += "; Commands of " + name + "\n;\n";
+    s += "; Each [Command] gives a name to a motion; the states test it as command = \"name\".\n";
+    s += "; Directions: B, DB, D, DF, F, UF, U, UB. Buttons: a, b, c, x, y, z, s, d, w.\n";
+    s += "; / held, ~ released, $ the diagonals count, + together, > nothing else in between.\n\n";
+    s += "[Defaults]\ncommand.time = 15\ncommand.buffer.time = 1\n\n";
+    s += ";-| Special motions |--------------------------------------------------------\n";
+    s += "[Command]\nname = \"QCF_x\"\ncommand = ~D, DF, F, x\n\n";
+    s += "[Command]\nname = \"QCB_a\"\ncommand = ~D, DB, B, a\n\n";
+    s += ";-| Double tap |--------------------------------------------------------------\n";
+    s += "[Command]\nname = \"FF\"     ;Required (do not remove)\ncommand = F, F\ntime = 10\n\n";
+    s += "[Command]\nname = \"BB\"     ;Required (do not remove)\ncommand = B, B\ntime = 10\n\n";
+    s += ";-| 2/3 Button Combination |--------------------------------------------------\n";
+    s += "[Command]\nname = \"recovery\";Required (do not remove)\ncommand = x+y\ntime = 1\n\n";
+    s += ";-| Single Button |-----------------------------------------------------------\n";
+    for (const char *b : {"a", "b", "c", "x", "y", "z"})
+        s += std::string("[Command]\nname = \"") + b + "\"\ncommand = " + b + "\ntime = 1\n\n";
+    s += "[Command]\nname = \"start\"\ncommand = s\ntime = 1\n\n";
+    s += ";-| Hold Dir |----------------------------------------------------------------\n";
+    for (auto [n, d] : {std::pair{"holdfwd", "F"}, {"holdback", "B"}, {"holdup", "U"}, {"holddown", "D"}})
+        s += std::string("[Command]\nname = \"") + n + "\";Required (do not remove)\ncommand = /$" + d + "\ntime = 1\n\n";
+    s += ";---------------------------------------------------------------------------\n";
+    s += "; The moves the commands start, tested every tick from the top.\n";
+    s += "[Statedef -1]\n\n";
+    if (taunt)
+        s += "[State -1, Taunt]\ntype = ChangeState\nvalue = 195\ntriggerall = command = \"start\"\n"
+             "trigger1 = statetype = S\ntrigger1 = ctrl\n\n";
+    else
+        s += "; [Statedef -1] needs a controller: this one does nothing.\n[State -1, Nothing yet]\ntype = Null\ntrigger1 = 0\n\n";
+    s += "; Create > A move writes them here, and Commands > Start a state with this command.\n";
+    return s;
+}
+
+std::string Make_RemoveSection(const std::string &text, const char *lowerName) {
+    IniFile f;
+    Ini_Parse(text, f);
+    std::vector<std::string> lines = SplitLines(text);
+    for (size_t i = 0; i < f.sections.size(); i++) {
+        if (f.sections[i].lower != lowerName) continue;
+        size_t from = f.sections[i].line - 1;
+        size_t to = i + 1 < f.sections.size() ? f.sections[i + 1].line - 1 : lines.size();
+        // The next section's comments stay with it
+        while (to > from + 1 && i + 1 < f.sections.size() && CommentLine(lines[to - 1], false)) to--;
+        lines.erase(lines.begin() + from, lines.begin() + to);
+        return JoinLines(lines);
+    }
+    return text;
 }

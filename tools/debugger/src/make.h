@@ -42,3 +42,20 @@ struct MakeMove {
 // start, and the way back to standing or crouching (an air move ends on landing, its control
 // back when the animation ends). Starts with a comment line; ends with a line end.
 std::string Make_MoveState(const MakeMove &m, bool zss);
+
+// A new character's files from its base's texts ('\n' line ends). Each statedef or action
+// takes the comment lines just above its header with it.
+// The text before a state file's first statedef (a CNS constants file's [Data], [Size]...).
+std::string Make_Head(const std::string &text, bool zss);
+// The statedefs from 0 to 199 the file gives (what the base does in the common states: intro,
+// win poses, taunt), and every ZSS [Function] (states call them). count: statedefs kept;
+// taunt: state 195 among them.
+std::string Make_KeepStates(const std::string &text, bool zss, int *count, bool *taunt);
+// The AIR actions of the common states: below 200, 5000 up.
+std::string Make_KeepActions(const std::string &air, int *count);
+// A CMD file with the commands the engine and the common states name ("FF", "BB", "recovery",
+// the holds...), the buttons, two motions; [Statedef -1] starts the taunt (state 195) on start
+// when the character has one, else holds a Null.
+std::string Make_CommandFile(const std::string &name, bool taunt);
+// The text without a section (its header to the line before the next one).
+std::string Make_RemoveSection(const std::string &text, const char *lowerName);

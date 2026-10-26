@@ -279,6 +279,7 @@ struct AnimTarget {
 };
 
 void OnFiles(const Json &j);
+extern std::map<int, std::pair<std::string, double>> g_swapWanted; // pn -> the character swapped in, when
 std::string AirPath(int pn);
 std::string CharFile(int pn, const char *key);
 const AirFile &AirOf(const SourceFile &sf);
@@ -436,6 +437,7 @@ void LabSettingsLine(const std::string &key, const std::string &value);
 void LabSettingsWrite(ImGuiTextBuffer *buf);
 void LabHello();                  // the game started: its dummy again
 void LabWindow();
+void SwapChar(int pn, const std::string &name); // a character (as ListDefs names it) in P<pn>'s place; the match starts again
 // Keys as a fighting game writes them ("DF+a"); bits 0-13: U, D, B, F, a, b, c, x, y, z, s, d, w, m
 std::string KeysText(int bits);
 

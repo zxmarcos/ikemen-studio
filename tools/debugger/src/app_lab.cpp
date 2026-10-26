@@ -293,12 +293,7 @@ void CharactersSection() {
         char label[32];
         snprintf(label, sizeof(label), "In P%d's place", pn);
         if (pn > 1) ImGui::SameLine();
-        if (ImGui::Button(label)) {
-            Exec("ikdbg.swap(" + std::to_string(pn) + ", " + LuaQuote(picked) + ")");
-            g_charFiles.erase(pn);
-            g_filesAsked.erase(pn);
-            Log(LogLine::Info, "P" + std::to_string(pn) + ": " + picked + " (the match starts again)");
-        }
+        if (ImGui::Button(label)) SwapChar(pn, picked);
     }
     ImGui::EndDisabled();
     if (ImGui::BeginChild("chars", ImVec2(0, ImGui::GetFontSize() * 8), ImGuiChildFlags_Borders)) {
@@ -314,6 +309,14 @@ void CharactersSection() {
 }
 
 } // namespace
+
+void SwapChar(int pn, const std::string &name) {
+    Exec("ikdbg.swap(" + std::to_string(pn) + ", " + LuaQuote(name) + ")");
+    g_charFiles.erase(pn);
+    g_filesAsked.erase(pn);
+    g_swapWanted[pn] = {name, ImGui::GetTime()};
+    Log(LogLine::Info, "P" + std::to_string(pn) + ": " + name + " (the match starts again)");
+}
 
 void OnLabState(const Json &lab) {
     g_lab = LabState();

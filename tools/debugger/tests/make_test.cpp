@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <string>
 
+#include "air.h"
 #include "cns.h"
 
 static int g_failed;
@@ -130,10 +131,93 @@ static void TestMove() {
           "if command = \"x\" && power >= 1000 {\n\tchangeState{value: 3000}\n}\n");
 }
 
+static bool ReadText(const char *path, std::string &text) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        printf("skipped (missing): %s\n", path);
+        return false;
+    }
+    text.clear();
+    char buf[4096];
+    for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;)
+        for (size_t i = 0; i < n; i++)
+            if (buf[i] != '\r') text += buf[i];
+    fclose(f);
+    return true;
+}
+
+// A new character's files from kfm's and kfm_zss's (run from the root of the checkout)
+static void TestNewChar() {
+    std::string text;
+    if (ReadText("chars/kfm/kfm.cns", text)) {
+        std::string head = Make_Head(text, false);
+        CHECK(head.find("[Data]") != std::string::npos && head.find("[Statedef") == std::string::npos &&
+              head.find("[Statedef") == std::string::npos);
+        int count = 0, want = 0;
+        bool taunt = false;
+        std::string kept = Make_KeepStates(text, false, &count, &taunt);
+        CnsFile all, f;
+        Cns_Parse(text, false, all);
+        Cns_Parse(head + kept, false, f);
+        for (const auto &s : all.states) want += s.no >= 0 && s.no < 200;
+        bool below = true;
+        size_t ctrls = 0, wantCtrls = 0;
+        for (const auto &s : f.states) below &= s.no >= 0 && s.no < 200, ctrls += s.ctrls.size();
+        for (const auto &s : all.states)
+            if (s.no >= 0 && s.no < 200) wantCtrls += s.ctrls.size();
+        printf("kfm.cns: %d of %zu statedefs kept (%zu controllers), taunt %d\n", count, all.states.size(), ctrls, taunt);
+        CHECK(count == want && count == 5 && (int)f.states.size() == count && below && ctrls == wantCtrls && taunt);
+        // The comments above a statedef go with it
+        CHECK(kept.find("; Introduction") != std::string::npos);
+    }
+    if (ReadText("chars/kfm/kfm.air", text)) {
+        int count = 0;
+        AirFile all, f;
+        Air_Parse(text, all);
+        Air_Parse(Make_KeepActions(text, &count), f);
+        int want = 0;
+        bool common = true;
+        for (const auto &kv : all.actions) want += kv.first < 200 || kv.first >= 5000;
+        for (const auto &kv : f.actions) {
+            common &= kv.first < 200 || kv.first >= 5000;
+            auto a = all.actions.find(kv.first);
+            common &= a != all.actions.end() && a->second.elems.size() == kv.second.elems.size();
+        }
+        printf("kfm.air: %d of %zu actions kept\n", count, all.actions.size());
+        CHECK(count == want && (int)f.actions.size() == count && common && count > 50);
+    }
+    if (ReadText("chars/kfm_zss/kfm.zss", text)) {
+        int count = 0;
+        bool taunt = false;
+        CnsFile f;
+        Cns_Parse(Make_KeepStates(text, true, &count, &taunt), true, f);
+        size_t functions = 0;
+        bool below = true;
+        for (const auto &s : f.states) {
+            functions += !s.function.empty();
+            if (s.function.empty()) below &= s.no >= 0 && s.no < 200;
+        }
+        printf("kfm_zss/kfm.zss: %d statedefs and %zu functions kept\n", count, functions);
+        CHECK(functions == 4 && below && count > 5 && taunt);
+    }
+    if (ReadText("chars/kfm/kfm.def", text)) {
+        std::string out = Make_RemoveSection(text, "arcade");
+        CHECK(out.find("[Arcade]") == std::string::npos && out.find("intro.storyboard") == std::string::npos &&
+              out.find("[Files]") != std::string::npos && out.find("movelist") != std::string::npos);
+    }
+    CnsFile cmd;
+    Cns_Parse(Make_CommandFile("Test", true), false, cmd);
+    CHECK(cmd.states.size() == 1 && cmd.states[0].no == -1 && cmd.states[0].ctrls.size() == 1 &&
+          cmd.states[0].ctrls[0].Param("value")->value == "195");
+    Cns_Parse(Make_CommandFile("Test", false), false, cmd);
+    CHECK(cmd.states.size() == 1 && cmd.states[0].ctrls.size() == 1 && cmd.states[0].ctrls[0].type == "null");
+}
+
 int main() {
     TestCns();
     TestZss();
     TestMove();
+    TestNewChar();
     printf(g_failed ? "make-test: %d failed\n" : "make-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }
