@@ -445,6 +445,7 @@ const (
 	OC_ex_
 	OC_ex2_
 	OC_ex3_
+	OC_debugrec // debugger: record the value on top for a trigger's source (script_debugger.go)
 )
 const (
 	OC_const_data_life OpCode = iota
@@ -2388,6 +2389,9 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			i++
 		case OC_int:
 			sys.bcStack.PushI(*(*int32)(unsafe.Pointer(&be[i])))
+			i += 4
+		case OC_debugrec:
+			debugTriggerRecord(oc, *(*int32)(unsafe.Pointer(&be[i])))
 			i += 4
 		case OC_int64:
 			sys.bcStack.PushI64(*(*int64)(unsafe.Pointer(&be[i])))

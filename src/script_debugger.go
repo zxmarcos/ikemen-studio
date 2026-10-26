@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strconv"
+
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -27,9 +29,15 @@ type DebugTrace struct {
 	sources  []SctrlSource // index 0 is unused: 0 means "no source"
 	on       bool
 	entries  []int32 // pairs: char id, source index
+	// Trigger values of one character, on the last tick it evaluated any
+	trigWatch int32   // its id, -1 for none
+	trigRaw   int32   // gameTime while they were evaluated
+	trigNew   bool    // evaluated since the last frame shared
+	trigTick  int32   // gameTime when that frame was shared, as Lua scripts see the tick
+	trigVals  []int32 // pairs: source index, value (0 false, 1 true, 2 undefined)
 }
 
-var dbgTrace = DebugTrace{sources: make([]SctrlSource, 1)}
+var dbgTrace = DebugTrace{sources: make([]SctrlSource, 1), trigWatch: -1}
 
 // debuggerAttached reports whether Ikemen was started with -ikdbg.
 func debuggerAttached() bool {
@@ -70,8 +78,71 @@ func (c *CharCompiler) traced(sctrl StateController, line int32, typ string) Sta
 	return tracedSctrl{sc: sctrl, src: debugSource(c.currentFile, line, typ, c.stateNo)}
 }
 
+// debugTrigger makes a compiled trigger (a CNS trigger line, a ZSS if) record its value
+// each time it is evaluated, under a source of type "trigger" at that line.
+func (c *CharCompiler) debugTrigger(be BytecodeExp, line int32) BytecodeExp {
+	if !debuggerAttached() || len(be) == 0 {
+		return be
+	}
+	be.appendI32Op(OC_debugrec, debugSource(c.currentFile, line, "trigger", c.stateNo))
+	return be
+}
+
+// debugTriggerRecord runs for OC_debugrec: the trigger's value is on top of the stack.
+func debugTriggerRecord(c *Char, src int32) {
+	if c == nil || c.id != dbgTrace.trigWatch {
+		return
+	}
+	// A new tick starts over (gameTime only moves at the end of a tick, after the characters)
+	if t := sys.gameTime(); t != dbgTrace.trigRaw || !dbgTrace.trigNew {
+		dbgTrace.trigRaw = t
+		dbgTrace.trigNew = true
+		dbgTrace.trigVals = dbgTrace.trigVals[:0]
+	}
+	v := int32(2)
+	if top := sys.bcStack.Top(); !top.IsUndefined() {
+		v = Btoi(top.ToB())
+	}
+	if len(dbgTrace.trigVals) < 1<<16 {
+		dbgTrace.trigVals = append(dbgTrace.trigVals, src, v)
+	}
+}
+
+// debugTriggerGeometry adds the watched character's trigger values to the frame geometry:
+// "tg": {"id", "t": the tick as Lua's gameTime() tells it after the tick, "v": [source index,
+// value, ...]}.
+func debugTriggerGeometry(b []byte) []byte {
+	if dbgTrace.trigWatch < 0 {
+		return b
+	}
+	if dbgTrace.trigNew {
+		dbgTrace.trigNew = false
+		dbgTrace.trigTick = sys.gameTime()
+	}
+	b = append(b, `,"tg":{"id":`...)
+	b = strconv.AppendInt(b, int64(dbgTrace.trigWatch), 10)
+	b = append(b, `,"t":`...)
+	b = strconv.AppendInt(b, int64(dbgTrace.trigTick), 10)
+	b = append(b, `,"v":[`...)
+	for i, v := range dbgTrace.trigVals {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = strconv.AppendInt(b, int64(v), 10)
+	}
+	return append(b, "]}"...)
+}
+
 func debuggerFunctions(l *lua.LState) {
 	editorReloadFunctions(l)
+	luaRegister(l, "debugTriggerWatch", func(l *lua.LState) int {
+		/*Record the trigger values of one character (shared with the frames, see editor_frame.go).
+		@function debugTriggerWatch
+		@tparam int32 id The character's id; -1 for none.*/
+		dbgTrace.trigWatch = int32(numArg(l, 1))
+		dbgTrace.trigVals = dbgTrace.trigVals[:0]
+		return 0
+	})
 	luaRegister(l, "debugTraceEnable", func(l *lua.LState) int {
 		/*Start or stop recording the state controllers that run.
 		@function debugTraceEnable

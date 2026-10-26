@@ -7391,7 +7391,7 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 
 						// Handle triggerall
 						if isAll {
-							triggerall = append(triggerall, be)
+							triggerall = append(triggerall, c.debugTrigger(be, int32(c.i+1)))
 							break
 						}
 
@@ -7413,7 +7413,7 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 								trexist[tidx] = 1
 							}
 						} else if trexist[tidx] >= 0 {
-							trigger[tidx] = append(trigger[tidx], be)
+							trigger[tidx] = append(trigger[tidx], c.debugTrigger(be, int32(c.i+1)))
 							trexist[tidx] = 1
 						}
 					}
@@ -7876,6 +7876,7 @@ func (c *CharCompiler) subBlock(line *string, root bool,
 		if bl.trigger, err = c.fullExpression(&expr, VT_Bool); err != nil {
 			return nil, err
 		}
+		bl.trigger = c.debugTrigger(bl.trigger, int32(c.i))
 		c.token = otk
 		if err := c.needToken("{"); err != nil {
 			return nil, err
