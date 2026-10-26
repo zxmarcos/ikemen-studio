@@ -2219,6 +2219,7 @@ type Anim struct {
 	scaleInit    [2]float32
 	windowInit   [4]float32
 	velocityInit [2]float32
+	editor       int32 // where it was read from, for an external editor (-ikdbg)
 }
 
 func NewAnim(sff *Sff, action string) *Anim {
@@ -2542,10 +2543,12 @@ func (a *Anim) Draw(ln int16) {
 	// the result of sys.gameWidth subtraction to int.
 	// we do the same thing to sys.gameHeight just in case
 	window := a.drawWindow()
+	editorDrawBegin(a.editor, sys.widthScale/a.localScale, sys.heightScale/a.localScale)
 	a.anim.Draw(&window, a.x+a.vel[0]-xsoffset+float32(int(sys.gameWidth-320)/2),
 		a.y+a.vel[1]+float32(int(sys.gameHeight-240)), 1, 1, xscl, xscl, a.yscl,
 		xshear, a.rot, 0, [2]float32{0, 0}, a.palfx, a.facing, [2]float32{1, 1},
 		a.projection, a.fLength, false, CustomShaderRenderData{})
+	editorLayoutDrawn()
 }
 
 func (a *Anim) Reset() {

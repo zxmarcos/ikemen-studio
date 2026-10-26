@@ -17,6 +17,7 @@ import (
 // fight screen in the middle of a match.
 
 type editorFightSource struct {
+	motif   bool   // from the motif's def (system.def, editor_motif.go), else the fight screen's
 	section string // lowercase, as "simul lifebar"
 	prefix  string // lowercase, as "p1.bg0."
 }
@@ -35,37 +36,71 @@ type EditorFight struct {
 	cur     int // 1 + the index in drawn of the Layout being drawn, 0 for none
 	drawn   []editorFightDrawn
 	keep    bool            // reloading after an edit of the text: the files in use are borrowed
-	fonts   map[string]*Fnt // the fonts fight screens loaded, by file name and height
+	fonts   map[string]*Fnt // the fonts fight screens and motifs loaded, by file name and height
 	inFont  bool
+}
+
+// editorSourceIndex: 1 + the index of a source in the table, added when new.
+func editorSourceIndex(key editorFightSource) int32 {
+	e := &edFight
+	if i, ok := e.index[key]; ok {
+		return i
+	}
+	if e.index == nil {
+		e.index = make(map[editorFightSource]int32)
+	}
+	e.sources = append(e.sources, key)
+	i := int32(len(e.sources))
+	e.index[key] = i
+	return i
+}
+
+// editorDrawBegin starts recording where a source is drawn (k: pixels per unit of its def's
+// positions); editorLayoutDrawn ends it.
+func editorDrawBegin(src int32, kx, ky float32) {
+	e := &edFight
+	e.cur = 0
+	if src == 0 || edFrame.mem == nil || len(e.drawn) >= 4096 {
+		return
+	}
+	e.drawn = append(e.drawn, editorFightDrawn{src: src, k: [2]float32{kx, ky}})
+	e.cur = len(e.drawn)
 }
 
 var edFight EditorFight
 
-// editorFightSff and editorFightSnd run in findActiveSff and findActiveSnd: while the editor
-// reloads the fight screen after an edit of its text, its SFF and SND are not read again.
-func editorFightSff(filename string) *Sff {
+// editorKeptSff and editorKeptSnd run in findActiveSff and findActiveSnd: while the editor
+// reloads the fight screen or the motif after an edit of its text, their SFF and SND are not
+// read again.
+func editorKeptSff(filename string) *Sff {
 	if s := sys.fightScreen.sff; edFight.keep && s != nil && s.filename == filename {
 		return s
 	}
-	return nil
-}
-
-func editorFightSnd(filename string) *Snd {
-	if s := sys.fightScreen.snd; edFight.keep && s != nil && s.filename == filename {
+	if s := sys.motif.Sff; edMotif.keep && s != nil && s.filename == filename {
 		return s
 	}
 	return nil
 }
 
-// editorFightFont runs in loadFnt: a fight screen's fonts are kept, and not read again while the
-// editor reloads it after an edit of its text.
-func editorFightFont(filename string, height int32) *Fnt {
+func editorKeptSnd(filename string) *Snd {
+	if s := sys.fightScreen.snd; edFight.keep && s != nil && s.filename == filename {
+		return s
+	}
+	if s := sys.motif.Snd; edMotif.keep && s != nil && s.filename == filename {
+		return s
+	}
+	return nil
+}
+
+// editorKeptFont runs in loadFnt: the fonts of fight screens and motifs are kept, and not read
+// again while the editor reloads one after an edit of its text.
+func editorKeptFont(filename string, height int32) *Fnt {
 	e := &edFight
-	if e.section == "" || e.inFont {
+	if (e.section == "" && !edMotif.loading) || e.inFont {
 		return nil
 	}
 	key := filename + "|" + strconv.Itoa(int(height))
-	if f := e.fonts[key]; f != nil && e.keep {
+	if f := e.fonts[key]; f != nil && (e.keep || edMotif.keep) {
 		return f
 	}
 	e.inFont = true
@@ -94,29 +129,13 @@ func editorLayoutSource(pre string) int32 {
 	if e.section == "" {
 		return 0
 	}
-	key := editorFightSource{e.section, strings.ToLower(pre)}
-	if i, ok := e.index[key]; ok {
-		return i
-	}
-	if e.index == nil {
-		e.index = make(map[editorFightSource]int32)
-	}
-	e.sources = append(e.sources, key)
-	i := int32(len(e.sources))
-	e.index[key] = i
-	return i
+	return editorSourceIndex(editorFightSource{false, e.section, strings.ToLower(pre)})
 }
 
 // editorLayoutDraw runs before a Layout draws (scl: as the Layout scales the def's positions),
 // editorLayoutDrawn after.
 func editorLayoutDraw(src int32, scl float32) {
-	e := &edFight
-	e.cur = 0
-	if src == 0 || edFrame.mem == nil || len(e.drawn) >= 4096 {
-		return
-	}
-	e.drawn = append(e.drawn, editorFightDrawn{src: src, k: [2]float32{scl * sys.widthScale, scl * sys.heightScale}})
-	e.cur = len(e.drawn)
+	editorDrawBegin(src, scl*sys.widthScale, scl*sys.heightScale)
 }
 
 func editorLayoutDrawn() {
@@ -169,45 +188,52 @@ func editorRenderSprite(rp *RenderParams) {
 	d.n++
 }
 
-// editorFightGeometry adds the fight screen to the frame geometry and starts the next frame's list:
+// editorScreenGeometry adds the fight screen and the motif to the frame geometry and starts the
+// next frame's list:
 //
 //	"fight": {"def", "items": [[section, prefix, x, y, w, h, kx, ky], ...]}: in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
-//	  rectangle in the game picture's pixels and the pixels per unit of the def's positions.
-func editorFightGeometry(b []byte) []byte {
-	fs := &sys.fightScreen
-	if fs.def == "" {
-		edFight.drawn = edFight.drawn[:0]
-		return b
-	}
-	b = append(b, `,"fight":{"def":`...)
-	b = editorJSONString(b, fs.def)
-	b = append(b, `,"items":[`...)
-	n := 0
-	for _, d := range edFight.drawn {
-		if d.n == 0 || d.src < 1 || int(d.src) > len(edFight.sources) {
-			continue
+//	  rectangle in the game picture's pixels and the pixels per unit of the def's positions;
+//	"motif": {"def", "items": [...]}: the same for the motif's animations and texts.
+func editorScreenGeometry(b []byte) []byte {
+	editorMotifIndex()
+	block := func(name, def string, motif bool) {
+		if def == "" {
+			return
 		}
-		src := edFight.sources[d.src-1]
-		if n > 0 {
+		b = append(b, `,"`...)
+		b = append(b, name...)
+		b = append(b, `":{"def":`...)
+		b = editorJSONString(b, def)
+		b = append(b, `,"items":[`...)
+		n := 0
+		for _, d := range edFight.drawn {
+			if d.n == 0 || d.src < 1 || int(d.src) > len(edFight.sources) || edFight.sources[d.src-1].motif != motif {
+				continue
+			}
+			src := edFight.sources[d.src-1]
+			if n > 0 {
+				b = append(b, ',')
+			}
+			n++
+			b = append(b, '[')
+			b = editorJSONString(b, src.section)
 			b = append(b, ',')
+			b = editorJSONString(b, src.prefix)
+			for _, v := range [...]float32{d.rect[0], d.rect[1], d.rect[2], d.rect[3], d.k[0], d.k[1]} {
+				b = append(b, ',')
+				b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
+			}
+			b = append(b, ']')
 		}
-		n++
-		b = append(b, '[')
-		b = editorJSONString(b, src.section)
-		b = append(b, ',')
-		b = editorJSONString(b, src.prefix)
-		for _, v := range [...]float32{d.rect[0], d.rect[1], d.rect[2], d.rect[3], d.k[0], d.k[1]} {
-			b = append(b, ',')
-			b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
-		}
-		b = append(b, ']')
+		b = append(b, "]}"...)
 	}
+	block("fight", sys.fightScreen.def, false)
+	block("motif", sys.motif.Def, true)
 	edFight.drawn = edFight.drawn[:0]
 	edFight.cur = 0
-	return append(b, "]}"...)
+	return b
 }
-
 // editorReloadFight loads the fight screen's def again and puts it in place of the one in use;
 // the match goes on, the round where it was. textFile, when not empty, is read instead of the
 // def, then deleted: unsaved text, written next to it (its files are found from where it is).
@@ -291,6 +317,7 @@ type editorSeen struct {
 var editorNotWalked = map[reflect.Type]bool{
 	reflect.TypeOf((*Sff)(nil)): true, reflect.TypeOf((*Snd)(nil)): true,
 	reflect.TypeOf((*Fnt)(nil)): true, reflect.TypeOf((*Char)(nil)): true,
+	reflect.TypeOf((*Model)(nil)): true,
 }
 
 // editorEachAnimation calls f once for each Animation that v leads to, not through files (SFF,
@@ -298,7 +325,8 @@ var editorNotWalked = map[reflect.Type]bool{
 func editorEachAnimation(v reflect.Value, seen map[editorSeen]bool, f func(*Animation)) {
 	switch v.Kind() {
 	case reflect.Ptr:
-		if v.IsNil() || editorNotWalked[v.Type()] || seen[editorSeen{v.Type(), v.Pointer()}] {
+		if v.IsNil() || editorNotWalked[v.Type()] || seen[editorSeen{v.Type(), v.Pointer()}] ||
+			(v.Type().Elem().PkgPath() != "" && v.Type().Elem().PkgPath() != editorMotifPkg) {
 			return
 		}
 		seen[editorSeen{v.Type(), v.Pointer()}] = true
@@ -330,7 +358,8 @@ func editorEachAnimation(v reflect.Value, seen map[editorSeen]bool, f func(*Anim
 	}
 }
 
-func editorFightFunctions(l *lua.LState) {	luaRegister(l, "debugReloadFight", func(l *lua.LState) int {
+func editorFightFunctions(l *lua.LState) {
+	luaRegister(l, "debugReloadFight", func(l *lua.LState) int {
 		/*Load the fight screen's def file again and use it at once; the match goes on.
 		@function debugReloadFight
 		@tparam[opt] string textFile Read this file instead, then delete it (unsaved text, in the def's folder).

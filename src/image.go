@@ -1655,7 +1655,7 @@ func findActiveSff(filename string) *Sff {
 	//	return nil
 	//}
 
-	if s := editorFightSff(filename); s != nil {
+	if s := editorKeptSff(filename); s != nil {
 		return s
 	}
 	// Scan characters

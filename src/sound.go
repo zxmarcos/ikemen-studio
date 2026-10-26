@@ -783,7 +783,7 @@ func newSnd() *Snd {
 // Try to reuse a sound file if it's already loaded somewhere else
 // This doesn't impact loading times as much as SFF, but it saves memory without any work
 func findActiveSnd(filename string) *Snd {
-	if s := editorFightSnd(filename); s != nil {
+	if s := editorKeptSnd(filename); s != nil {
 		return s
 	}
 	// Check characters

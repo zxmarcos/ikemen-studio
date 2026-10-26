@@ -140,7 +140,7 @@ func stripKernTable(ttf []byte) []byte {
 }
 
 func loadFnt(filename string, height int32) (*Fnt, error) {
-	if f := editorFightFont(filename, height); f != nil {
+	if f := editorKeptFont(filename, height); f != nil {
 		return f, nil
 	}
 	if HasExtension(filename, ".fnt") {
@@ -800,6 +800,7 @@ type TextSprite struct {
 	windowInit   [4]float32
 	velocityInit [2]float32
 	customShader CustomShader
+	editor       int32 // where it was read from, for an external editor (-ikdbg)
 }
 
 func NewTextSprite() *TextSprite {
@@ -1394,7 +1395,9 @@ func (ts *TextSprite) Update() {
 }
 
 func (ts *TextSprite) Draw(ln int16) {
+	editorDrawBegin(ts.editor, ts.localScale*sys.widthScale, ts.localScale*sys.heightScale)
 	ts.draw(ln, nil)
+	editorLayoutDrawn()
 }
 
 func (ts *TextSprite) draw(ln int16, clip *[4]int32) {
