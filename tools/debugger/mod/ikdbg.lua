@@ -341,38 +341,6 @@ local function onPlayer(pn, f)
 	return unpack(res)
 end
 
--- A player held by the editor: stance 'stand', 'crouch' or 'jump'; guard 'never', 'always' or
--- 'first' (after a first hit, until 90 ticks go by without one); life and power kept full
--- once each combo is over. pn 0: none.
-function ikdbg.dummy(pn, stance, guard, life, power)
-	local d = ikdbg.lab.dummy
-	if d and d.pn ~= pn then debugInputHold(d.pn, nil) end
-	ikdbg.lab.dummy = nil
-	if pn > 0 then
-		ikdbg.lab.dummy = {pn = pn, stance = stance, guard = guard, life = life, power = power, lastHit = -1000}
-		onPlayer(pn, function() setAILevel(0) end) -- its AI would play on
-	end
-	ikdbg.dirty = true
-end
-
-local function runDummy()
-	local d = ikdbg.lab.dummy
-	if not d or ikdbg.lab.playing and ikdbg.lab.playing.pn == d.pn then return end
-	local keys
-	onPlayer(d.pn, function()
-		local hit = moveType() == 'H'
-		if hit then d.lastHit = gameTime() end
-		local guard = d.guard == 'always' or (d.guard == 'first' and gameTime() - d.lastHit < 90)
-		keys = (d.stance == 'crouch' and 'D' or d.stance == 'jump' and 'U' or '') ..
-			(guard and inGuardDist() and 'B' or '')
-		if not hit and ctrl() then
-			if d.life and life() < lifeMax() then setLife(lifeMax()) end
-			if d.power and power() < powerMax() then setPower(powerMax()) end
-		end
-	end)
-	if keys then debugInputHold(d.pn, keys) end
-end
-
 -- Takes go between the debugger and the game as runs: key bits, ticks, key bits, ticks...
 local function toRuns(take)
 	local runs, last, n = {_array = true}, nil, 0
@@ -394,6 +362,90 @@ local function fromRuns(runs)
 		for _ = 1, runs[i + 1] do take[#take + 1] = runs[i] end
 	end
 	return take
+end
+
+-- A player held by the editor: stance 'stand', 'crouch' or 'jump'; guard 'never', 'always' or
+-- 'first' (after a first hit, until 90 ticks go by without one); life and power kept full
+-- once each combo is over. pn 0: none.
+function ikdbg.dummy(pn, stance, guard, life, power)
+	local d = ikdbg.lab.dummy
+	if d and d.pn ~= pn then debugInputHold(d.pn, nil) end
+	ikdbg.lab.dummy = nil
+	if pn > 0 then
+		ikdbg.lab.dummy = {pn = pn, stance = stance, guard = guard, life = life, power = power, lastHit = -1000}
+		onPlayer(pn, function() setAILevel(0) end) -- its AI would play on
+	end
+	ikdbg.dirty = true
+end
+
+-- What the dummy does once it can act again (a reversal): a take, played so that its last tick is
+-- the first one the dummy can act on; after 'guard', 'hit' (not knocked down), 'wakeup' or 'any'.
+-- runs nil: nothing.
+function ikdbg.dummyReact(runs, after)
+	local d = ikdbg.lab.dummy
+	if not d then return end
+	d.react = runs and {take = fromRuns(runs), after = after} or nil
+	d.ep = nil
+end
+
+-- Ticks from now to the first one the dummy can act on (its [Statedef -1] sees ctrl), when the
+-- engine tells: the hit or guard stun left, or the get up animation left. Measured on KFM: the
+-- shake counts down first, the hit time once it is 0 (from that tick on), the hit state ends the
+-- tick after it reaches -1 giving ctrl, and [Statedef -1] sees it the next tick; getting up ends
+-- the tick after AnimTime is 0, and [Statedef -1] sees ctrl the next.
+local kWakeLead = 2
+local function ticksToAct()
+	if stateNo() == 5120 then return -animTime() + kWakeLead end
+	if moveType() == 'H' and not getHitVar('fall') then
+		local shake, hittime = getHitVar('hitshaketime'), getHitVar('hittime')
+		if shake > 0 then return shake + hittime + 2 end
+		return hittime + 3
+	end
+	return nil
+end
+
+-- Runs with the context on the dummy: follows a hit (an episode: guarded, knocked down) and
+-- starts the reaction in time.
+local function dummyReact(d, hit)
+	local r = d.react
+	if not r then return end
+	local free = ctrl() and not hit
+	if hit or (d.ep and not free) then
+		d.ep = d.ep or {}
+		if getHitVar('guarded') and hit then d.ep.guarded = true end
+		if stateType() == 'L' then d.ep.down = true end
+	end
+	local ep = d.ep
+	if not ep then return end
+	local wanted = r.after == 'any' or (r.after == 'guard' and ep.guarded) or
+		(r.after == 'wakeup' and ep.down) or (r.after == 'hit' and not ep.guarded and not ep.down)
+	if wanted and not ep.started then
+		local left = ticksToAct()
+		if free or (left and left <= #r.take) then
+			debugInputPlay(d.pn, r.take)
+			ep.started = true
+		end
+	end
+	if free then d.ep = nil end
+end
+
+local function runDummy()
+	local d = ikdbg.lab.dummy
+	if not d or ikdbg.lab.playing and ikdbg.lab.playing.pn == d.pn then return end
+	local keys
+	onPlayer(d.pn, function()
+		local hit = moveType() == 'H'
+		if hit then d.lastHit = gameTime() end
+		dummyReact(d, hit)
+		local guard = d.guard == 'always' or (d.guard == 'first' and gameTime() - d.lastHit < 90)
+		keys = (d.stance == 'crouch' and 'D' or d.stance == 'jump' and 'U' or '') ..
+			(guard and inGuardDist() and 'B' or '')
+		if not hit and ctrl() then
+			if d.life and life() < lifeMax() then setLife(lifeMax()) end
+			if d.power and power() < powerMax() then setPower(powerMax()) end
+		end
+	end)
+	if keys then debugInputHold(d.pn, keys) end
 end
 
 local function startTake(w)
@@ -438,7 +490,8 @@ function ikdbg.stopTake()
 	local lab = ikdbg.lab
 	if lab.recording then
 		local take, seed = debugInputRecord(lab.recording, false)
-		send('@IKTAKE', {pn = lab.recording, seed = seed, runs = toRuns(take)})
+		local files = debugCharFiles and debugCharFiles(lab.recording) or {}
+		send('@IKTAKE', {pn = lab.recording, seed = seed, runs = toRuns(take), char = files.def and files.def[1]})
 		lab.recording = nil
 	end
 	if lab.playing then debugInputPlay(lab.playing.pn) end
@@ -633,7 +686,9 @@ local function frame()
 					by = getHitVar('playerid'), dmg = getHitVar('damage'), guarded = getHitVar('guarded'),
 					hittime = getHitVar('hittime'), shake = getHitVar('hitshaketime'),
 					slide = getHitVar('slidetime'), ctrltime = getHitVar('ctrltime'), fall = getHitVar('fall'),
-					attr = getHitVar('attr'), combo = getHitVar('hitcount'), animtype = getHitVar('animtype')})
+					attr = getHitVar('attr'), combo = getHitVar('hitcount'), animtype = getHitVar('animtype'),
+					-- the juggle points its attacker has left on it
+					jug = select(2, ikdbg.with(getHitVar('playerid'), function() return jugglePoints(e.id) end))})
 			end
 		end
 		ikdbg.lastState[e.id] = e.st

@@ -692,14 +692,19 @@ void TraceWindow() {
                 }
                 // what the hit does to it: hitstun (or guard stun), hit shake (its hit pause), slide, ctrl
                 std::string by = t.byPn ? Who(t.byPn, t.byHelper, t.by) : "id " + std::to_string(t.by);
+                char combo[64] = "", juggle[32] = "";
+                if (!t.guarded && t.combo > 1)
+                    snprintf(combo, sizeof(combo), ", combo %d hits %d damage", t.combo, t.comboDamage);
+                if (t.fall && t.juggle >= 0) snprintf(juggle, sizeof(juggle), ", juggle %d left", t.juggle);
                 ImGui::TextColored(t.guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1),
-                                   "%s %s (state %d): %d damage, %s %d, shake %d, slide %d, ctrl %d%s",
-                                   t.guarded ? "guarded" : "hit by", by.c_str(), t.bySt, t.damage,
+                                   "%s %s (state %d): %d damage%s, %s %d, shake %d, slide %d, ctrl %d%s%s",
+                                   t.guarded ? "guarded" : "hit by", by.c_str(), t.bySt, t.damage, combo,
                                    t.guarded ? "guard time" : "hit time", t.hittime, t.shake, t.slide,
-                                   t.ctrltime, t.fall ? ", falls" : "");
+                                   t.ctrltime, t.fall ? ", falls" : "", juggle);
                 if (ImGui::BeginItemTooltip()) {
-                    ImGui::Text("In its state %d. Attr %s, anim type %d, hit %d of the combo", t.st, t.attr.c_str(),
-                                t.animtype, t.combo);
+                    ImGui::Text("In its state %d. Attr %s, anim type %d, hit %d of the combo (%d damage)", t.st,
+                                t.attr.c_str(), t.animtype, t.combo, t.comboDamage);
+                    if (t.juggle >= 0) ImGui::Text("Juggle points its attacker has left on it: %d", t.juggle);
                     ImGui::TextDisabled("The damage is taken on the next tick. Hit time: the hit state's\n"
                                         "length after the shake; ctrl: when control comes back (guarding).");
                     ImGui::EndTooltip();

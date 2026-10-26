@@ -10,11 +10,23 @@
 
 namespace app {
 
+std::string KeysText(int bits) {
+    static const char *dirs[16] = {"", "U", "D", "UD", "B", "UB", "DB", "UDB", "F", "UF", "DF", "UDF", "BF", "UBF", "DBF", "UDBF"};
+    std::string s = dirs[bits & 15];
+    const char *buttons = "abcxyzsdwm";
+    std::string b;
+    for (int i = 0; i < 10; i++)
+        if (bits & (1 << (4 + i))) b += buttons[i];
+    if (!b.empty()) s += (s.empty() ? "" : "+") + b;
+    return s.empty() ? "-" : s;
+}
+
 namespace {
 
 // A take: runs of key bits (U, D, B, F, a, b, c, x, y, z, s, d, w, m: bit 0 to 13) and ticks
 struct Take {
     std::string name;
+    std::string chr; // the def of the character it was recorded with ("" if not known)
     int pn = 1, seed = 0;
     std::vector<int> runs; // bits, ticks, bits, ticks...
     int Ticks() const {
@@ -32,9 +44,12 @@ struct Dummy {
     int pn = 0; // 0: none
     int stance = 0, guard = 0;
     bool life = true, power = false;
+    int react = -1, after = 0; // the take it plays once it can act again (-1: none), and after what
 } g_dummy;
 const char *kStances[] = {"stand", "crouch", "jump"};
 const char *kGuards[] = {"never", "always", "first"};
+const char *kAfter[] = {"guard", "hit", "wakeup", "any"};
+bool g_onlyMatch = false; // only the takes of the characters in the match
 
 struct LabState {
     int dummy = 0, rec = 0, recTicks = 0, play = 0, at = 0, len = 0;
@@ -44,23 +59,29 @@ struct LabState {
 int g_recPn = 1;
 bool g_reset = true, g_sameRandom = true, g_loop = false;
 
+std::string RunsList(const std::vector<int> &runs) {
+    std::string s;
+    for (int v : runs) s += (s.empty() ? "" : ",") + std::to_string(v);
+    return s;
+}
+
 void SendDummy() {
     char lua[160];
     snprintf(lua, sizeof(lua), "ikdbg.dummy(%d, '%s', '%s', %s, %s)", g_dummy.pn, kStances[g_dummy.stance],
              kGuards[g_dummy.guard], g_dummy.life ? "true" : "false", g_dummy.power ? "true" : "false");
     SendRaw(lua);
+    if (g_dummy.pn > 0 && g_dummy.react >= 0 && g_dummy.react < (int)g_takes.size())
+        SendRaw("ikdbg.dummyReact({" + RunsList(g_takes[g_dummy.react].runs) + "}, '" + kAfter[g_dummy.after] + "')");
 }
 
-// The keys of a run as a fighting game writes them: directions, then + and the buttons
-std::string KeysText(int bits) {
-    static const char *dirs[16] = {"", "U", "D", "UD", "B", "UB", "DB", "UDB", "F", "UF", "DF", "UDF", "BF", "UBF", "DBF", "UDBF"};
-    std::string s = dirs[bits & 15];
-    const char *buttons = "abcxyzsdwm";
-    std::string b;
-    for (int i = 0; i < 10; i++)
-        if (bits & (1 << (4 + i))) b += buttons[i];
-    if (!b.empty()) s += (s.empty() ? "" : "+") + b;
-    return s.empty() ? "-" : s;
+// Whether a take was recorded with a character in the match (or with one not known)
+bool InMatch(const Take &t) {
+    if (t.chr.empty()) return true;
+    for (int pn = 1; pn <= 4; pn++) {
+        std::string def = CharFile(pn, "def");
+        if (!def.empty() && NormPath(def) == NormPath(t.chr)) return true;
+    }
+    return false;
 }
 
 // A take's runs, wrapped; the run being played is highlighted
@@ -88,12 +109,6 @@ void RunsView(const Take &t, int at) {
                               KeysText(t.runs[i]).c_str(), t.runs[i + 1]);
         tick += t.runs[i + 1];
     }
-}
-
-std::string RunsList(const std::vector<int> &runs) {
-    std::string s;
-    for (int v : runs) s += (s.empty() ? "" : ",") + std::to_string(v);
-    return s;
 }
 
 void DummySection() {
@@ -126,6 +141,28 @@ void DummySection() {
     changed |= ImGui::Checkbox("its power", &g_dummy.power);
     ImGui::SameLine();
     ImGui::TextDisabled("(once each combo is over)");
+    ImGui::TextDisabled("Once it can act again after");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+    changed |= ImGui::Combo("##after", &g_dummy.after, "guarding\0a hit\0getting up\0any of them\0");
+    ImGui::SameLine();
+    ImGui::TextDisabled("it plays");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9);
+    const char *current = g_dummy.react >= 0 && g_dummy.react < (int)g_takes.size() ? g_takes[g_dummy.react].name.c_str() : "nothing";
+    if (ImGui::BeginCombo("##react", current)) {
+        if (ImGui::Selectable("nothing", g_dummy.react < 0)) g_dummy.react = -1, changed = true;
+        for (size_t n = 0; n < g_takes.size(); n++) {
+            ImGui::PushID((int)n);
+            if (ImGui::Selectable(g_takes[n].name.c_str(), g_dummy.react == (int)n)) g_dummy.react = (int)n, changed = true;
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    HelpMarker("A reversal: the take starts so that its last tick is the first one the dummy can act on "
+               "(the engine tells how long a hit or guard stun lasts, and getting up's animation). Record "
+               "the move's keys ending on the button, e.g. F, D, DF+x for KFM's Kung Fu Upper.");
     ImGui::EndDisabled();
     if (changed && live) SendDummy();
     if (!live) ImGui::TextDisabled(Connected() ? "Needs an Ikemen GO with the debugger patch." : "Launch the game.");
@@ -153,6 +190,8 @@ void TakesSection() {
     ImGui::Checkbox("Same random numbers", &g_sameRandom);
     ImGui::SameLine();
     ImGui::Checkbox("Loop", &g_loop);
+    ImGui::SameLine();
+    ImGui::Checkbox("Only of the characters in the match", &g_onlyMatch);
     ImGui::EndDisabled();
     if (!g_lab.waiting.empty())
         ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Waiting for the fight to start to %s...",
@@ -177,11 +216,13 @@ void TakesSection() {
     ImGui::TableHeadersRow();
     for (size_t n = 0; n < g_takes.size(); n++) {
         Take &t = g_takes[n];
+        if (g_onlyMatch && !InMatch(t)) continue;
         ImGui::PushID((int)n);
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##name", &t.name);
+        ImGui::SetItemTooltip("Recorded as P%d%s%s", t.pn, t.chr.empty() ? "" : " with ", t.chr.c_str());
         ImGui::TableNextColumn();
         ImGui::Text("%d", t.Ticks());
         ImGui::TableNextColumn();
@@ -207,6 +248,11 @@ void TakesSection() {
         if (ImGui::SmallButton("x")) {
             g_takes.erase(g_takes.begin() + n);
             if (g_playing == (int)n) g_playing = -1;
+            if (g_dummy.react == (int)n) {
+                g_dummy.react = -1;
+                if (live) SendRaw("ikdbg.dummyReact(nil)");
+            } else if (g_dummy.react > (int)n)
+                g_dummy.react--;
             ImGui::PopID();
             break;
         }
@@ -269,6 +315,7 @@ void OnTake(const Json &j) {
     Take t;
     t.pn = j["pn"].i();
     t.seed = j["seed"].i();
+    t.chr = j["char"].str();
     for (const auto &v : j["runs"].items) t.runs.push_back(v.i());
     if (t.runs.empty()) {
         Log(LogLine::Info, "The take recorded nothing.");
@@ -298,6 +345,12 @@ void LabSettingsLine(const std::string &key, const std::string &value) {
         t.name = value.substr(c + 1);
         g_takes.push_back(t);
         g_takeNo++;
+    } else if (key == "TakeOf") {
+        if (!g_takes.empty()) g_takes.back().chr = value; // of the Take line before
+    } else if (key == "DummyReact") {
+        // after|take index
+        sscanf(value.c_str(), "%d|%d", &g_dummy.after, &g_dummy.react);
+        g_dummy.after = std::clamp(g_dummy.after, 0, 3);
     } else if (key == "Dummy") {
         // pn|stance|guard|life|power
         int life = 1, power = 0;
@@ -306,17 +359,20 @@ void LabSettingsLine(const std::string &key, const std::string &value) {
         g_dummy.guard = std::clamp(g_dummy.guard, 0, 2);
         g_dummy.life = life != 0, g_dummy.power = power != 0;
     } else if (key == "LabOptions") {
-        int reset = 1, same = 1, loop = 0;
-        sscanf(value.c_str(), "%d|%d|%d|%d", &g_recPn, &reset, &same, &loop);
-        g_reset = reset != 0, g_sameRandom = same != 0, g_loop = loop != 0;
+        int reset = 1, same = 1, loop = 0, only = 0;
+        sscanf(value.c_str(), "%d|%d|%d|%d|%d", &g_recPn, &reset, &same, &loop, &only);
+        g_reset = reset != 0, g_sameRandom = same != 0, g_loop = loop != 0, g_onlyMatch = only != 0;
     }
 }
 
 void LabSettingsWrite(ImGuiTextBuffer *buf) {
     buf->appendf("Dummy=%d|%d|%d|%d|%d\n", g_dummy.pn, g_dummy.stance, g_dummy.guard, g_dummy.life, g_dummy.power);
-    buf->appendf("LabOptions=%d|%d|%d|%d\n", g_recPn, g_reset, g_sameRandom, g_loop);
-    for (const Take &t : g_takes)
+    buf->appendf("DummyReact=%d|%d\n", g_dummy.after, g_dummy.react);
+    buf->appendf("LabOptions=%d|%d|%d|%d|%d\n", g_recPn, g_reset, g_sameRandom, g_loop, g_onlyMatch);
+    for (const Take &t : g_takes) {
         buf->appendf("Take=%d|%d|%s|%s\n", t.pn, t.seed, RunsList(t.runs).c_str(), t.name.c_str());
+        if (!t.chr.empty()) buf->appendf("TakeOf=%s\n", t.chr.c_str());
+    }
 }
 
 void LabHello() {

@@ -406,10 +406,13 @@ void GameWindow() {
     }
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     ForwardKeys(focused);
-    static bool showBoxes = true, showAxes = true, onlySelected = false;
+    static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false;
     ImGui::Checkbox("Boxes", &showBoxes);
     ImGui::SameLine();
     ImGui::Checkbox("Axes", &showAxes);
+    ImGui::SameLine();
+    ImGui::Checkbox("Keys", &showKeys);
+    ImGui::SetItemTooltip("Under each player, the keys it holds (its own, the AI's, a dummy's or a take's).");
     ImGui::SameLine();
     ImGui::Checkbox("Only the selected one", &onlySelected);
     ImGui::SameLine();
@@ -615,6 +618,16 @@ void GameWindow() {
                 std::string label = ent ? Who(ent->pn, ent->helper, ent->id) + "  " + std::to_string(ent->st) : "";
                 draw->AddText(ImVec2(a.x + r * 0.6f, a.y + r * 0.3f), col, label.c_str());
             }
+        }
+        if (showKeys && !e.helper && !e.held.empty()) {
+            int bits = 0;
+            for (size_t k = 0; k < e.held.size() && k < 14; k++)
+                if (e.held[k] > 0) bits |= 1 << k;
+            std::string keys = KeysText(bits);
+            ImVec2 a = toScreen(e.axis.x, e.axis.y), sz = ImGui::CalcTextSize(keys.c_str());
+            ImVec2 at(a.x - sz.x / 2, a.y + ImGui::GetFontSize() * 1.4f);
+            draw->AddRectFilled(ImVec2(at.x - 3, at.y - 1), ImVec2(at.x + sz.x + 3, at.y + sz.y + 1), IM_COL32(0, 0, 0, 160), 3);
+            draw->AddText(at, bits ? IM_COL32(255, 230, 120, 255) : IM_COL32(200, 200, 200, 200), keys.c_str());
         }
     }
     draw->ChannelsMerge();

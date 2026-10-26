@@ -115,6 +115,8 @@ struct TraceEvent {
     int damage = 0, hittime = 0, shake = 0, slide = 0, ctrltime = 0, combo = 0, animtype = 0;
     std::string attr;
     int hitdefSrc = 0; // the attacker's HitDef or Projectile controller last run (source index), 0 if not known
+    int juggle = -1;     // juggle points the attacker has left on it (-1: not known)
+    int comboDamage = 0; // of the hits of the combo so far, this one included
 };
 
 struct Breakpoint {
@@ -410,6 +412,8 @@ void LabSettingsLine(const std::string &key, const std::string &value);
 void LabSettingsWrite(ImGuiTextBuffer *buf);
 void LabHello();                  // the game started: its dummy again
 void LabWindow();
+// Keys as a fighting game writes them ("DF+a"); bits 0-13: U, D, B, F, a, b, c, x, y, z, s, d, w, m
+std::string KeysText(int bits);
 
 // Fonts: the font files loaded (frame geometry), their defs and glyphs
 extern std::vector<std::string> g_fontFiles; // as the game names them; a text's font is 1 + an index

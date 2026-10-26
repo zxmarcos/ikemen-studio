@@ -357,6 +357,12 @@ void OnSnapshot(const Json &j) {
             t.combo = ev["combo"].i();
             t.animtype = ev["animtype"].i();
             t.attr = ev["attr"].str();
+            if (ev["jug"].type == Json::Number) t.juggle = ev["jug"].i();
+            // The combo's damage: hits taken one after another (GetHitVar(hitcount) goes on counting)
+            static std::map<int, int> comboDamage;
+            int &sum = comboDamage[t.id];
+            sum = t.guarded || t.combo <= 1 ? t.damage : sum + t.damage;
+            t.comboDamage = sum;
         }
         if (t.kind == "st") changed[t.id] = true;
         else contact[t.id] = true;

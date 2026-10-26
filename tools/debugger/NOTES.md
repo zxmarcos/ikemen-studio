@@ -572,8 +572,23 @@ breakpoints (`ikdbg.ctrlBrkSet(src, on, cond)`, read after the tick on
 the entity that ran it: a controller "runs" when its triggers held, as
 `tracedSctrl.Run` records).
 
-Phase 4 next steps: the dummy's reactions (a move after guarding or on
-waking up, from a take: "play this take when it can act again"); the
-keys held shown on the Game window while a take plays; juggle points and
-combo damage in Trace; takes kept per character (now one list).
+Phase 4, then: the dummy's reactions (`ikdbg.dummyReact`: a take started
+early enough that its last tick is the first one the dummy can act on;
+measured on KFM by a test hook recording the dummy's state, ctrl and hit
+vars each tick: from a hit or guard stun with shake s > 0 that is
+`s + hittime + 2` ticks away, with no shake left `hittime + 3` (hittime
+counts down to -1 once the shake is 0, the hit state ends the next tick
+giving ctrl, and [Statedef -1] sees ctrl the tick after); from getting up
+(state 5120) `-AnimTime + 2`; a 3-tick take ending on a button hit on that
+tick in all three cases); the keys held under each player on the Game
+window; combo damage (summed while `GetHitVar(hitcount)` goes on) and
+juggle points left (`jugglePoints(target)` on the attacker) in Trace; the
+character each take was recorded with, and a filter for those in the
+match.
+
+Phase 4 next steps: reactions for other characters' get up states (the
+lead is measured on KFM's common states; an Ikemen character with
+different states starts late, by the fallback, when control is back);
+random guard and reaction (a chance per hit); input display history (the
+last keys with their ticks, as training modes show).
 
