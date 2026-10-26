@@ -605,6 +605,14 @@ and ZSS state files (statedefs, ZSS functions, controllers and their
 parameters, every line of code with its state; `tests/cns_test.cpp`: the
 counts match the engine's sources, but a Null controller the engine does
 not compile), and window Analysis has the Lint (`app_check.cpp`: a model
-of the character made again when a text changes). A duplicate statedef in
-one file kept the engine on "NOW LOADING" in a test: Lint warns of it.
+of the character made again when a text changes), Variables (uses found
+by a regex over every line of code, `:=` a write, and the setters'
+parameters; names saved as `VarName=def|kind|index|name`) and States (the
+graph from the model's state references). A duplicate statedef in one
+file kept the engine on "NOW LOADING" in a test: Lint warns of it.
+
+Phase 5 next steps: the Lint over a ZSS character's own files (KFM's are
+CNS; the common ZSS files are read but not checked); a CNS expression's
+numbers (`ifElse(..., 200, 210)`) are not followed; the state graph knows
+nothing of the engine's own changes (landing, hits).
 

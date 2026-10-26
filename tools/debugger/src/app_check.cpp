@@ -419,9 +419,262 @@ void LintTab(Model &m) {
     ImGui::EndTable();
 }
 
+// Variables' names, by character: "def|kind|index" -> name
+std::map<std::string, std::string> g_varNames;
+
+std::string VarKey(const std::string &def, char kind, int index) {
+    return NormPath(def) + "|" + kind + "|" + std::to_string(index);
+}
+
+const char *KindName(char kind) { return kind == 'v' ? "var" : kind == 'f' ? "fvar" : kind == 's' ? "sysvar" : "sysfvar"; }
+
+// Where it is used, as small buttons: its state's number; a click shows the line
+void UseButtons(const Model &m, const std::vector<const VarUse *> &uses, const char *id) {
+    float right = ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX();
+    for (size_t i = 0; i < uses.size(); i++) {
+        const VarUse &u = *uses[i];
+        char label[32];
+        snprintf(label, sizeof(label), u.stateLiteral ? "%d" : "fn", u.state);
+        float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
+        if (i > 0) {
+            ImGui::SameLine(0, 2);
+            if (ImGui::GetCursorPosX() + w > right) ImGui::NewLine();
+        }
+        ImGui::PushID(id);
+        ImGui::PushID((int)i);
+        if (ImGui::SmallButton(label)) ShowLine(m, u.file, u.line);
+        ImGui::PopID();
+        ImGui::PopID();
+        std::string file = m.files[u.file].path;
+        ImGui::SetItemTooltip("%s:%d%s", file.c_str(), u.line, u.stateLiteral ? "" : " (a function, or outside states)");
+    }
+}
+
+void VariablesTab(Model &m, const Entity &e) {
+    static int kindIdx = 0;
+    static bool onlyUsed = true;
+    const char kinds[] = {'v', 'f', 's', 'S'};
+    const int sizes[] = {60, 40, 5, 5};
+    for (int i = 0; i < 4; i++) {
+        if (i) ImGui::SameLine();
+        ImGui::RadioButton(KindName(kinds[i]), &kindIdx, i);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Only used ones", &onlyUsed);
+    HelpMarker("Where each variable is written (VarSet, VarAdd, VarRandom, VarRangeSet, ParentVarSet/Add, :=) "
+               "and read (any expression), by state; a click shows the line. Names are kept per character "
+               "and shown in the Inspector. Now: the selected entity's value.");
+    char kind = kinds[kindIdx];
+    if (kind == 'v' || kind == 'f') Watch(e.id); // its var/fvar come with the snapshots
+    const std::vector<double> &now = kind == 'v' ? e.vars : e.fvars;
+
+    ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
+    if (!ImGui::BeginTable("vars", 5, flags)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 4);
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8);
+    ImGui::TableSetupColumn("Now", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 4);
+    ImGui::TableSetupColumn("Written in", ImGuiTableColumnFlags_WidthStretch, 1);
+    ImGui::TableSetupColumn("Read in", ImGuiTableColumnFlags_WidthStretch, 1);
+    ImGui::TableHeadersRow();
+    for (int i = 0; i < sizes[kindIdx]; i++) {
+        std::vector<const VarUse *> writes, reads;
+        for (const auto &u : m.vars)
+            if (u.kind == kind && u.index == i) (u.write ? writes : reads).push_back(&u);
+        std::string &name = g_varNames[VarKey(m.def, kind, i)];
+        if (onlyUsed && writes.empty() && reads.empty() && name.empty()) continue;
+        ImGui::PushID(i);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%s(%d)", KindName(kind), i);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##name", "name", &name);
+        ImGui::TableNextColumn();
+        if (i < (int)now.size())
+            ImGui::Text(kind == 'f' ? "%.3f" : "%.0f", now[i]);
+        else
+            ImGui::TextDisabled("-");
+        ImGui::TableNextColumn();
+        if (writes.empty()) ImGui::TextDisabled(reads.empty() ? "" : "never (read only)");
+        UseButtons(m, writes, "w");
+        ImGui::TableNextColumn();
+        if (reads.empty()) ImGui::TextDisabled(writes.empty() ? "" : "never (written only)");
+        UseButtons(m, reads, "r");
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
+}
+
+// A line, dashed when asked, along a cubic curve
+void Curve(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 col, float thick, bool dashed) {
+    float dx = (b.x - a.x) * 0.5f;
+    ImVec2 c1(a.x + dx, a.y), c2(b.x - dx, b.y);
+    if (!dashed) {
+        draw->AddBezierCubic(a, c1, c2, b, col, thick);
+        return;
+    }
+    const int steps = 24;
+    ImVec2 prev = a;
+    for (int i = 1; i <= steps; i++) {
+        ImVec2 p = ImBezierCubicCalc(a, c1, c2, b, (float)i / steps);
+        if (i % 2) draw->AddLine(prev, p, col, thick);
+        prev = p;
+    }
+}
+
+// The states around one: those that change to it on the left, those it changes to on the right
+// (by numbers written in ChangeState, SelfState, HitDef p1stateno...; dashed: given to another),
+// a few steps each way. The path the player came by is green; states that do not exist red.
+void GraphTab(Model &m, const Entity &e) {
+    static int focus = 0, depth = 2;
+    static bool follow = true;
+    float em = ImGui::GetFontSize();
+    ImGui::Checkbox("Follow the player", &follow);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 5);
+    if (ImGui::InputInt("State", &focus, 0)) follow = false;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 6);
+    ImGui::SliderInt("##depth", &depth, 1, 4, "%d steps");
+    ImGui::SameLine();
+    HelpMarker("Left: the states that change to it; right: those it changes to, by numbers written in "
+               "ChangeState, SelfState, HitDef/ReversalDef/Projectile p1stateno (dashed: p2stateno, "
+               "TargetState, Helper: given to another). Green: the path the player came by; red: a state "
+               "that does not exist. Click a state to center on it, double-click to show it in Code.");
+    if (follow) focus = e.st;
+
+    std::map<int, std::vector<const StateRef *>> out, in;
+    for (const auto &r : m.refs)
+        if (r.fromLiteral && r.from != r.to) {
+            out[r.from].push_back(&r);
+            in[r.to].push_back(&r);
+        }
+    // Columns: -depth .. depth
+    std::map<int, int> col;
+    std::vector<std::vector<int>> cols(2 * depth + 1);
+    col[focus] = 0;
+    cols[depth].push_back(focus);
+    for (int dir : {1, -1}) {
+        std::vector<int> frontier = {focus};
+        for (int d = 1; d <= depth; d++) {
+            std::vector<int> next;
+            for (int s : frontier)
+                for (const StateRef *r : (dir > 0 ? out : in)[s]) {
+                    int t = dir > 0 ? r->to : r->from;
+                    if (col.count(t)) continue;
+                    col[t] = dir * d;
+                    next.push_back(t);
+                }
+            std::sort(next.begin(), next.end());
+            cols[depth + dir * d] = next;
+            frontier = next;
+        }
+    }
+    // The path the player came by: its last states, oldest first
+    std::vector<int> path;
+    if (auto h = g_history.find(e.id); h != g_history.end())
+        for (auto r = h->second.rbegin(); r != h->second.rend() && path.size() < 10; ++r)
+            if (path.empty() || path.back() != r->st) path.push_back(r->st);
+    std::reverse(path.begin(), path.end());
+    std::set<std::pair<int, int>> pathEdges;
+    for (size_t i = 1; i < path.size(); i++) pathEdges.insert({path[i - 1], path[i]});
+    std::set<int> pathStates(path.begin(), path.end());
+
+    float colW = em * 9, rowH = em * 2.2f, nodeW = em * 6, nodeH = em * 1.5f;
+    size_t rows = 1;
+    for (const auto &c : cols) rows = std::max(rows, c.size());
+    if (!ImGui::BeginChild("graph", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+        ImGui::EndChild();
+        return;
+    }
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float width = std::max(avail.x, cols.size() * colW), height = std::max(avail.y, rows * rowH + em);
+    ImGui::Dummy(ImVec2(width, height));
+    float left = origin.x + (width - cols.size() * colW) * 0.5f;
+    std::map<int, ImVec2> pos; // top left of each node
+    for (size_t c = 0; c < cols.size(); c++)
+        for (size_t r = 0; r < cols[c].size(); r++) {
+            float top = origin.y + em * 0.5f + (height - em - cols[c].size() * rowH) * 0.5f + r * rowH;
+            pos[cols[c][r]] = ImVec2(left + c * colW + (colW - nodeW) * 0.5f, top);
+        }
+    // The state in focus in view when it changes
+    static int shown = INT_MIN;
+    if (shown != focus && pos.count(focus)) {
+        shown = focus;
+        ImGui::SetScrollX(pos[focus].x - origin.x + nodeW * 0.5f - avail.x * 0.5f);
+        ImGui::SetScrollY(pos[focus].y - origin.y + nodeH * 0.5f - avail.y * 0.5f);
+    }
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    float thick = std::max(1.0f, em / 13);
+    // Edges between neighbouring columns, left to right
+    for (const auto &r : m.refs) {
+        if (!r.fromLiteral || r.from == r.to || !col.count(r.from) || !col.count(r.to)) continue;
+        if (col[r.to] != col[r.from] + 1) continue;
+        ImVec2 a = pos[r.from], b = pos[r.to];
+        bool onPath = pathEdges.count({r.from, r.to});
+        ImU32 color = onPath ? IM_COL32(90, 220, 90, 255) : IM_COL32(150, 160, 190, 170);
+        Curve(draw, ImVec2(a.x + nodeW, a.y + nodeH * 0.5f), ImVec2(b.x, b.y + nodeH * 0.5f), color,
+              onPath ? thick * 2.5f : thick, r.other);
+    }
+    // Nodes
+    for (const auto &[no, p] : pos) {
+        bool exists = m.states.count(no) > 0, now = no == e.st, onPath = pathStates.count(no) > 0;
+        ImU32 fill = !exists ? IM_COL32(120, 40, 40, 230) : onPath ? IM_COL32(40, 100, 50, 230) : IM_COL32(45, 55, 80, 230);
+        ImU32 border = no == focus ? IM_COL32(255, 220, 60, 255) : now ? IM_COL32(90, 230, 90, 255) : IM_COL32(120, 130, 160, 255);
+        ImVec2 q(p.x + nodeW, p.y + nodeH);
+        draw->AddRectFilled(p, q, fill, em * 0.3f);
+        draw->AddRect(p, q, border, em * 0.3f, no == focus || now ? thick * 2 : thick);
+        std::string label = std::to_string(no);
+        ImVec2 sz = ImGui::CalcTextSize(label.c_str());
+        draw->AddText(ImVec2(p.x + (nodeW - sz.x) * 0.5f, p.y + (nodeH - sz.y) * 0.5f), IM_COL32(240, 240, 240, 255), label.c_str());
+        ImGui::SetCursorScreenPos(p);
+        ImGui::PushID(no);
+        ImGui::InvisibleButton("node", ImVec2(nodeW, nodeH));
+        ImGui::PopID();
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0) && exists) {
+            auto at = m.states[no];
+            ShowLine(m, at.first, m.files[at.first].cns.states[at.second].line);
+        } else if (ImGui::IsItemClicked()) {
+            focus = no;
+            follow = false;
+        }
+        if (ImGui::BeginItemTooltip()) {
+            if (exists) {
+                auto at = m.states[no];
+                ImGui::Text("State %d: %s:%d", no, m.files[at.first].path.c_str(), m.files[at.first].cns.states[at.second].line);
+            } else {
+                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "State %d does not exist", no);
+            }
+            ImGui::TextDisabled("%zu change to it, it changes to %zu", in[no].size(), out[no].size());
+            ImGui::EndTooltip();
+        }
+    }
+    ImGui::EndChild();
+}
+
 } // namespace
 
-std::string VarName(const std::string &, char, int) { return ""; }
+std::string VarName(const std::string &def, char kind, int index) {
+    auto it = g_varNames.find(VarKey(def, kind, index));
+    return it == g_varNames.end() ? "" : it->second;
+}
+
+void AnalysisSettingsLine(const std::string &key, const std::string &value) {
+    if (key != "VarName") return;
+    // def|kind|index|name
+    size_t a = value.find('|'), b = a == std::string::npos ? a : value.find('|', a + 1),
+           c = b == std::string::npos ? b : value.find('|', b + 1);
+    if (c == std::string::npos || b != a + 2) return;
+    g_varNames[VarKey(value.substr(0, a), value[a + 1], atoi(value.c_str() + b + 1))] = value.substr(c + 1);
+}
+
+void AnalysisSettingsWrite(ImGuiTextBuffer *buf) {
+    for (const auto &[k, name] : g_varNames)
+        if (!name.empty()) buf->appendf("VarName=%s|%s\n", k.c_str(), name.c_str());
+}
 
 void AnalysisWindow() {
     // A window the saved layout does not know joins Code's dock
@@ -450,6 +703,14 @@ void AnalysisWindow() {
     if (ImGui::BeginTabBar("analysis")) {
         if (ImGui::BeginTabItem("Lint")) {
             LintTab(*m);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Variables")) {
+            VariablesTab(*m, *e);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("States")) {
+            GraphTab(*m, *e);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

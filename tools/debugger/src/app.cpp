@@ -590,6 +590,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
             g_watches.push_back({g_nextWatch++, t, value.substr(used)});
     } else {
         LabSettingsLine(key, value);
+        AnalysisSettingsLine(key, value);
     }
 }
 
@@ -605,6 +606,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     }
     for (const auto &w : g_watches) buf->appendf("WatchExpr=%d|%s\n", w.target, w.code.c_str());
     LabSettingsWrite(buf);
+    AnalysisSettingsWrite(buf);
     buf->append("\n");
 }
 

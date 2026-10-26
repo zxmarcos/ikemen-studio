@@ -212,13 +212,17 @@ void VarGrid(const char *id, const std::vector<double> &vals, const std::vector<
         ImVec4 color = changed ? ImVec4(1, 0.8f, 0.3f, 1)
                      : zero    ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
                                : ImGui::GetStyleColorVec4(ImGuiCol_Text);
-        char label[48];
+        // Its name (Analysis, Variables) when it has one
+        const Entity *ent = FindEntity(entity);
+        std::string name = ent ? VarName(CharFile(ent->pn, "def"), floats ? 'f' : 'v', (int)n) : "";
+        char label[96];
         if (floats)
-            snprintf(label, sizeof(label), "%2zu: %.3f##%zu", n, vals[n], n);
+            snprintf(label, sizeof(label), "%2zu%s%s: %.3f##%zu", n, name.empty() ? "" : " ", name.c_str(), vals[n], n);
         else
-            snprintf(label, sizeof(label), "%2zu: %.0f##%zu", n, vals[n], n);
+            snprintf(label, sizeof(label), "%2zu%s%s: %.0f##%zu", n, name.empty() ? "" : " ", name.c_str(), vals[n], n);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::Selectable(label, false, ImGuiSelectableFlags_AllowDoubleClick);
+        if (!name.empty()) ImGui::SetItemTooltip("%s(%zu): %s", floats ? "fvar" : "var", n, name.c_str());
         if (g_canSet && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             editIndex = (int)n;
             editValue = vals[n];

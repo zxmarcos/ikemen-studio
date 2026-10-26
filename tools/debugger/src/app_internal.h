@@ -309,6 +309,8 @@ void SoundsWindow();
 // Analysis: a character's states checked (Lint), its variables, the graph of its states
 void AnalysisWindow();
 std::string VarName(const std::string &def, char kind, int index); // "" without one ('v', 'f', 's', 'S')
+void AnalysisSettingsLine(const std::string &key, const std::string &value);
+void AnalysisSettingsWrite(ImGuiTextBuffer *buf);
 
 // Code
 extern bool g_applying;          // waiting for the game's answer to Apply
