@@ -29,6 +29,8 @@ std::map<int, std::deque<FrameRow>> g_history;
 std::deque<TraceEvent> g_trace;
 std::vector<Breakpoint> g_breakpoints;
 int g_nextBid = 1;
+std::vector<WatchExpr> g_watches;
+int g_nextWatch = 1;
 std::string g_breakText;
 std::deque<LogLine> g_log;
 bool g_logScroll;
@@ -110,6 +112,10 @@ void SendBreakpoint(const Breakpoint &b) {
     char head[64];
     snprintf(head, sizeof(head), "ikdbg.brkSet(%d, %d, ", b.bid, b.target);
     SendRaw(head + LuaQuote(b.cond) + (b.enabled ? ", true)" : ", false)"));
+}
+
+void SendWatchExpr(const WatchExpr &w) {
+    SendRaw("ikdbg.exprSet(" + std::to_string(w.n) + ", " + std::to_string(w.target) + ", " + LuaQuote(w.code) + ")");
 }
 
 void Watch(int id) {
@@ -324,6 +330,20 @@ void OnSnapshot(const Json &j) {
         t.from = ev["from"].i();
         t.to = ev["to"].i();
         t.st = ev["st"].i();
+        if (t.kind == "got") {
+            t.by = ev["by"].i();
+            if (const Entity *by = FindEntity(t.by)) t.byPn = by->pn, t.byHelper = by->helper, t.bySt = by->st;
+            t.guarded = ev["guarded"].truthy();
+            t.fall = ev["fall"].truthy();
+            t.damage = ev["dmg"].i();
+            t.hittime = ev["hittime"].i();
+            t.shake = ev["shake"].i();
+            t.slide = ev["slide"].i();
+            t.ctrltime = ev["ctrltime"].i();
+            t.combo = ev["combo"].i();
+            t.animtype = ev["animtype"].i();
+            t.attr = ev["attr"].str();
+        }
         if (t.kind == "st") changed[t.id] = true;
         else contact[t.id] = true;
         g_trace.push_back(t);
@@ -347,6 +367,14 @@ void OnSnapshot(const Json &j) {
     for (const auto &bk : j["bk"].items)
         for (auto &b : g_breakpoints)
             if (b.bid == bk["bid"].i()) b.hits = bk["hits"].i();
+
+    for (const auto &item : j["w"].items)
+        for (auto &w : g_watches)
+            if (w.n == item["n"].i()) {
+                std::string v = item["v"].str(), err = item["err"].str();
+                if (w.seen && w.value != v && advanced) w.changedTick = g_tick;
+                w.value = v, w.error = err, w.seen = true;
+            }
 
     if (g_selId < 0 && !g_ents.empty()) g_selId = g_ents[0].id;
 }
@@ -380,6 +408,7 @@ void OnLine(const Bridge::Line &line) {
         Log(LogLine::Info, "Bridge connected: ikdbg " + g_modVersion + ", Ikemen GO " + g_ikemenVersion +
                                (g_canTrace ? " (with the debugger patch)" : " (no controller trace: unpatched Ikemen GO)"));
         for (const auto &b : g_breakpoints) SendBreakpoint(b);
+        for (const auto &w : g_watches) SendWatchExpr(w);
     } else if (tag == "@IKSRC") {
         size_t from = (size_t)std::max(1, j["from"].i());
         const auto &items = j["items"].items;
@@ -456,6 +485,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Session", leftTop);
     ImGui::DockBuilderDockWindow("Players", leftBottom);
     ImGui::DockBuilderDockWindow("Breakpoints", leftBottom);
+    ImGui::DockBuilderDockWindow("Watch", leftBottom);
     ImGui::DockBuilderDockWindow("Control", control);
     ImGui::DockBuilderDockWindow("Game", players);
     ImGui::DockBuilderDockWindow("Inspector", right);
@@ -509,6 +539,11 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         int on = 1, lineNo = 0, used = 0;
         if (sscanf(value.c_str(), "%d|%d|%n", &on, &lineNo, &used) == 2 && used > 0)
             g_ctrlBreaks.push_back({value.substr(used), lineNo, on != 0});
+    } else if (key == "WatchExpr") {
+        // target|code
+        int t = 0, used = 0;
+        if (sscanf(value.c_str(), "%d|%n", &t, &used) == 1 && used > 0)
+            g_watches.push_back({g_nextWatch++, t, value.substr(used)});
     }
 }
 
@@ -519,6 +554,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
                  s.p1.c_str(), s.p2.c_str(), s.stage.c_str(), s.extra.c_str(), s.ai1, s.ai2, s.gameWindow);
     for (const auto &b : g_breakpoints) buf->appendf("Breakpoint=%d|%d|%s\n", b.target, b.enabled, b.cond.c_str());
     for (const auto &b : g_ctrlBreaks) buf->appendf("CtrlBreak=%d|%d|%s\n", b.enabled, b.line, b.file.c_str());
+    for (const auto &w : g_watches) buf->appendf("WatchExpr=%d|%s\n", w.target, w.code.c_str());
     buf->append("\n");
 }
 
@@ -588,6 +624,7 @@ void App_Frame() {
     FrameDataWindow();
     TraceWindow();
     BreakpointsWindow();
+    WatchWindow();
     ConsoleWindow();
     CodeWindow();
     if (g_autoLaunch) {

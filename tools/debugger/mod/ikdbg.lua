@@ -43,6 +43,7 @@ ikdbg = {
 	events = {},
 	watch = {},       -- id -> true: send var/fvar for these entities
 	breakpoints = {}, -- bid -> {pn, cond, fn, enabled, hits}
+	exprs = {},       -- n -> {pn, fn} or {err}: the Watch window's expressions
 }
 
 --;-----------------------------------------------------------
@@ -214,6 +215,19 @@ function ikdbg.brkDel(bid)
 	ikdbg.breakpoints[bid] = nil
 end
 
+-- A Watch expression, read with each snapshot on player pn (0: the entity whose variables are
+-- watched, the one the Inspector shows). An expression, or statements that return values.
+function ikdbg.exprSet(n, pn, code)
+	local fn, err = loadstring('return ' .. code)
+	if not fn then fn, err = loadstring(code) end
+	ikdbg.exprs[n] = fn and {pn = pn, fn = fn} or {err = tostring(err)}
+	ikdbg.dirty = true
+end
+
+function ikdbg.exprDel(n)
+	ikdbg.exprs[n] = nil
+end
+
 -- Loads and compiles every player's files again (the debugger saved them); the
 -- answer is @IKRELOAD {items = [{pn, ok, err}]}. Needs the patched Ikemen.
 function ikdbg.reload()
@@ -358,6 +372,32 @@ local function checkCtrlBreak(tr)
 	end
 end
 
+-- The Watch expressions' values: [{n, v}] or [{n, err}].
+local function readExprs()
+	if next(ikdbg.exprs) == nil then return nil end
+	local sel = next(ikdbg.watch)
+	local out = {_array = true}
+	for n, x in pairs(ikdbg.exprs) do
+		local r = {n = n, err = x.err}
+		if x.fn then
+			local hasOld, oldid = pcall(id)
+			local ok, there = false, false
+			if x.pn > 0 then ok, there = pcall(player, x.pn) elseif sel then ok, there = pcall(playerId, sel) end
+			local res = ok and there and {pcall(x.fn)} or {false, 'no such player'}
+			if hasOld then pcall(playerId, oldid) end
+			if res[1] then
+				local vals = {}
+				for i = 2, table.maxn(res) do vals[#vals + 1] = tostring(res[i]) end
+				r.v = table.concat(vals, ', ')
+			else
+				r.err = tostring(res[2])
+			end
+		end
+		table.insert(out, r)
+	end
+	return out
+end
+
 local function frame()
 	if ikdbg.caps.trace then sendSources() end
 	local tick = gameTime()
@@ -382,6 +422,14 @@ local function frame()
 				table.insert(ikdbg.events, {k = e.mh == 1 and 'hit' or 'guarded', t = tick, id = e.id, pn = e.pn, h = e.h, st = e.st})
 			end
 			ikdbg.lastContact[e.id] = e.mc
+			-- Hit (or guarding one) on this tick: what it does to it (the damage is taken next tick)
+			if getHitVar('frame') then
+				table.insert(ikdbg.events, {k = 'got', t = tick, id = e.id, pn = e.pn, h = e.h, st = e.st,
+					by = getHitVar('playerid'), dmg = getHitVar('damage'), guarded = getHitVar('guarded'),
+					hittime = getHitVar('hittime'), shake = getHitVar('hitshaketime'),
+					slide = getHitVar('slidetime'), ctrltime = getHitVar('ctrltime'), fall = getHitVar('fall'),
+					attr = getHitVar('attr'), combo = getHitVar('hitcount'), animtype = getHitVar('animtype')})
+			end
 		end
 		ikdbg.lastState[e.id] = e.st
 	end)
@@ -399,7 +447,7 @@ local function frame()
 	end
 	send('@IKS', {
 		t = tick, rs = roundState(), rn = roundNo(), paused = paused(), steps = ikdbg.steps,
-		adv = advanced, ents = ents, ev = ev, bk = bk, tr = tr,
+		adv = advanced, ents = ents, ev = ev, bk = bk, tr = tr, w = readExprs(),
 	})
 	ikdbg.events = {}
 

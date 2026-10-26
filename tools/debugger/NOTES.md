@@ -525,8 +525,14 @@ Limits today:
 - Not in netplay or rollback matches (no stdin bridge there).
 - Frames are shared with the OpenGL renderers only (not Vulkan).
 
-Cheap next steps (mod and app only): an "only if" condition on controller breakpoints; a Watch list of Lua
-expressions; a Hits log with `getHitVar` (damage, hit time, fall); move
-frame data (startup/active/recovery/advantage) computed from the snapshot
-history; explods and projectiles lists via `explodVar`/`projVar`.
+Done since (mod and app only): a Watch window (`ikdbg.exprSet`: each
+expression read with the snapshot, `w`); hits taken in Trace (a `got`
+event when `getHitVar('frame')` is true: the engine sets it in hit
+detection and clears it in the next tick's `actionFinish`, so the loop hook
+sees it on the hit's tick; `ghv.damage` is still the pending damage then).
+
+Cheap next steps (mod and app only): an "only if" condition on controller
+breakpoints; move frame data (startup/active/recovery/advantage) computed
+from the snapshot history; explods and projectiles lists via
+`explodVar`/`projVar`.
 

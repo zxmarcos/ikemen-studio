@@ -1,10 +1,12 @@
-// The debugger's windows: Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console.
+// The debugger's windows: Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Watch,
+// Console.
 #include "app_internal.h"
 
 #include <cfloat>
 #include <cstdarg>
 #include <fstream>
 
+#include "imgui_internal.h"
 #include "imgui_stdlib.h"
 
 namespace app {
@@ -451,9 +453,25 @@ void TraceWindow() {
             ImGui::TableNextColumn();
             if (isState)
                 ImGui::Text("state %d -> %d", t.from, t.to);
-            else
+            else if (t.kind == "got") {
+                // what the hit does to it: hitstun (or guard stun), hit shake (its hit pause), slide, ctrl
+                std::string by = t.byPn ? Who(t.byPn, t.byHelper, t.by) : "id " + std::to_string(t.by);
+                ImGui::TextColored(t.guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1),
+                                   "%s %s (state %d): %d damage, %s %d, shake %d, slide %d, ctrl %d%s",
+                                   t.guarded ? "guarded" : "hit by", by.c_str(), t.bySt, t.damage,
+                                   t.guarded ? "guard time" : "hit time", t.hittime, t.shake, t.slide,
+                                   t.ctrltime, t.fall ? ", falls" : "");
+                if (ImGui::BeginItemTooltip()) {
+                    ImGui::Text("In its state %d. Attr %s, anim type %d, hit %d of the combo", t.st, t.attr.c_str(),
+                                t.animtype, t.combo);
+                    ImGui::TextDisabled("The damage is taken on the next tick. Hit time: the hit state's\n"
+                                        "length after the shake; ctrl: when control comes back (guarding).");
+                    ImGui::EndTooltip();
+                }
+            } else
                 ImGui::TextColored(t.kind == "hit" ? ImVec4(1, 0.5f, 0.5f, 1) : ImVec4(0.6f, 0.8f, 1, 1),
-                                   "%s (in state %d)", t.kind == "hit" ? "hit" : "guarded", t.st);
+                                   "%s (in state %d)", t.kind == "hit" ? "its attack hit" : "its attack was guarded",
+                                   t.st);
         }
         if (follow) ImGui::SetScrollHereY(1.0f);
         ImGui::EndTable();
@@ -547,6 +565,84 @@ void BreakpointsWindow() {
             if (ImGui::SmallButton("Delete")) {
                 if (Connected()) SendCtrlBreak(b, false);
                 g_ctrlBreaks.erase(g_ctrlBreaks.begin() + n);
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
+}
+
+void WatchWindow() {
+    // A window the saved layout does not know joins Breakpoints
+    if (ImGuiWindow *bp = ImGui::FindWindowByName("Breakpoints"); bp && bp->DockId)
+        ImGui::SetNextWindowDockID(bp->DockId, ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Watch")) {
+        ImGui::End();
+        return;
+    }
+    // Expressions on the selected entity are read on the one whose variables are watched
+    if (Connected() && g_selId >= 0) Watch(g_selId);
+    static int target = 0;
+    static std::string code;
+    const char *targets[] = {"Selected", "P1", "P2", "P3", "P4"};
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    ImGui::Combo("##target", &target, targets, IM_ARRAYSIZE(targets));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
+    bool add = ImGui::InputTextWithHint("##code", "life(), var(3)", &code, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    add |= ImGui::Button("Add");
+    if (add && !code.empty()) {
+        g_watches.push_back({g_nextWatch++, target, code});
+        if (Connected()) SendWatchExpr(g_watches.back());
+        code.clear();
+    }
+    ImGui::TextDisabled("Lua over Ikemen's triggers, read with each tick: an expression, or statements that return.");
+
+    ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable |
+                            ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
+    if (ImGui::BeginTable("watch", 4, flags)) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 5);
+        ImGui::TableSetupColumn("Expression", ImGuiTableColumnFlags_WidthStretch, 1);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 1);
+        ImGui::TableSetupColumn("");
+        ImGui::TableHeadersRow();
+        for (size_t n = 0; n < g_watches.size(); n++) {
+            WatchExpr &w = g_watches[n];
+            ImGui::PushID(w.n);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::Combo("##t", &w.target, targets, IM_ARRAYSIZE(targets)) && Connected()) SendWatchExpr(w);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::InputText("##code", &w.code, ImGuiInputTextFlags_EnterReturnsTrue) && Connected()) {
+                w.seen = false;
+                SendWatchExpr(w);
+            }
+            ImGui::TableNextColumn();
+            if (!w.error.empty())
+                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", w.error.c_str());
+            else if (w.changedTick >= 0 && w.changedTick == g_tick)
+                ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "%s", w.value.c_str());
+            else
+                ImGui::TextUnformatted(w.value.c_str());
+            if (ImGui::BeginItemTooltip()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 40);
+                ImGui::TextUnformatted(w.error.empty() ? w.value.c_str() : w.error.c_str());
+                ImGui::PopTextWrapPos();
+                if (w.changedTick >= 0)
+                    ImGui::TextDisabled("Last changed at tick %d (%d ticks ago)", w.changedTick, g_tick - w.changedTick);
+                ImGui::EndTooltip();
+            }
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("Delete")) {
+                if (Connected()) SendRaw("ikdbg.exprDel(" + std::to_string(w.n) + ")");
+                g_watches.erase(g_watches.begin() + n);
                 ImGui::PopID();
                 break;
             }

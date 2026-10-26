@@ -93,8 +93,13 @@ struct SourceFile {
 struct TraceEvent {
     int t, id, pn;
     bool helper;
-    std::string kind;
+    std::string kind; // st: a state change; hit, guarded: its attack made contact; got: hit or guarding one
     int from, to, st;
+    // got: by whom (its state then), and the GetHitVars
+    int by = 0, byPn = 0, bySt = 0;
+    bool byHelper = false, guarded = false, fall = false;
+    int damage = 0, hittime = 0, shake = 0, slide = 0, ctrltime = 0, combo = 0, animtype = 0;
+    std::string attr;
 };
 
 struct Breakpoint {
@@ -103,6 +108,16 @@ struct Breakpoint {
     std::string cond;
     bool enabled = true;
     int hits = 0;
+};
+
+// A Watch window expression, read by the game with each snapshot.
+struct WatchExpr {
+    int n;
+    int target; // 0 the entity the Inspector shows, n player n
+    std::string code;
+    std::string value, error;
+    bool seen = false;    // a value came
+    int changedTick = -1; // when its value last changed
 };
 
 struct LogLine {
@@ -153,6 +168,8 @@ extern std::map<int, std::deque<FrameRow>> g_history;
 extern std::deque<TraceEvent> g_trace;
 extern std::vector<Breakpoint> g_breakpoints;
 extern int g_nextBid;
+extern std::vector<WatchExpr> g_watches;
+extern int g_nextWatch;
 extern std::string g_breakText;
 extern std::deque<LogLine> g_log;
 extern bool g_logScroll;
@@ -203,6 +220,7 @@ void SendRaw(const std::string &lua);
 void Exec(const std::string &lua);
 void ExecOn(int id, const std::string &lua);
 void SendBreakpoint(const Breakpoint &b);
+void SendWatchExpr(const WatchExpr &w);
 void Watch(int id);
 void SendCtrlBreak(const CtrlBreak &b, bool on, size_t from = 1);
 CtrlBreak *FindCtrlBreak(const std::string &file, int line);
@@ -383,6 +401,7 @@ void InspectorWindow();
 void FrameDataWindow();
 void TraceWindow();
 void BreakpointsWindow();
+void WatchWindow();
 void ConsoleWindow();
 
 } // namespace app
