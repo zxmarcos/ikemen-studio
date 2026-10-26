@@ -85,11 +85,21 @@ static void UpdateModifiers(ImGuiIO &io, WPARAM vk, bool down) {
     io.AddKeyEvent(ImGuiMod_Alt, g_alt || (GetKeyState(VK_MENU) & 0x8000) != 0);
 }
 
+// The mouse is captured while a button is held (a drag goes on outside the window) and released
+// with the last one. The buttons are counted here: ImGui's own state only follows the events at
+// the next frame, and a capture kept made the title bar and the close button unclickable.
+static int g_buttonsDown;
+
 static void MouseButton(HWND hwnd, int button, bool down) {
     ImGuiIO &io = ImGui::GetIO();
-    if (down && GetCapture() == nullptr) SetCapture(hwnd);
+    if (down) {
+        if (g_buttonsDown == 0 && GetCapture() == nullptr) SetCapture(hwnd);
+        g_buttonsDown |= 1 << button;
+    } else {
+        g_buttonsDown &= ~(1 << button);
+        if (g_buttonsDown == 0 && GetCapture() == hwnd) ReleaseCapture();
+    }
     io.AddMouseButtonEvent(button, down);
-    if (!down && !ImGui::IsAnyMouseDown() && GetCapture() == hwnd) ReleaseCapture();
 }
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -136,6 +146,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_CHAR:
         if (wParam > 0 && wParam < 0x10000) io.AddInputCharacterUTF16((unsigned short)wParam);
         return 0;
+    case WM_CAPTURECHANGED:
+        // Taken away (another window, a dialog): the buttons held are let go here, as their release
+        // goes elsewhere
+        if ((HWND)lParam != hwnd) {
+            for (int b = 0; b < 3; b++)
+                if (g_buttonsDown & (1 << b)) io.AddMouseButtonEvent(b, false);
+            g_buttonsDown = 0;
+        }
+        break;
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
         g_ctrl = g_shift = g_alt = false;
