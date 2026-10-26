@@ -1461,6 +1461,7 @@ func loadglTFModel(filepath string) (*Model, error) {
 		}
 		mdl.scenes = append(mdl.scenes, scene)
 	}
+	editorModelLoaded(filepath, doc)
 	return mdl, nil
 }
 

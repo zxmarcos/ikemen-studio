@@ -373,6 +373,9 @@ func editorSwapStage(def string) (err error) {
 	ns.mainstage = old.mainstage
 	ns.reset()
 	editorPutStage(old, ns)
+	// As a round starting on another stage: the camera at the new stage's start (the fight's
+	// aspect stays the match's)
+	sys.cam.Init()
 	return nil
 }
 
@@ -382,6 +385,15 @@ func editorPutStage(old, ns *Stage) {
 	// The BGs' sprites are set when the stage steps; a paused game would draw none
 	for _, b := range ns.bg {
 		b.anim.UpdateSprite()
+	}
+	// A model's vertices go to the GPU when a round starts (handleStageSwap): a new one now
+	if m := ns.model; m != nil && len(m.vertexBuffer) > 0 && (old.model == nil || len(old.model.vertexBuffer) == 0 ||
+		&old.model.vertexBuffer[0] != &m.vertexBuffer[0]) {
+		sys.mainThreadTask <- func() {
+			gfx.SetModelVertexData(0, m.vertexBuffer)
+			gfx.SetModelIndexData(0, m.elementBuffer...)
+		}
+		sys.runMainThreadTask()
 	}
 	for k, v := range sys.stageList {
 		if v == old {

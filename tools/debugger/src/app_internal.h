@@ -384,6 +384,9 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 // window's own zoom and pan stay put). pictureAt: a screen point to the game picture's pixels.
 bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt);
 void StageWindow();
+// The stage's 3D model (app_model.cpp), in the Stage window
+void OnModel(const Json &j);
+void ModelSection(bool stageHasModel);
 
 // Fight screen and Motif: where each element of their defs (fight.def, system.def) was drawn in
 // the last frame (editor_fight.go, editor_motif.go)

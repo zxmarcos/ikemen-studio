@@ -275,6 +275,12 @@ function ikdbg.files()
 	send('@IKFILES', {players = players})
 end
 
+-- The stage's 3D model: its animations, nodes and lights (debugModel, editor_model.go).
+function ikdbg.model()
+	local m = debugModel ~= nil and debugModel() or nil
+	send('@IKMODEL', m or {none = true})
+end
+
 -- Compiles a player's animations from unsaved text (a file the debugger wrote).
 function ikdbg.anims(pn, textFile)
 	local ok, err = debugReloadAnims(pn, textFile)

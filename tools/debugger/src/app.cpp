@@ -466,6 +466,8 @@ void OnLine(const Bridge::Line &line) {
         OnReload(j);
     } else if (tag == "@IKFILES") {
         OnFiles(j);
+    } else if (tag == "@IKMODEL") {
+        OnModel(j);
     } else if (tag == "@IKRES") {
         bool ok = j["ok"].truthy();
         std::string r = j["r"].str();

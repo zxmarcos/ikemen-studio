@@ -460,6 +460,11 @@ void StageWindow() {
     if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
         ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
 
+    bool hasModel = false;
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
+    ModelSection(hasModel);
+
     // The selected section: a BG picked on the game, or one clicked in the list
     static int selSection = -1;
     static int selBg = -2;

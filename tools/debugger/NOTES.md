@@ -158,6 +158,7 @@ src/editor_select.go     engine side: select.def's characters and stages emptied
 src/editor_font.go       engine side: every font loaded, a font's file read again in place
 src/editor_objects.go    engine side: a character's explods and projectiles (debugObjects)
 src/editor_lab.go        engine side: a player's keys held, recorded, played; a character swapped
+src/editor_model.go      engine side: the stage's 3D model (animations, nodes, lights), the glTF names kept
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -184,6 +185,7 @@ tools/debugger/
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
   src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
+  src/app_model.cpp      the Stage window's 3D model: animations, nodes, lights
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
@@ -653,4 +655,17 @@ and a stage of PNG images (`Sff_SpritesOfPngs`, the def's camera bounds from
 the images, `debugSwapStage` in `editor_stage.go` putting it in the match).
 Tested on kfm and kfm_zss: the moves hit, the characters stand, walk and
 pass the Lint, the stage is played on at once.
+
+Then the 3D stage tab (the Stage window's "3D model", `app_model.cpp`, asking
+`ikdbg.model()` while it is open): `editor_model.go` gives the stage model's
+animations, nodes and lights, and turns them on and off or changes them;
+the engine keeps no glTF names, so a line at the end of `loadglTFModel`
+hands the document to `editorModelLoaded` (names kept by file, matched with
+`edStage.modelFile`). Hidden nodes come back when a round starts
+(`Model.reset`). No model at hand had lights: the test made a copy of
+stage3d.glb with two (a directional and a point light) and its main material
+not unlit, deleted after. A stage put in the match (`debugSwapStage`, or a
+reload whose model file changed) now sends its model's vertices to the GPU
+(the engine does it when a round starts, `handleStageSwap`) and swapping
+restarts the camera (`cam.Init`); the fight's aspect stays the match's.
 
