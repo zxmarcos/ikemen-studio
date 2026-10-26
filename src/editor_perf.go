@@ -43,9 +43,21 @@ func editorPerfMark(phase int) {
 		return
 	}
 	now := time.Now()
+	if edPerf.last.IsZero() {
+		// The first mark: a frame starts at the next top of the loop
+		if phase == perfFrame {
+			edPerf.last = now
+		}
+		return
+	}
 	if phase == perfFrame {
-		if !edPerf.last.IsZero() {
-			edPerf.cur[perfPhases] = int32(now.Sub(edPerf.last) / time.Microsecond)
+		edPerf.cur[perfPhases] = int32(now.Sub(edPerf.last) / time.Microsecond)
+		total := int32(0)
+		for _, v := range edPerf.cur[1 : perfPhases+1] {
+			total += v
+		}
+		// A frame of more than a second is a load (a round, a match), not a frame
+		if total < 1000000 {
 			edPerf.cur[perfPhases+1] = int32(edPerf.capture / time.Microsecond)
 			skipped := int32(0)
 			if edPerf.skipped {

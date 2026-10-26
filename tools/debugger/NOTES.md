@@ -185,11 +185,12 @@ tools/debugger/
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
+  src/stagecheck.cpp/.h  a stage def's checks (Stage window): files, sprites, actions, ids, bounds, keys
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
   src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
   src/app_model.cpp      the Stage window's 3D model: animations, nodes, lights
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
-  tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make _test.cpp (scripts/build.ps1 test)
+  tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make, stagecheck _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -701,5 +702,26 @@ First result: the debugger's capture of the frame (`glReadPixels` before
 the swap) takes about 5-6 ms a frame on this machine's Intel UHD, a third of
 a 60 fps frame, with peaks past 50 ms; the game itself (kfm, ryu_pots) well
 under 1 ms, the motif and Lua (the mod) about 1 ms. Rollback matches
-(`hijackRunMatch`) are not measured.
+(`hijackRunMatch`) are not measured. A frame of more than a second (a load) is
+not kept. With it, the layouts' windows no longer take the focus as they
+appear (`NoFocusOnAppearing`): the last one begun took its place's front tab
+(Performance, measuring all the time); each place's first window is put in
+front for a few frames after a layout, and a window opened from the menu or
+by `ShowWindow` likewise.
+
+The Stage window's Checks (`stagecheck.cpp`, `tests/stagecheck_test.cpp`):
+the def as `loadStage`, `readBackGround` and `bgCtrl.read` read it. A BG's
+type is its first letter (n, a, p, v, d) and one without a type is skipped;
+a normal BG with a spriteno uses it, else its actionno (which must exist,
+or the stage does not load); BGCtrlDef and BGCtrl `ctrlid`s must name a BG's
+id; start positions are checked at localcoord width over zoomout, with
+screenleft and screenright (15 at 320 by default). Keys are known per
+section from `stage.go` (`portraitscale` is read by the select screen;
+`versiondate` is MUGEN's); [Music] and [Shaders] are not looked at. Files
+are found next to the def, in the game's folder, data/, stages/, sound/
+and video/. The release's stages give no error (the test runs them):
+kfm.def's `sound/kfm.mid` is not in this copy, as the engine's log says too.
+Not done: elements never on screen, and the
+screen showing nothing at the camera's limits (they need the BGs placed
+for each camera position).
 

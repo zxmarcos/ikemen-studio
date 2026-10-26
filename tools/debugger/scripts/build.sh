@@ -18,7 +18,7 @@ for t in $targets; do
 		;;
 	test)
 		cmake -S tools/debugger -B tools/debugger/build -G Ninja -DCMAKE_BUILD_TYPE=Release || exit 1
-		cmake --build tools/debugger/build --target air-test sff-test snd-test cmd-test ini-test roster-test fnt-test cns-test make-test || exit 1
+		cmake --build tools/debugger/build --target air-test sff-test snd-test cmd-test ini-test roster-test fnt-test cns-test make-test stagecheck-test || exit 1
 		tools/debugger/build/air-test.exe || exit 1
 		tools/debugger/build/sff-test.exe || exit 1
 		tools/debugger/build/snd-test.exe || exit 1
@@ -28,6 +28,7 @@ for t in $targets; do
 		tools/debugger/build/fnt-test.exe || exit 1
 		tools/debugger/build/cns-test.exe || exit 1
 		tools/debugger/build/make-test.exe || exit 1
+		tools/debugger/build/stagecheck-test.exe || exit 1
 		;;
 	*)
 		echo "unknown target: $t"; exit 1

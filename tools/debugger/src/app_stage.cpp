@@ -1,7 +1,9 @@
 // Stage: the stage's def file, its sections and fields edited here (the game loads the stage
 // again from the text at each change, the match going on; Save writes the file), its BGs and
-// limits picked and dragged on the Game window, and a free camera.
+// limits picked and dragged on the Game window, a free camera, and the def's checks.
 #include "app_internal.h"
+
+#include <windows.h>
 
 #include <cfloat>
 #include <cmath>
@@ -9,6 +11,8 @@
 
 #include "imgui_stdlib.h"
 #include "ini.h"
+#include "sff.h"
+#include "stagecheck.h"
 
 namespace app {
 
@@ -392,6 +396,76 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     return g_stagePick && (hover >= 0 || dragBg >= 0);
 }
 
+// ---------------------------------------------------------------------------
+// The checks of the def (stagecheck.cpp), again when the text or the sprites change
+// ---------------------------------------------------------------------------
+
+// A file the def names, found as the engine looks for it: next to the def, in the game's
+// folder, then in data/, stages/, sound/ and video/. "" when not found.
+std::string StageFile(const std::string &def, const std::string &name) {
+    std::string dir = def.substr(0, def.find_last_of("/\\") + 1);
+    for (const std::string &base : {dir, std::string(), std::string("data/"), std::string("stages/"),
+                                    std::string("sound/"), std::string("video/")}) {
+        std::string path = base + name;
+        if (GetFileAttributesA(GamePath(path).c_str()) != INVALID_FILE_ATTRIBUTES) return path;
+    }
+    return "";
+}
+
+void ChecksSection(SourceFile &sf, const IniFile &ini) {
+    static std::string text;
+    static unsigned sffVersion;
+    static std::vector<StageFinding> found;
+    static bool done;
+    // The SFF, as the Sprites window has it (its edits count)
+    const SpriteFile *spr = nullptr;
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef")
+            if (const IniField *f = s.Field("spr"))
+                if (std::string path = StageFile(sf.path, f->value); !path.empty()) spr = &SpriteFileAt(path);
+    const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
+    if (!done || text != sf.text || sffVersion != (spr ? spr->version : 0)) {
+        text = sf.text;
+        sffVersion = spr ? spr->version : 0;
+        found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
+        done = true;
+    }
+    int count[3] = {};
+    for (const auto &f : found) count[f.level]++;
+    char header[96];
+    snprintf(header, sizeof(header), "Checks: %d errors, %d warnings, %d notes###stagechecks", count[0], count[1],
+             count[2]);
+    if (!ImGui::CollapsingHeader(header)) return;
+    if (found.empty()) ImGui::TextDisabled("Nothing found.");
+    if (!sff) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: its sprites are not checked.");
+    const char *names[3] = {"error", "warning", "note"};
+    const ImVec4 colors[3] = {Ink(kRed), Ink(kYellow), Ink(kBlue)};
+    if (ImGui::BeginTable("checks", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY,
+                          ImVec2(0, std::min<float>(found.size() + 1, 10) * ImGui::GetFrameHeight()))) {
+        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("line");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+        for (size_t i = 0; i < found.size(); i++) {
+            const StageFinding &f = found[i];
+            ImGui::PushID((int)i);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextColored(colors[f.level], "%s", names[f.level]);
+            ImGui::TableNextColumn();
+            if (f.line) ImGui::Text("%d", f.line);
+            ImGui::TableNextColumn();
+            if (ImGui::Selectable(f.text.c_str(), false, ImGuiSelectableFlags_SpanAllColumns) && f.line) {
+                g_codeFile = sf.path;
+                g_codeLine = g_codeScrollTo = f.line;
+                g_codeHold = true;
+            }
+            if (f.line) ImGui::SetItemTooltip("Show the line in Code");
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+}
+
 void StageWindow() {
     if (!BeginTool("Stage")) return;
     SourceFile *sfp = StageSource();
@@ -464,6 +538,7 @@ void StageWindow() {
     for (const IniSection &s : ini.sections)
         if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
     ModelSection(hasModel);
+    ChecksSection(sf, ini);
 
     // The selected section: a BG picked on the game, or one clicked in the list
     static int selSection = -1;

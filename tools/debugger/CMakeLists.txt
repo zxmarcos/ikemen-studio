@@ -52,6 +52,7 @@ add_executable(ikemen-debugger WIN32
   src/app_check.cpp
   src/cns.cpp
   src/make.cpp
+  src/stagecheck.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp
@@ -103,3 +104,6 @@ add_executable(cns-test tests/cns_test.cpp src/cns.cpp)
 target_include_directories(cns-test PRIVATE src)
 add_executable(make-test tests/make_test.cpp src/make.cpp src/cns.cpp src/air.cpp src/ini.cpp)
 target_include_directories(make-test PRIVATE src)
+add_executable(stagecheck-test tests/stagecheck_test.cpp src/stagecheck.cpp src/ini.cpp src/air.cpp src/sff.cpp)
+target_include_directories(stagecheck-test PRIVATE src)
+target_link_libraries(stagecheck-test PRIVATE lodepng)

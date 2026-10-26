@@ -68,11 +68,22 @@ const Layout kLayouts[] = {
 const int kLayoutVersion = 2;
 int g_layoutVersion;
 int g_layoutAsked = -1; // a layout picked in the menu, built at the start of the next frame
+std::vector<const char *> g_front; // windows whose tab goes to the front: after a layout, each place's first
+int g_frontUntil;                  // asked again on each frame until then (a tab appearing takes the front)
 
 ToolWindow *FindTool(const char *name) {
     for (ToolWindow &t : g_windows)
         if (strcmp(t.name, name) == 0) return &t;
     return nullptr;
+}
+
+// Its tab to the front for the next frames (instead of another of its place asked before)
+void Front(const ToolWindow &t) {
+    if (ImGui::GetFrameCount() > g_frontUntil) g_front.clear();
+    g_front.erase(std::remove_if(g_front.begin(), g_front.end(), [&](const char *n) { return FindTool(n)->place == t.place; }),
+                  g_front.end());
+    g_front.push_back(t.name);
+    g_frontUntil = ImGui::GetFrameCount() + 10;
 }
 
 void BuildLayout(ImGuiID dock, const Layout &l) {
@@ -95,10 +106,15 @@ void BuildLayout(ImGuiID dock, const Layout &l) {
     node[kRight] = right;
     node[kCode] = code;
     short order = 0;
+    bool placed[kCode + 1] = {};
     for (ToolWindow &t : g_windows) {
         t.open = std::find_if(l.open.begin(), l.open.end(),
                               [&](const char *n) { return strcmp(n, t.name) == 0; }) != l.open.end();
         t.dock = false;
+        if (t.open && !placed[t.place]) {
+            placed[t.place] = true;
+            Front(t);
+        }
         ImGui::DockBuilderDockWindow(t.name, node[t.place]);
         // Tabs in the table's order (else in the order of the windows' first frame)
         if (ImGuiWindow *w = ImGui::FindWindowByName(t.name)) w->DockOrder = order;
@@ -134,16 +150,22 @@ bool BeginTool(const char *name, ImGuiWindowFlags flags) {
     if (lost || !w)
         if (ImGuiID id = PlaceNode(*t)) ImGui::SetNextWindowDockID(id, lost ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
     t->dock = false;
-    if (ImGui::Begin(name, &t->open, flags)) return true;
+    // Its tab to the front once its node has a tab bar
+    if (ImGui::GetFrameCount() > g_frontUntil) g_front.clear();
+    for (const char *f : g_front)
+        if (strcmp(f, name) == 0 && w && w->DockNode && w->DockNode->TabBar)
+            w->DockNode->TabBar->NextSelectedTabId = w->TabId;
+    // Appearing does not take the focus, which would bring the last window begun to the front
+    if (ImGui::Begin(name, &t->open, flags | ImGuiWindowFlags_NoFocusOnAppearing)) return true;
     ImGui::End();
     return false;
 }
 
 void ShowWindow(const char *name) {
     ToolWindow *t = FindTool(name);
-    if (t && !t->open) t->open = t->dock = true;
-    ImGuiWindow *w = ImGui::FindWindowByName(name);
-    if (w && w->DockNode && w->DockNode->TabBar) w->DockNode->TabBar->NextSelectedTabId = w->TabId;
+    if (!t) return;
+    if (!t->open) t->open = t->dock = true;
+    Front(*t);
 }
 
 void LayoutFrame() {
@@ -157,6 +179,7 @@ void LayoutFrame() {
                 if (ImGui::MenuItem(t.name, nullptr, t.open)) {
                     t.open = !t.open;
                     t.dock = t.open;
+                    if (t.open) Front(t);
                 }
             }
             ImGui::EndMenu();
