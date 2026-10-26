@@ -7,6 +7,7 @@
 
 #include "air.h"
 #include "cns.h"
+#include "ini.h"
 
 static int g_failed;
 
@@ -213,11 +214,48 @@ static void TestNewChar() {
     CHECK(cmd.states.size() == 1 && cmd.states[0].ctrls.size() == 1 && cmd.states[0].ctrls[0].type == "null");
 }
 
+// A stage of two images read back as the engine reads a def
+static void TestStage() {
+    MakeStage s;
+    s.name = "Test";
+    s.sff = "test.sff";
+    s.zoffset = 210;
+    s.layers = {{"sky", 600, 400, 0.5f}, {"floor", 520, 240, 1}};
+    int left, right, high;
+    Make_StageBounds(s, &left, &right, &high);
+    // The floor (delta 1) is 520 wide: 100 each side; the sky (0.5) 600: 140 / 0.5 = 280 each side
+    CHECK(left == -100 && right == 100 && high == 0);
+    s.layers[1].h = 300; // 60 higher: the camera may go 60 up
+    Make_StageBounds(s, &left, &right, &high);
+    CHECK(high == -60);
+    IniFile f;
+    Ini_Parse(Make_StageDef(s), f);
+    std::vector<int> bgs = f.StageBgs();
+    CHECK(bgs.size() == 2);
+    const IniSection *cam = nullptr, *info = nullptr, *bgdef = nullptr;
+    for (const auto &sec : f.sections) {
+        if (sec.lower == "camera") cam = &sec;
+        if (sec.lower == "stageinfo") info = &sec;
+        if (sec.lower == "bgdef") bgdef = &sec;
+    }
+    CHECK(cam && cam->Field("boundright")->value == "100" && cam->Field("boundhigh")->value == "-60");
+    CHECK(info && info->Field("zoffset")->value == "210" && info->Field("localcoord")->value == "320, 240");
+    CHECK(bgdef && bgdef->Field("spr")->value == "test.sff");
+    if (bgs.size() == 2) {
+        const IniSection &sky = f.sections[bgs[0]], &floor = f.sections[bgs[1]];
+        CHECK(sky.name == "BG sky" && sky.Field("spriteno")->value == "0, 0" && sky.Field("start")->value == "0, -160");
+        CHECK(sky.Field("delta")->value == "0.5, 0.5" && sky.Field("mask")->value == "0");
+        CHECK(floor.Field("spriteno")->value == "1, 0" && floor.Field("start")->value == "0, -60" &&
+              floor.Field("mask")->value == "1");
+    }
+}
+
 int main() {
     TestCns();
     TestZss();
     TestMove();
     TestNewChar();
+    TestStage();
     printf(g_failed ? "make-test: %d failed\n" : "make-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

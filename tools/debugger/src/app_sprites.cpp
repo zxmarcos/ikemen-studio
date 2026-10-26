@@ -92,6 +92,16 @@ ImTextureRef TexRef(GLuint tex) { return ImTextureRef((ImTextureID)(intptr_t)tex
 
 // Windows file dialogs (ANSI paths).
 std::vector<std::string> PickFiles(const char *filter, bool multi) {
+    // Tests (scripts/test_ui.ps1) give the files picked: paths separated by '|'
+    if (const char *test = getenv("IKDBG_TEST_PICK"); test && *test) {
+        std::vector<std::string> out;
+        for (std::string s = test;;) {
+            size_t bar = s.find('|');
+            out.push_back(s.substr(0, bar));
+            if (bar == std::string::npos || !multi) return out;
+            s = s.substr(bar + 1);
+        }
+    }
     std::vector<char> buf(65536, 0);
     OPENFILENAMEA ofn = {sizeof(ofn)};
     ofn.hwndOwner = GetActiveWindow();

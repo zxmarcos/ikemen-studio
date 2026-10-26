@@ -183,7 +183,7 @@ tools/debugger/
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
-  src/app_create.cpp     Create window (the menu bar's Create): a move, a character
+  src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
@@ -287,6 +287,11 @@ helper "Bag"):
   reach the game only while Game has focus: click the picture first. P1's
   keyboard (`save/config.ini`): arrows, a b c = Z X C, x y z = A S D.
   Click coordinates depend on the layout: take a shot first.
+- File dialogs: with the environment variable `IKDBG_TEST_PICK` set (paths
+  separated by `|`) before `test_ui.ps1`, every "Open" dialog (`PickFiles`)
+  returns those files instead of opening. Create tests write new folders and
+  files (`chars/<folder>`, `stages/<file>.*`) and add to `data/select.def`:
+  delete the ones made and restore select.def after.
 - Lab tests: with `-IniExtra "AI1=0`nAI2=0"` nobody moves on their own;
   `lua:debugInputHold(1, 'F')` stands for held keys (they are recorded like
   real ones), `ikdbg.record(1, true)` and `ikdbg.stopTake()` record a take
@@ -626,4 +631,26 @@ kfm_zss gives the same as KFM: no error, the same 4 notes.
 Phase 5 next steps: a CNS expression's numbers (`ifElse(..., 200, 210)`)
 are not followed; the state graph knows nothing of the engine's own
 changes (landing, hits).
+
+The windows were then put in order (`app_layout.cpp`): every window goes
+through `BeginTool` (closed from its tab or the menu bar's Windows, opened
+again with the others of its place), and Layout puts them in Debugging or
+Stage and screens; a line asked from another window brings Code to the
+front.
+
+Phase 6, creation (the app writes text, `src/make.cpp`, tested in
+`tests/make_test.cpp` by reading it back with the parsers): the Commands
+window shows a command's motion as steps edited on a pad (`Cmd_Steps`;
+what Ikemen allows beyond them stays as text) and puts a ChangeState on a
+command at the top of the first `[Statedef -1]` (`AddCommandEntry`, CNS or
+ZSS); the Create window (menu bar's Create) makes a move (its statedef at
+the end of the first state file, as KFM writes its attacks, with its
+command; tried with `selfState`), a character from another one (its
+basics: constants, states below 200 and ZSS functions, the common states'
+actions, a new CMD; or a full copy; `SwapChar` puts it in the match, and
+`OnFiles` drops the old character's files a swap may still bring back),
+and a stage of PNG images (`Sff_SpritesOfPngs`, the def's camera bounds from
+the images, `debugSwapStage` in `editor_stage.go` putting it in the match).
+Tested on kfm and kfm_zss: the moves hit, the characters stand, walk and
+pass the Lint, the stage is played on at once.
 

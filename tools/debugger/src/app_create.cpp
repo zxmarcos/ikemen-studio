@@ -1,12 +1,15 @@
-// Create: new things made from a form, written into the files and applied. Move: an attack's
-// statedef as KFM writes its own (src/make.cpp), at the end of the character's first state file,
-// and a ChangeState on its command at the top of [Statedef -1].
+// Create: new things made from a form, written into the files and applied (their text by src/make.cpp).
+// Move: an attack's statedef as KFM writes its own, at the end of the character's first state file,
+// and a ChangeState on its command at the top of [Statedef -1]. Character: a new one from another's
+// files. Stage: one of PNG images, put in the match's place.
 #include "app_internal.h"
 
 #include <cfloat>
+#include <cmath>
 
 #include "cns.h"
 #include "imgui_stdlib.h"
+#include "lodepng.h"
 #include "make.h"
 #include "roster.h"
 
@@ -14,7 +17,7 @@ namespace app {
 
 namespace {
 
-enum { kTabMove, kTabChar, kTabs };
+enum { kTabMove, kTabChar, kTabStage, kTabs };
 int g_tabAsked = -1;
 
 struct MoveForm {
@@ -554,6 +557,272 @@ void CharacterTab() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// A stage of PNG images
+// ---------------------------------------------------------------------------
+
+struct StageLayer {
+    std::string path;
+    int w = 0, h = 0;
+    float delta = 1;
+    GLuint tex = 0;
+};
+
+struct StageForm {
+    std::string file, name, author, music;
+    int size = 0; // in kStageSizes
+    std::vector<StageLayer> layers;
+    int zoffset = -1; // -1: not set yet
+    bool select = true, use = true;
+    std::string status;
+    bool failed = false;
+};
+StageForm g_stage;
+const int kStageSizes[][2] = {{320, 240}, {640, 480}, {1280, 720}, {1920, 1080}};
+
+bool LoadLayer(const std::string &path, StageLayer &l) {
+    std::vector<unsigned char> px;
+    unsigned w = 0, h = 0;
+    if (lodepng::decode(px, w, h, path) != 0) {
+        Log(LogLine::Error, path + " is not a PNG file this reads");
+        return false;
+    }
+    l.path = path;
+    l.w = (int)w, l.h = (int)h;
+    glGenTextures(1, &l.tex);
+    glBindTexture(GL_TEXTURE_2D, l.tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, l.w, l.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    return true;
+}
+
+void FreeLayer(StageLayer &l) {
+    if (l.tex) glDeleteTextures(1, &l.tex);
+    l.tex = 0;
+}
+
+std::string BaseName(const std::string &path) {
+    std::string b = path.substr(path.find_last_of("\\/") + 1);
+    return b.substr(0, b.find_last_of('.'));
+}
+
+MakeStage StageOf(const StageForm &f) {
+    MakeStage s;
+    s.name = f.name.empty() ? f.file : f.name;
+    s.author = f.author;
+    s.sff = f.file + ".sff";
+    s.music = f.music;
+    s.date = Today();
+    s.width = kStageSizes[f.size][0], s.height = kStageSizes[f.size][1];
+    s.zoffset = f.zoffset;
+    for (const StageLayer &l : f.layers) s.layers.push_back({BaseName(l.path), l.w, l.h, l.delta});
+    return s;
+}
+
+void CreateStage(StageForm &f) {
+    auto fail = [&](const std::string &why) {
+        f.status = why;
+        f.failed = true;
+    };
+    f.failed = false;
+    if (f.file.empty() || f.file.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+        return fail("The file name takes letters, digits, '_' and '-' only.");
+    if (f.layers.empty()) return fail("Add an image at least.");
+    std::string def = "stages/" + f.file + ".def", sff = "stages/" + f.file + ".sff";
+    if (Exists(def) || Exists(sff)) return fail(def + " or its SFF is there already.");
+    // Each image: sprite k,0, its axis at its top centre
+    SffDoc doc;
+    doc.path = GamePath(sff);
+    std::vector<std::string> files;
+    for (const StageLayer &l : f.layers) files.push_back(l.path);
+    std::vector<SffSprite> sprites =
+        Sff_SpritesOfPngs(doc, files, SFF_PAL_OWN, [](const std::string &s) { Log(LogLine::Info, s); });
+    if (sprites.size() != files.size()) return fail("Could not make the sprites of the images.");
+    for (size_t k = 0; k < sprites.size(); k++) {
+        sprites[k].group = (int)k;
+        sprites[k].number = 0;
+        sprites[k].x = sprites[k].w / 2;
+        sprites[k].y = 0;
+        doc.sprites.push_back(sprites[k]);
+    }
+    std::string bytes = Sff_Build(doc);
+    FILE *out = fopen(GamePath(sff).c_str(), "wb");
+    bool written = out && fwrite(bytes.data(), 1, bytes.size(), out) == bytes.size();
+    if (out) written &= fclose(out) == 0;
+    if (!written) return fail("Could not write " + sff);
+    if (!WriteText(def, Make_StageDef(StageOf(f)))) return fail("Could not write " + def);
+    f.status = "Made " + def + " and " + sff;
+    Log(LogLine::Info, f.status);
+    // Into select.def's [ExtraStages]
+    if (f.select && !g_selectDef.empty()) {
+        SourceFile &sel = LoadSource(g_selectDef);
+        RosterFile r;
+        Roster_Parse(sel.text, r);
+        bool added = false;
+        if (sel.Dirty()) Log(LogLine::Error, g_selectDef + " has changes not saved: " + def + " is not added to it.");
+        else if (r.stagesLine) added = Roster_InsertLine(sel.text, r.stagesEnd, def);
+        else sel.text += std::string(sel.text.empty() || sel.text.back() == '\n' ? "" : "\n") + "\n[ExtraStages]\n" + def + "\n", added = true;
+        if (added && SaveSource(sel)) {
+            sel.version++;
+            f.status += ", added to " + g_selectDef;
+        }
+    }
+    if (f.use && Connected() && g_canTrace) {
+        Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
+        g_settings.stage = f.file;
+        f.status += ", in the match (and the Session's stage)";
+    }
+    for (StageLayer &l : f.layers) FreeLayer(l);
+    f.layers.clear();
+    f.file.clear(), f.name.clear();
+}
+
+// The images as the camera sees them at its start, the camera's range, the screen, the floor
+// (dragged) and the players' starting places
+void StagePreview(StageForm &f) {
+    MakeStage s = StageOf(f);
+    int lw = s.width, lh = s.height, left, right, high;
+    Make_StageBounds(s, &left, &right, &high);
+    double minx = left - lw / 2.0, maxx = right + lw / 2.0, miny = high, maxy = lh;
+    for (const StageLayer &l : f.layers) {
+        minx = std::min(minx, -l.w / 2.0);
+        maxx = std::max(maxx, l.w / 2.0);
+        miny = std::min(miny, (double)(lh - l.h));
+    }
+    float em = ImGui::GetFontSize();
+    float aw = std::max(ImGui::GetContentRegionAvail().x, em * 8);
+    float k = (float)std::min(aw / (maxx - minx), em * 16 / (maxy - miny));
+    ImVec2 a = ImGui::GetCursorScreenPos(), size((float)((maxx - minx) * k), (float)((maxy - miny) * k));
+    ImGui::InvisibleButton("##preview", size);
+    auto P = [&](double x, double y) { return ImVec2(a.x + (float)((x - minx) * k), a.y + (float)((y - miny) * k)); };
+    if (ImGui::IsItemActive()) f.zoffset = std::clamp((int)std::floor((ImGui::GetIO().MousePos.y - a.y) / k + miny + 0.5), 0, lh);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(a, ImVec2(a.x + size.x, a.y + size.y), IM_COL32(30, 30, 34, 255));
+    for (const StageLayer &l : f.layers)
+        if (l.tex) draw->AddImage(TexRef(l.tex), P(-l.w / 2.0, lh - l.h), P(l.w / 2.0, lh));
+    draw->AddRect(P(left - lw / 2.0, high), P(right + lw / 2.0, lh), IM_COL32(230, 90, 255, 230), 0, 2.0f);
+    draw->AddRect(P(-lw / 2.0, 0), P(lw / 2.0, lh), IM_COL32(255, 255, 255, 200), 0, 1.5f);
+    float fy = P(0, f.zoffset).y;
+    draw->AddLine(ImVec2(a.x, fy), ImVec2(a.x + size.x, fy), IM_COL32(80, 230, 120, 255), 2.0f);
+    for (int i = 0; i < 2; i++) {
+        ImVec2 p = P((i ? 70 : -70) * lw / 320.0, f.zoffset);
+        draw->AddTriangleFilled(ImVec2(p.x - em * 0.3f, p.y), ImVec2(p.x + em * 0.3f, p.y), ImVec2(p.x, p.y - em * 0.8f),
+                                IM_COL32(80, 220, 255, 255));
+    }
+    draw->AddText(ImVec2(a.x + 4, fy + 2), IM_COL32(80, 230, 120, 255), "the floor (drag it)");
+    draw->AddText(ImVec2(P(left - lw / 2.0, high).x + 4, P(0, high).y + 2), IM_COL32(230, 90, 255, 255), "the camera's range");
+    draw->AddText(ImVec2(P(-lw / 2.0, 0).x + 4, P(0, 0).y + 2), IM_COL32(255, 255, 255, 220), "the screen at the start");
+}
+
+void StageTab() {
+    StageForm &f = g_stage;
+    float em = ImGui::GetFontSize();
+    ImGui::SetNextItemWidth(em * 10);
+    ImGui::InputTextWithHint("file", "stages/...", &f.file);
+    ImGui::SetItemTooltip("stages/<file>.def and stages/<file>.sff: letters, digits, '_' and '-'.");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 8);
+    char size[32];
+    snprintf(size, sizeof(size), "%d x %d", kStageSizes[f.size][0], kStageSizes[f.size][1]);
+    if (ImGui::BeginCombo("localcoord", size)) {
+        for (int i = 0; i < IM_ARRAYSIZE(kStageSizes); i++) {
+            snprintf(size, sizeof(size), "%d x %d", kStageSizes[i][0], kStageSizes[i][1]);
+            if (ImGui::Selectable(size, i == f.size)) f.size = i, f.zoffset = -1;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("One pixel of the images is one unit of the stage.");
+    ImGui::SetNextItemWidth(em * 10);
+    ImGui::InputTextWithHint("name", f.file.empty() ? "its file's" : f.file.c_str(), &f.name);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 8);
+    ImGui::InputText("author", &f.author);
+    int lw = kStageSizes[f.size][0], lh = kStageSizes[f.size][1];
+    if (f.zoffset < 0) f.zoffset = lh * 5 / 6;
+
+    ImGui::SeparatorText("Images, from the back");
+    if (ImGui::Button("Add PNG files...")) {
+        for (const std::string &p : PickFiles("PNG files (*.png)\0*.png\0", true)) {
+            StageLayer l;
+            if (LoadLayer(p, l)) f.layers.push_back(l);
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("delta: how much it moves with the camera (1 like the floor, less far away)");
+    int remove = -1, up = -1;
+    for (int i = 0; i < (int)f.layers.size(); i++) {
+        StageLayer &l = f.layers[i];
+        ImGui::PushID(i);
+        if (l.tex) {
+            float s = std::min(em * 4 / l.w, em * 2.2f / l.h);
+            ImGui::Image(TexRef(l.tex), ImVec2(l.w * s, l.h * s));
+            ImGui::SameLine();
+        }
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(BaseName(l.path).c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%d x %d%s", l.w, l.h, l.w < lw || l.h < lh ? "  smaller than the screen" : "");
+        ImGui::SetNextItemWidth(em * 6);
+        ImGui::DragFloat("delta", &l.delta, 0.01f, 0.0f, 2.0f, "%.2f");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(i == 0);
+        if (ImGui::ArrowButton("up", ImGuiDir_Up)) up = i;
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Further back");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove")) remove = i;
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    if (up > 0) std::swap(f.layers[up], f.layers[up - 1]);
+    if (remove >= 0) {
+        FreeLayer(f.layers[remove]);
+        f.layers.erase(f.layers.begin() + remove);
+    }
+    if (!f.layers.empty()) {
+        ImGui::SeparatorText("The floor and the camera");
+        ImGui::SetNextItemWidth(em * 10);
+        ImGui::SliderInt("zoffset", &f.zoffset, 0, lh);
+        int left, right, high;
+        Make_StageBounds(StageOf(f), &left, &right, &high);
+        ImGui::SameLine();
+        ImGui::TextDisabled("boundleft %d, boundright %d, boundhigh %d", left, right, high);
+        StagePreview(f);
+    }
+
+    ImGui::SeparatorText("The rest");
+    ImGui::SetNextItemWidth(em * 14);
+    ImGui::InputTextWithHint("music", "none", &f.music);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Browse...")) {
+        std::vector<std::string> picked = PickFiles("Music (*.mp3;*.ogg;*.mid;*.wav;*.flac;*.mod;*.xm;*.it;*.s3m)\0"
+                                                    "*.mp3;*.ogg;*.mid;*.midi;*.wav;*.flac;*.mod;*.xm;*.it;*.s3m\0"
+                                                    "All files (*.*)\0*.*\0",
+                                                    false);
+        if (!picked.empty()) {
+            std::string m = picked[0], base = GamePath("");
+            if (_strnicmp(m.c_str(), base.c_str(), base.size()) == 0) m = m.substr(base.size());
+            std::replace(m.begin(), m.end(), '\\', '/');
+            f.music = m;
+        }
+    }
+    ImGui::Checkbox("add it to select.def", &f.select);
+    ImGui::SameLine();
+    ImGui::Checkbox("use it in the match", &f.use);
+    if (ImGui::Button("Create the stage")) CreateStage(f);
+    if (!f.status.empty()) {
+        ImGui::SameLine();
+        ImGui::PushTextWrapPos(0);
+        if (f.failed) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", f.status.c_str());
+        else ImGui::TextUnformatted(f.status.c_str());
+        ImGui::PopTextWrapPos();
+    }
+}
+
 } // namespace
 
 void CreateMenu() {
@@ -561,16 +830,19 @@ void CreateMenu() {
     ImGui::SetItemTooltip("An attack's state for the selected player's character, and the command that starts it.");
     if (ImGui::MenuItem("A character...")) g_tabAsked = kTabChar, ShowWindow("Create");
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
+    if (ImGui::MenuItem("A stage...")) g_tabAsked = kTabStage, ShowWindow("Create");
+    ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower.");
 }
 
 void CreateToolWindow() {
     if (!BeginTool("Create")) return;
     if (ImGui::BeginTabBar("create")) {
-        static const char *tabs[kTabs] = {"Move", "Character"};
+        static const char *tabs[kTabs] = {"Move", "Character", "Stage"};
         for (int i = 0; i < kTabs; i++) {
             if (!ImGui::BeginTabItem(tabs[i], nullptr, g_tabAsked == i ? ImGuiTabItemFlags_SetSelected : 0)) continue;
             if (i == kTabMove) MoveTab();
             else if (i == kTabChar) CharacterTab();
+            else if (i == kTabStage) StageTab();
             ImGui::EndTabItem();
         }
         g_tabAsked = -1;

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // when: 0 any statetype, 1 standing, 2 crouching, 3 in the air; extra: one more condition
 // ("power >= 1000"), or ""
@@ -59,3 +60,20 @@ std::string Make_KeepActions(const std::string &air, int *count);
 std::string Make_CommandFile(const std::string &name, bool taunt);
 // The text without a section (its header to the line before the next one).
 std::string Make_RemoveSection(const std::string &text, const char *lowerName);
+
+// A stage of images, from the back: each one sprite k,0 of the stage's SFF (axis at its top
+// centre), a BG centred with its bottom on the screen's bottom.
+struct MakeLayer {
+    std::string name; // the BG's
+    int w = 0, h = 0;
+    float delta = 1;  // how much it moves with the camera (1 like the floor, less far away)
+};
+struct MakeStage {
+    std::string name, author, sff, music, date;
+    int width = 320, height = 240; // localcoord: one pixel of the images is one unit
+    int zoffset = 200;             // the floor
+    std::vector<MakeLayer> layers;
+};
+// How far the camera goes: as long as every image covers the whole screen.
+void Make_StageBounds(const MakeStage &s, int *left, int *right, int *high);
+std::string Make_StageDef(const MakeStage &s);

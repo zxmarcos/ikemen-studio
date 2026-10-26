@@ -1,6 +1,7 @@
 #include "make.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -316,4 +317,56 @@ std::string Make_RemoveSection(const std::string &text, const char *lowerName) {
         return JoinLines(lines);
     }
     return text;
+}
+void Make_StageBounds(const MakeStage &s, int *left, int *right, int *high) {
+    double half = 1e9, up = 1e9;
+    for (const MakeLayer &l : s.layers) {
+        double d = std::max(0.01f, l.delta);
+        half = std::min(half, (l.w - s.width) / (2.0 * d));
+        up = std::min(up, (l.h - s.height) / d);
+    }
+    if (s.layers.empty()) half = up = 0;
+    *right = (int)std::floor(std::max(half, 0.0));
+    *left = -*right;
+    *high = -(int)std::floor(std::max(up, 0.0));
+}
+
+std::string Make_StageDef(const MakeStage &s) {
+    double k = s.width / 320.0; // the players' places and bounds, as on a 320 wide stage
+    int left, right, high;
+    Make_StageBounds(s, &left, &right, &high);
+    auto i = [](double v) { return std::to_string((int)std::floor(v + 0.5)); };
+    auto num = [](double v) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.3f", v);
+        std::string t = buf;
+        while (t.back() == '0') t.pop_back();
+        if (t.back() == '.') t.pop_back();
+        return t;
+    };
+    std::string t = "; Made with the Ikemen GO debugger (Create > A stage)\n";
+    t += "[Info]\nname = \"" + s.name + "\"\ndisplayname = \"" + s.name + "\"\nversiondate = " + s.date +
+         "\nmugenversion = 1.1\nauthor = \"" + s.author + "\"\n";
+    t += "\n[Camera]\nstartx = 0\nstarty = 0\n";
+    t += "boundleft = " + std::to_string(left) + "\nboundright = " + std::to_string(right) + "\n";
+    t += "boundhigh = " + std::to_string(high) + "\nboundlow = 0\n";
+    t += "verticalfollow = .2\nfloortension = 0\ntension = " + i(50 * k) + "\n";
+    t += "\n[PlayerInfo]\np1startx = " + i(-70 * k) + "\np1starty = 0\np1facing = 1\n";
+    t += "p2startx = " + i(70 * k) + "\np2starty = 0\np2facing = -1\n";
+    t += "leftbound = " + i(-1000 * k) + "\nrightbound = " + i(1000 * k) + "\n";
+    t += "\n[Bound]\nscreenleft = " + i(15 * k) + "\nscreenright = " + i(15 * k) + "\n";
+    t += "\n[StageInfo]\nzoffset = " + std::to_string(s.zoffset) + "\nautoturn = 1\nresetBG = 1\n";
+    t += "localcoord = " + std::to_string(s.width) + ", " + std::to_string(s.height) + "\nxscale = 1\nyscale = 1\n";
+    t += "\n[Shadow]\nintensity = 96\ncolor = 0,0,0\nyscale = .4\n";
+    t += "\n[Reflection]\nintensity = 0\n";
+    t += "\n[Music]\n" + std::string(s.music.empty() ? ";" : "") + "bgmusic = " + s.music + "\nbgmvolume = 100\n";
+    t += "\n[BGdef]\nspr = " + s.sff + "\ndebugbg = 0\n";
+    for (size_t n = 0; n < s.layers.size(); n++) {
+        const MakeLayer &l = s.layers[n];
+        t += "\n[BG " + l.name + "]\ntype = normal\nspriteno = " + std::to_string(n) + ", 0\nlayerno = 0\n";
+        t += "start = 0, " + std::to_string(s.height - l.h) + "\n";
+        t += "delta = " + num(l.delta) + ", " + num(l.delta) + "\n";
+        t += n == 0 ? "mask = 0\n" : "mask = 1\n";
+    }
+    return t;
 }

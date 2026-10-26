@@ -351,6 +351,34 @@ func editorReloadStage(textFile string) (err error) {
 	ns.reset()
 	editorKeepStage(old, ns)
 	modelPlayback(ns.model)
+	editorPutStage(old, ns)
+	return nil
+}
+
+// editorSwapStage puts another stage in place of the one in use; the match goes on.
+func editorSwapStage(def string) (err error) {
+	old := sys.stage
+	if old == nil {
+		return fmt.Errorf("no stage")
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	ns, err := loadStage(def, false)
+	if err != nil {
+		return err
+	}
+	ns.mainstage = old.mainstage
+	ns.reset()
+	editorPutStage(old, ns)
+	return nil
+}
+
+// editorPutStage puts ns in old's place: in the stage list, for the camera, for F4 and the
+// next round.
+func editorPutStage(old, ns *Stage) {
 	// The BGs' sprites are set when the stage steps; a paused game would draw none
 	for _, b := range ns.bg {
 		b.anim.UpdateSprite()
@@ -377,7 +405,6 @@ func editorReloadStage(textFile string) (err error) {
 	}
 	old.destroy()
 	edStage.stage, edStage.cur = nil, nil
-	return nil
 }
 
 func editorStageFunctions(l *lua.LState) {
@@ -417,6 +444,17 @@ func editorStageFunctions(l *lua.LState) {
 			textFile = strArg(l, 1)
 		}
 		return result(l, editorReloadStage(textFile))
+	})
+	luaRegister(l, "debugSwapStage", func(l *lua.LState) int {
+		/*Put another stage in place of the one in use; the match goes on.
+		@function debugSwapStage
+		@tparam string def The stage's def file.
+		@treturn boolean ok
+		@treturn string error*/
+		if !debuggerAttached() {
+			return result(l, fmt.Errorf("needs -ikdbg"))
+		}
+		return result(l, editorSwapStage(strArg(l, 1)))
 	})
 	luaRegister(l, "debugStageReset", func(l *lua.LState) int {
 		/*Start the stage over: its time back to 0, its BGs where they start (BGCtrls run again).
