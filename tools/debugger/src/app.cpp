@@ -628,6 +628,7 @@ void App_Frame() {
     WatchWindow();
     LabWindow();
     AnalysisWindow();
+    CreateToolWindow();
     ConsoleWindow();
     CodeWindow();
     if (g_autoLaunch) {

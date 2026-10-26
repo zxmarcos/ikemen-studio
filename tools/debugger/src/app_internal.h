@@ -11,6 +11,7 @@
 //   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
 //   app_roster.cpp   Roster: select.def's characters in the select screen's grid, its stages
 //   app_lab.cpp      Lab: a dummy, takes of input, characters swapped
+//   app_create.cpp   Create: a move
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -308,6 +309,7 @@ void SpritesWindow();
 
 // Sounds
 const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)
+void PlayWav(const std::string &wav);
 void SoundsWindow();
 
 // Analysis: a character's states checked (Lint), its variables, the graph of its states
@@ -329,7 +331,17 @@ void OnReload(const Json &j);
 void CodeWindow();
 
 // Commands
+// A ChangeState to state on command at the top of the [Statedef -1] the engine reads first (a new
+// one in the CMD file without any): the file it went in ("": not done), line where it starts.
+// when: 0 any statetype, 1 S, 2 C, 3 A; extra: one more condition or "".
+std::string AddCommandEntry(int pn, const std::string &command, int state, int when, bool ctrl, const std::string &extra,
+                            int *line);
+std::vector<std::string> CommandNames(int pn); // its CMD file's, once each, sorted
 void CommandsWindow();
+
+// Create: a move, ...
+void CreateMenu(); // the menu bar's
+void CreateToolWindow();
 
 // Stage: the stage's def file and where its BGs were drawn in the last frame (editor_stage.go)
 struct FrameBg {

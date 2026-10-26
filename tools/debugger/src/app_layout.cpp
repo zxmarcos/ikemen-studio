@@ -45,6 +45,7 @@ ToolWindow g_windows[] = {
     {"Storyboard", "Stage and screens", kRight},
     {"Roster", "Stage and screens", kLeft},
     {"Fonts", "Stage and screens", kLeft},
+    {"Create", "Create", kRight},
 };
 
 struct Layout {
@@ -156,6 +157,10 @@ void LayoutFrame() {
                     t.dock = t.open;
                 }
             }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Create")) {
+            CreateMenu();
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Layout")) {

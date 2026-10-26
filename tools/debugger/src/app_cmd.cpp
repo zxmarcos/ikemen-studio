@@ -117,6 +117,14 @@ const CmdFile &CmdOf(const SourceFile &sf) {
     return c.cmd;
 }
 
+std::vector<std::string> CommandNames(int pn) {
+    std::string path = CharFile(pn, "cmd");
+    if (path.empty()) return {};
+    std::set<std::string> names;
+    for (const auto &c : CmdOf(LoadSource(path)).commands) names.insert(c.name);
+    return std::vector<std::string>(names.begin(), names.end());
+}
+
 // The text of the CMD file changed here: the Code window's editor takes it.
 void CmdChanged(SourceFile &sf, bool ok) {
     if (ok) sf.version++;
@@ -209,6 +217,22 @@ const struct {
     {"Charge down, then up", "~30$D, U"},
     {"Hold down", "/$D"},
 };
+
+std::string AddCommandEntry(int pn, const std::string &command, int state, int when, bool ctrl, const std::string &extra,
+                            int *line) {
+    // The [Statedef -1] the engine reads first, or a new one in the CMD file
+    std::string file = StatedefFile(pn, -1);
+    if (file.empty()) file = CharFile(pn, "cmd");
+    if (file.empty()) return "";
+    SourceFile &tf = LoadSource(file);
+    bool zss = Cns_IsZss(tf.path);
+    std::string text = tf.text;
+    if (StatedefFile(pn, -1).empty()) text += std::string(text.empty() || text.back() == '\n' ? "" : "\n") + "\n[Statedef -1]\n";
+    if (!Make_InsertInStatedef(text, zss, -1, Make_CommandEntry(zss, command, state, when, ctrl, extra), line)) return "";
+    tf.text = text;
+    tf.version++;
+    return tf.path;
+}
 
 // The selected command's motion as a row of steps, the one picked edited under it; and a
 // ChangeState on the command at the top of [Statedef -1].
@@ -362,20 +386,15 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
         ImGui::Combo("when", &when, "any statetype\0standing (S)\0crouching (C)\0in the air (A)\0");
         ImGui::SameLine();
         ImGui::Checkbox("with control", &ctrl);
-        // The [Statedef -1] the engine reads first, or a new one in the CMD file
         std::string file = StatedefFile(pn, -1);
         if (ImGui::Button("Add to [Statedef -1]")) {
-            SourceFile &tf = LoadSource(file.empty() ? sf.path : file);
-            bool zss = Cns_IsZss(tf.path);
-            if (file.empty()) tf.text += std::string(tf.text.empty() || tf.text.back() == '\n' ? "" : "\n") + "\n[Statedef -1]\n";
             int line = 0;
-            if (Make_InsertInStatedef(tf.text, zss, -1, Make_CommandEntry(zss, c.name, state, when, ctrl), &line)) {
-                tf.version++;
-                g_codeFile = tf.path;
+            if (std::string at = AddCommandEntry(pn, c.name, state, when, ctrl, "", &line); !at.empty()) {
+                g_codeFile = at;
                 g_codeLine = g_codeScrollTo = line;
                 g_codeHold = true;
                 Log(LogLine::Info, "A ChangeState to " + std::to_string(state) + " on \"" + c.name + "\" at the top of [Statedef -1] (" +
-                                       tf.path + "); Apply to try it.");
+                                       at + "); Apply to try it.");
             }
         }
         ImGui::SameLine();

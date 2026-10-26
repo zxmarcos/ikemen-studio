@@ -81,9 +81,59 @@ static void TestZss() {
     CHECK(s && s->ctrls.size() == 2 && s->ctrls[0].type == "posset" && s->Param("type"));
 }
 
+// A move's statedef read back as the engine would, CNS and ZSS alike
+static void TestMove() {
+    for (bool zss : {false, true}) {
+        MakeMove m;
+        m.state = 260;
+        m.action = 210;
+        m.kind = 1;
+        m.klass = 2;
+        m.hit = kMakeHits[1];
+        m.hitElem = 3;
+        m.sparkY = -40;
+        m.sound = true;
+        m.snd[0] = 0, m.snd[1] = 2;
+        std::string text = (zss ? "[StateDef 200; type: S;]\nvelSet{x: 0}\n" : "[Statedef 200]\ntype = S\n") +
+                           std::string("\n") + Make_MoveState(m, zss);
+        CnsFile f;
+        Cns_Parse(text, zss, f);
+        const CnsState *s = Find(f, 260);
+        CHECK(f.states.size() == 2 && s);
+        if (!s) continue;
+        CHECK(s->Param("type")->value == "C" && s->Param("movetype")->value == "A" && s->Param("anim")->value == "210");
+        CHECK(s->Param("poweradd")->value == "-1000" && s->Param("velset")->value == "0, 0");
+        CHECK(s->ctrls.size() == 3);
+        if (s->ctrls.size() != 3) continue;
+        const CnsCtrl &snd = s->ctrls[0], &hit = s->ctrls[1], &end = s->ctrls[2];
+        CHECK(snd.type == "playsnd" && snd.Param("value")->value == "0, 2" && snd.triggers == "time = 1\n");
+        CHECK(hit.type == "hitdef" && hit.triggers == "animelem = 3\n" && hit.Param("attr")->value == "C, HA");
+        CHECK(hit.Param("damage")->value == "45, 0" && hit.Param("guardflag")->value == "L");
+        CHECK(hit.Param("sparkxy")->value == "-10, -40" && hit.Param("air.velocity")->value == "-2, -4");
+        CHECK(hit.Param("animtype")->value == "Medium" && hit.Param("ground.type")->value == "Low");
+        CHECK(end.type == "changestate" && end.Param("value")->value == "11" && end.Param("ctrl")->value == "1");
+        if (g_failed) printf("%s", text.c_str());
+    }
+    // In the air: no velset, control back at the end, landing ends it
+    MakeMove a;
+    a.kind = 2;
+    CnsFile f;
+    Cns_Parse(Make_MoveState(a, false), false, f);
+    CHECK(f.states.size() == 1 && !f.states[0].Param("velset") && f.states[0].ctrls.size() == 2 &&
+          f.states[0].ctrls[1].type == "ctrlset" && f.states[0].ctrls[0].triggers == "time = 0\n");
+    // The hyper's command entry asks for the power
+    CnsFile e;
+    Cns_Parse("[Statedef -1]\n" + Make_CommandEntry(false, "x", 3000, 1, true, "power >= 1000"), false, e);
+    CHECK(e.states.size() == 1 && e.states[0].ctrls.size() == 1 &&
+          e.states[0].ctrls[0].triggers == "command = \"x\"\npower >= 1000\nstatetype = s\nctrl\n");
+    CHECK(Make_CommandEntry(true, "x", 3000, 0, false, "power >= 1000") ==
+          "if command = \"x\" && power >= 1000 {\n\tchangeState{value: 3000}\n}\n");
+}
+
 int main() {
     TestCns();
     TestZss();
+    TestMove();
     printf(g_failed ? "make-test: %d failed\n" : "make-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }
