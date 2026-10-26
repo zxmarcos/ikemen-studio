@@ -16,8 +16,16 @@ import (
 // frame (added to the frame geometry, so the editor can show and pick them), and reloading the
 // fight screen in the middle of a match.
 
+// The defs whose elements are recorded: fight screen, motif (system.def, editor_motif.go),
+// storyboard (editor_storyboard.go)
+const (
+	editorFileFight int8 = iota
+	editorFileMotif
+	editorFileStoryboard
+)
+
 type editorFightSource struct {
-	motif   bool   // from the motif's def (system.def, editor_motif.go), else the fight screen's
+	file    int8   // editorFileFight...
 	section string // lowercase, as "simul lifebar"
 	prefix  string // lowercase, as "p1.bg0."
 	bg      int32  // a BG of a BGDef: 1 + its index among the sections named after section ("titlebg")
@@ -80,6 +88,9 @@ func editorKeptSff(filename string) *Sff {
 	if s := sys.motif.Sff; edMotif.keep && s != nil && s.filename == filename {
 		return s
 	}
+	if s := sys.storyboard.Sff; edStoryboard.keep && s != nil && s.filename == filename {
+		return s
+	}
 	return nil
 }
 
@@ -90,6 +101,9 @@ func editorKeptSnd(filename string) *Snd {
 	if s := sys.motif.Snd; edMotif.keep && s != nil && s.filename == filename {
 		return s
 	}
+	if s := sys.storyboard.Snd; edStoryboard.keep && s != nil && s.filename == filename {
+		return s
+	}
 	return nil
 }
 
@@ -97,11 +111,11 @@ func editorKeptSnd(filename string) *Snd {
 // again while the editor reloads one after an edit of its text.
 func editorKeptFont(filename string, height int32) *Fnt {
 	e := &edFight
-	if (e.section == "" && !edMotif.loading) || e.inFont {
+	if (e.section == "" && !edMotif.loading && !edStoryboard.loading) || e.inFont {
 		return nil
 	}
 	key := filename + "|" + strconv.Itoa(int(height))
-	if f := e.fonts[key]; f != nil && (e.keep || edMotif.keep) {
+	if f := e.fonts[key]; f != nil && (e.keep || edMotif.keep || edStoryboard.keep) {
 		return f
 	}
 	e.inFont = true
@@ -130,7 +144,7 @@ func editorLayoutSource(pre string) int32 {
 	if e.section == "" {
 		return 0
 	}
-	return editorSourceIndex(editorFightSource{false, e.section, strings.ToLower(pre), 0})
+	return editorSourceIndex(editorFightSource{editorFileFight, e.section, strings.ToLower(pre), 0})
 }
 
 // editorLayoutDraw runs before a Layout draws (scl: as the Layout scales the def's positions),
@@ -196,10 +210,11 @@ func editorRenderSprite(rp *RenderParams) {
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
 //	  rectangle in the game picture's pixels and the pixels per unit of the def's positions;
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
-//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index] (kx, ky: per unit of its start).
+//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index] (kx, ky: per unit of its start);
+//	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
-	block := func(name, def string, motif bool) {
+	block := func(name, def string, file int8) {
 		if def == "" {
 			return
 		}
@@ -210,7 +225,7 @@ func editorScreenGeometry(b []byte) []byte {
 		b = append(b, `,"items":[`...)
 		n := 0
 		for _, d := range edFight.drawn {
-			if d.n == 0 || d.src < 1 || int(d.src) > len(edFight.sources) || edFight.sources[d.src-1].motif != motif {
+			if d.n == 0 || d.src < 1 || int(d.src) > len(edFight.sources) || edFight.sources[d.src-1].file != file {
 				continue
 			}
 			src := edFight.sources[d.src-1]
@@ -234,8 +249,11 @@ func editorScreenGeometry(b []byte) []byte {
 		}
 		b = append(b, "]}"...)
 	}
-	block("fight", sys.fightScreen.def, false)
-	block("motif", sys.motif.Def, true)
+	block("fight", sys.fightScreen.def, editorFileFight)
+	block("motif", sys.motif.Def, editorFileMotif)
+	if sys.storyboard.active {
+		block("storyboard", sys.storyboard.Def, editorFileStoryboard)
+	}
 	edFight.drawn = edFight.drawn[:0]
 	edFight.cur = 0
 	return b

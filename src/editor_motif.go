@@ -16,32 +16,37 @@ import (
 // place: the objects and tables the scripts hold stay the same, with the new values in them.
 
 type EditorMotif struct {
-	forSff  *Sff // the motif whose animations and texts know their source (its SFF)
-	dirty   bool
+	index editorDefIndex
 	// Each *Anim and *TextSprite as the def made it (the struct's value): what the scripts
 	// changed in them since is kept when the motif is reloaded (unless the def changed it too)
 	pristine map[interface{}]interface{}
-	bgdefs   map[*BGDef]string // the motif's BGDefs, by the name of their BGs' sections ("titlebg")
-	keep    bool // reloading after an edit of the text: the files in use are borrowed
-	loading bool // in loadMotif, for the editor: its fonts are kept
+	keep     bool // reloading after an edit of the text: the files in use are borrowed
+	loading  bool // in loadMotif, for the editor: its fonts are kept
 }
 
-var edMotif EditorMotif
+var edMotif = EditorMotif{index: editorDefIndex{file: editorFileMotif}}
 
 var editorMotifPkg = reflect.TypeOf(Motif{}).PkgPath()
 
-// editorMotifIndex runs before each frame's geometry is written: when the motif changed, its
-// animations and texts are given the source of the def's keys they come from (Anim.editor,
+// The sources of a def read into a struct by its fields' ini tags (a motif, a storyboard).
+type editorDefIndex struct {
+	file   int8
+	forSff *Sff // the struct whose animations and texts know their source (its SFF)
+	dirty  bool
+	bgdefs map[*BGDef]string // its BGDefs, by the name of their BGs' sections ("titlebg")
+}
+
+// update runs before each frame's geometry is written: when the struct changed, its animations
+// and texts are given the source of the def's keys they come from (Anim.editor,
 // TextSprite.editor, which their copies keep): the struct fields' ini tags make the path
 // ("title_info.menu.item"), as PopulateDataPointers reads them, except that maps keep their
-// field's path ("...menu.item.bg.arcade").
-func editorMotifIndex() {
-	m := &edMotif
-	if !m.dirty && m.forSff == sys.motif.Sff {
+// field's path ("...menu.item.bg.arcade"). pristine: remember them as the def made them.
+func (x *editorDefIndex) update(root reflect.Value, sff *Sff, pristine bool) {
+	if !x.dirty && x.forSff == sff {
 		return
 	}
-	m.forSff, m.dirty = sys.motif.Sff, false
-	m.bgdefs = make(map[*BGDef]string)
+	x.forSff, x.dirty = sff, false
+	x.bgdefs = make(map[*BGDef]string)
 	var walk func(v reflect.Value, path string)
 	walk = func(v reflect.Value, path string) {
 		switch v.Kind() {
@@ -52,18 +57,24 @@ func editorMotifIndex() {
 			switch p := v.Interface().(type) {
 			case *Anim:
 				if p.editor == 0 {
-					p.editor = editorMotifSource(path)
+					p.editor = editorDefSource(x.file, path)
 				}
-				editorPristine(p, *p)
+				if pristine {
+					editorPristine(p, *p)
+				}
 				return
 			case *TextSprite:
 				if p.editor == 0 {
-					p.editor = editorMotifSource(path)
+					p.editor = editorDefSource(x.file, path)
 				}
-				editorPristine(p, *p)
+				if pristine {
+					editorPristine(p, *p)
+				}
 				return
 			case *BGDef:
-				m.bgdefs[p] = strings.TrimSuffix(path[strings.LastIndexByte(path, '.')+1:], "def")
+				if _, ok := x.bgdefs[p]; !ok {
+					x.bgdefs[p] = strings.TrimSuffix(path[strings.LastIndexByte(path, '.')+1:], "def")
+				}
 				return
 			case *Sff, *Snd, *Fnt, *Model:
 				return
@@ -72,6 +83,13 @@ func editorMotifIndex() {
 				walk(v.Elem(), path)
 			}
 		case reflect.Struct:
+			// A storyboard scene's bg: the BGDef named by its name
+			if bf, nf := v.FieldByName("BGDef"), v.FieldByName("Name"); bf.IsValid() && nf.IsValid() &&
+				nf.Kind() == reflect.String && nf.String() != "" {
+				if p, ok := bf.Interface().(*BGDef); ok && p != nil {
+					x.bgdefs[p] = strings.ToLower(nf.String())
+				}
+			}
 			t := v.Type()
 			for i := 0; i < t.NumField(); i++ {
 				f := t.Field(i)
@@ -97,7 +115,13 @@ func editorMotifIndex() {
 			}
 		}
 	}
-	walk(reflect.ValueOf(&sys.motif).Elem(), "")
+	walk(root, "")
+}
+
+// editorMotifIndex runs before each frame's geometry is written (editorDefIndex.update).
+func editorMotifIndex() {
+	edMotif.index.update(reflect.ValueOf(&sys.motif).Elem(), sys.motif.Sff, true)
+	edStoryboard.index.update(reflect.ValueOf(&sys.storyboard).Elem(), sys.storyboard.Sff, false)
 }
 
 func editorJoinPath(base, elem string) string {
@@ -111,9 +135,9 @@ func editorJoinPath(base, elem string) string {
 	return base + "." + elem
 }
 
-// editorMotifSource: the source of a path, its first part the section ("title_info" is
+// editorDefSource: the source of a path, its first part the section ("title_info" is
 // [Title Info]), the rest the prefix of the keys.
-func editorMotifSource(path string) int32 {
+func editorDefSource(file int8, path string) int32 {
 	if path == "" {
 		return 0
 	}
@@ -121,9 +145,8 @@ func editorMotifSource(path string) int32 {
 	if dot := strings.IndexByte(path, '.'); dot >= 0 {
 		section, prefix = path[:dot], path[dot+1:]+"."
 	}
-	return editorSourceIndex(editorFightSource{true, strings.ReplaceAll(section, "_", " "), prefix, 0})
+	return editorSourceIndex(editorFightSource{file, strings.ReplaceAll(section, "_", " "), prefix, 0})
 }
-
 // editorPristine remembers an object as the def made it, the first time it is seen.
 func editorPristine(p, value interface{}) {
 	m := &edMotif
@@ -159,13 +182,18 @@ func editorMergeObject(ov, pristine, nv reflect.Value) {
 // motif's is recorded with its elements, as the n-th section named after its BGDef.
 func editorBgDefDraw(s *BGDef, b *backGround) {
 	edFight.cur = 0
-	name, ok := edMotif.bgdefs[s]
+	file := editorFileMotif
+	name, ok := edMotif.index.bgdefs[s]
+	if !ok {
+		file = editorFileStoryboard
+		name, ok = edStoryboard.index.bgdefs[s]
+	}
 	if !ok || edFrame.mem == nil {
 		return
 	}
 	for i, bg := range s.bg {
 		if bg == b {
-			src := editorSourceIndex(editorFightSource{true, name, "", int32(i + 1)})
+			src := editorSourceIndex(editorFightSource{file, name, "", int32(i + 1)})
 			editorDrawBegin(src, s.scale[0]*s.localscl*sys.widthScale, s.scale[1]*s.localscl*sys.heightScale)
 			return
 		}
@@ -300,7 +328,7 @@ func editorReloadMotif(l *lua.LState, textFile string, keep bool) (err error) {
 	}
 	// Animations get their sprite when they step: a paused screen would draw none
 	editorEachAnimation(reflect.ValueOf(nm), map[editorSeen]bool{}, (*Animation).UpdateSprite)
-	edMotif.dirty = true
+	edMotif.index.dirty = true
 	return nil
 }
 
