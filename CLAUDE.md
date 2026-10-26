@@ -26,7 +26,9 @@ build environment and tests.
 - Use PowerShell; the Bash tool fails silently on this machine. PowerShell
   5.1 strips quotes from native arguments, so MSYS2 work goes through script
   files (`tools/debugger/scripts/build.ps1` runs `build.sh`). Commit
-  messages too: write them to a file in the scratchpad, `git commit -F file`.
+  messages too: write them to a file in the scratchpad, `git commit -F file`;
+  write it with the Write tool, not `Set-Content -Encoding utf8` (5.1 adds a
+  BOM, which ends up in the commit's subject).
 - MSYS2 UCRT64 at `$env:MSYS2_ROOT` (gcc, SDL2, libxmp, cmake, ninja);
   Go at `C:\Program Files\Go`. `C:\msys64` is an old 2016 install: do not use it.
 - Release assets (chars, stages, data, font, sound, video) were copied from
