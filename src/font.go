@@ -140,6 +140,9 @@ func stripKernTable(ttf []byte) []byte {
 }
 
 func loadFnt(filename string, height int32) (*Fnt, error) {
+	if f := editorFightFont(filename, height); f != nil {
+		return f, nil
+	}
 	if HasExtension(filename, ".fnt") {
 		return loadFntV1(filename)
 	}

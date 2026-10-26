@@ -102,27 +102,13 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 	if index < 0 {
 		return
 	}
-	x, y := rp.x, rp.y
-	if rp.xts >= 0 {
-		x = -x
-	}
-	x += rp.rcx
-	if rp.ys < 0 {
-		y = -y
-	}
-	y -= rp.rcy
-	w := float32(rp.size[0]) * Max(Abs(rp.xts), Abs(rp.xbs))
-	if rp.xts < 0 {
-		x -= w
-	}
-	h := float32(rp.size[1]) * Abs(rp.ys)
 	bgscl := float32(1)
 	if edStage.stage.hires {
 		bgscl = 0.5
 	}
 	edStage.drawn = append(edStage.drawn, editorStageBg{
 		index: index,
-		rect:  [4]float32{x, -y, w, h},
+		rect:  editorQuadRect(rp),
 		k:     [2]float32{xcs * bgscl * sys.widthScale, ycs * bgscl * sys.heightScale},
 		layer: b.layerno,
 		tiled: b.anim.tile.xflag != 0 || b.anim.tile.yflag != 0,

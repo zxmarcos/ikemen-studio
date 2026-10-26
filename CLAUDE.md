@@ -3,7 +3,8 @@
 This is the user's clone of Ikemen GO. The local branch `debugger-bridge` adds
 an external debugger: the engine side in `src/script_debugger.go` and
 `src/editor_*.go` (plus one or two lines each in `compiler.go`, `bytecode.go`,
-`script.go`, `system.go`, `stage.go`, `anim.go`) and the debugger program in
+`script.go`, `system.go`, `stage.go`, `anim.go`, `common.go`, `render.go`,
+`fightscreen.go`, `image.go`, `sound.go`, `font.go`) and the debugger program in
 `tools/debugger`. Read `tools/debugger/NOTES.md` first: state of the work,
 build environment and tests.
 
@@ -34,5 +35,5 @@ build environment and tests.
 - The screen is at 125% scale: test scripts must be DPI aware. Never capture
   the screen (SetForegroundWindow + CopyFromScreen once captured the user's
   browser); the debugger saves its own frames (see `scripts/test_ui.ps1`).
-- Tests that edit a character's or stage's files: back them up first and
-  restore them after (`chars` and `stages` are not in git).
+- Tests that edit a character's, stage's or screenpack's files: back them up
+  first and restore them after (`chars`, `stages` and `data` are not in git).

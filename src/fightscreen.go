@@ -4882,8 +4882,10 @@ func loadFightScreen(def string) (*FightScreen, error) {
 	// Prepare fight screen FightFX
 	ffx := newFightFx()
 
+	defer editorFightSection("", "")
 	for lnidx < len(lines) {
 		is, name, subname := ReadIniSection(lines, &lnidx)
+		editorFightSection(name, subname)
 
 		// Helper to return only the parameters for a given player number
 		resolvedSection := func(prefixBase string, n int) IniSection {

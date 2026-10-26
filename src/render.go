@@ -890,6 +890,7 @@ func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
 	}
+	editorRenderSprite(&rp)
 
 	initRenderSpriteQuad(&rp)
 

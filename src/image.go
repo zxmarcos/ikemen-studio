@@ -1655,6 +1655,9 @@ func findActiveSff(filename string) *Sff {
 	//	return nil
 	//}
 
+	if s := editorFightSff(filename); s != nil {
+		return s
+	}
 	// Scan characters
 	for i := range sys.cgi {
 		if sys.cgi[i].sff != nil && sys.cgi[i].sff.filename == filename {

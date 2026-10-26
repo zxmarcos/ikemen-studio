@@ -1326,6 +1326,7 @@ type Layout struct {
 	fLength    float32
 	xshear     float32
 	window     [4]int32
+	editor     int32 // where it was read from, for an external editor (-ikdbg)
 }
 
 func newLayout(ln int16) *Layout {
@@ -1346,6 +1347,7 @@ func ReadLayout(pre string, is IniSection, ln int16) *Layout {
 }
 
 func (l *Layout) Read(pre string, is IniSection) {
+	l.editor = editorLayoutSource(pre)
 	is.ReadF32(pre+"offset", &l.offset[0], &l.offset[1])
 	if str := is[pre+"facing"]; len(str) > 0 {
 		if Atoi(str) < 0 {
@@ -1436,9 +1438,11 @@ func (l *Layout) DrawFaceSprite(x, y float32, ln int16, s *Sprite, fx *PalFX, fs
 		xshear := -l.xshear
 		xsoffset := xshear * (float32(s.Offset[1]) * l.scale[1] * fscale)
 
+		editorLayoutDraw(l.editor, sys.fightScreen.scale)
 		s.Draw(x+l.offset[0]*sys.fightScreen.scale-xsoffset, y+l.offset[1]*sys.fightScreen.scale,
 			l.scale[0]*float32(l.facing)*fscale, l.scale[1]*float32(l.vfacing)*fscale,
 			xshear, l.rot, int32(l.projection), l.fLength, fx, drawwindow)
+		editorLayoutDrawn()
 	}
 }
 
@@ -1469,11 +1473,13 @@ func (l *Layout) DrawAnim(r *[4]int32, x, y, scl, xscl, yscl float32, ln int16, 
 		xshear := -l.xshear
 		xsoffset := xshear * (float32(a.spr.Offset[1]) * l.scale[1] * scl)
 
+		editorLayoutDraw(l.editor, scl)
 		a.Draw(drawwindow, x+l.offset[0]-xsoffset, y+l.offset[1]+float32(sys.gameHeight-240),
 			scl, scl, (l.scale[0]*xscl)*float32(l.facing), (l.scale[0]*xscl)*float32(l.facing),
 			(l.scale[1]*yscl)*float32(l.vfacing), xshear, l.rot,
 			float32(sys.gameWidth-320)/2, [2]float32{0, 0},
 			palfx, 1, [2]float32{1, 1}, int32(l.projection), l.fLength, false, CustomShaderRenderData{})
+		editorLayoutDrawn()
 	}
 }
 
@@ -1497,10 +1503,12 @@ func (l *Layout) DrawText(x, y, scl float32, ln int16,
 		xshear := -l.xshear
 		xsoffset := xshear * (float32(f.offset[1]) * l.scale[1] * scl)
 
+		editorLayoutDraw(l.editor, scl)
 		f.Print(text, (x+l.offset[0]-xsoffset)*scl, (y+l.offset[1])*scl,
 			l.scale[0]*sys.fightScreen.fnt_scale*float32(l.facing)*scl,
 			l.scale[1]*sys.fightScreen.fnt_scale*float32(l.vfacing)*scl, xshear, l.rot,
 			int32(l.projection), l.fLength, b, a, drawwindow, palfx, frgba)
+		editorLayoutDrawn()
 	}
 }
 
