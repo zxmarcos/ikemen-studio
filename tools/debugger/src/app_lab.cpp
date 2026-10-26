@@ -45,9 +45,11 @@ struct Dummy {
     int stance = 0, guard = 0;
     bool life = true, power = false;
     int react = -1, after = 0; // the take it plays once it can act again (-1: none), and after what
+    int chance = 50;           // of guarding each attack (guard "random"), in percent
+    int reactChance = 100;     // of playing the take each time
 } g_dummy;
 const char *kStances[] = {"stand", "crouch", "jump"};
-const char *kGuards[] = {"never", "always", "first"};
+const char *kGuards[] = {"never", "always", "first", "random"};
 const char *kAfter[] = {"guard", "hit", "wakeup", "any"};
 bool g_onlyMatch = false; // only the takes of the characters in the match
 
@@ -67,11 +69,13 @@ std::string RunsList(const std::vector<int> &runs) {
 
 void SendDummy() {
     char lua[160];
-    snprintf(lua, sizeof(lua), "ikdbg.dummy(%d, '%s', '%s', %s, %s)", g_dummy.pn, kStances[g_dummy.stance],
-             kGuards[g_dummy.guard], g_dummy.life ? "true" : "false", g_dummy.power ? "true" : "false");
+    snprintf(lua, sizeof(lua), "ikdbg.dummy(%d, '%s', '%s', %s, %s, %d)", g_dummy.pn, kStances[g_dummy.stance],
+             kGuards[g_dummy.guard], g_dummy.life ? "true" : "false", g_dummy.power ? "true" : "false",
+             g_dummy.chance);
     SendRaw(lua);
     if (g_dummy.pn > 0 && g_dummy.react >= 0 && g_dummy.react < (int)g_takes.size())
-        SendRaw("ikdbg.dummyReact({" + RunsList(g_takes[g_dummy.react].runs) + "}, '" + kAfter[g_dummy.after] + "')");
+        SendRaw("ikdbg.dummyReact({" + RunsList(g_takes[g_dummy.react].runs) + "}, '" + kAfter[g_dummy.after] +
+                "', " + std::to_string(g_dummy.reactChance) + ")");
 }
 
 // Whether a take was recorded with a character in the match (or with one not known)
@@ -127,10 +131,16 @@ void DummySection() {
     }
     ImGui::NewLine();
     ImGui::TextDisabled("Guards:");
-    for (int i = 0; i < 3; i++) {
-        const char *names[] = {"Never", "Always", "After a first hit"};
+    for (int i = 0; i < 4; i++) {
+        const char *names[] = {"Never", "Always", "After a first hit", "Randomly"};
         ImGui::SameLine();
         changed |= ImGui::RadioButton(names[i], &g_dummy.guard, i);
+    }
+    if (g_dummy.guard == 3) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+        ImGui::SliderInt("##chance", &g_dummy.chance, 0, 100, "%d%% of attacks");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
     }
     ImGui::SameLine();
     HelpMarker("It holds back when an attack is near enough to guard (InGuardDist). After a first hit: the "
@@ -158,6 +168,12 @@ void DummySection() {
             ImGui::PopID();
         }
         ImGui::EndCombo();
+    }
+    if (g_dummy.react >= 0) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+        ImGui::SliderInt("##reactchance", &g_dummy.reactChance, 0, 100, "%d%% of times");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
     }
     ImGui::SameLine();
     HelpMarker("A reversal: the take starts so that its last tick is the first one the dummy can act on "
@@ -348,15 +364,18 @@ void LabSettingsLine(const std::string &key, const std::string &value) {
     } else if (key == "TakeOf") {
         if (!g_takes.empty()) g_takes.back().chr = value; // of the Take line before
     } else if (key == "DummyReact") {
-        // after|take index
-        sscanf(value.c_str(), "%d|%d", &g_dummy.after, &g_dummy.react);
+        // after|take index|chance
+        sscanf(value.c_str(), "%d|%d|%d", &g_dummy.after, &g_dummy.react, &g_dummy.reactChance);
         g_dummy.after = std::clamp(g_dummy.after, 0, 3);
+        g_dummy.reactChance = std::clamp(g_dummy.reactChance, 0, 100);
     } else if (key == "Dummy") {
-        // pn|stance|guard|life|power
+        // pn|stance|guard|life|power|chance
         int life = 1, power = 0;
-        sscanf(value.c_str(), "%d|%d|%d|%d|%d", &g_dummy.pn, &g_dummy.stance, &g_dummy.guard, &life, &power);
+        sscanf(value.c_str(), "%d|%d|%d|%d|%d|%d", &g_dummy.pn, &g_dummy.stance, &g_dummy.guard, &life, &power,
+               &g_dummy.chance);
         g_dummy.stance = std::clamp(g_dummy.stance, 0, 2);
-        g_dummy.guard = std::clamp(g_dummy.guard, 0, 2);
+        g_dummy.guard = std::clamp(g_dummy.guard, 0, 3);
+        g_dummy.chance = std::clamp(g_dummy.chance, 0, 100);
         g_dummy.life = life != 0, g_dummy.power = power != 0;
     } else if (key == "LabOptions") {
         int reset = 1, same = 1, loop = 0, only = 0;
@@ -366,8 +385,9 @@ void LabSettingsLine(const std::string &key, const std::string &value) {
 }
 
 void LabSettingsWrite(ImGuiTextBuffer *buf) {
-    buf->appendf("Dummy=%d|%d|%d|%d|%d\n", g_dummy.pn, g_dummy.stance, g_dummy.guard, g_dummy.life, g_dummy.power);
-    buf->appendf("DummyReact=%d|%d\n", g_dummy.after, g_dummy.react);
+    buf->appendf("Dummy=%d|%d|%d|%d|%d|%d\n", g_dummy.pn, g_dummy.stance, g_dummy.guard, g_dummy.life, g_dummy.power,
+                 g_dummy.chance);
+    buf->appendf("DummyReact=%d|%d|%d\n", g_dummy.after, g_dummy.react, g_dummy.reactChance);
     buf->appendf("LabOptions=%d|%d|%d|%d|%d\n", g_recPn, g_reset, g_sameRandom, g_loop, g_onlyMatch);
     for (const Take &t : g_takes) {
         buf->appendf("Take=%d|%d|%s|%s\n", t.pn, t.seed, RunsList(t.runs).c_str(), t.name.c_str());

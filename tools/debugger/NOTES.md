@@ -586,9 +586,16 @@ juggle points left (`jugglePoints(target)` on the attacker) in Trace; the
 character each take was recorded with, and a filter for those in the
 match.
 
-Phase 4 next steps: reactions for other characters' get up states (the
-lead is measured on KFM's common states; an Ikemen character with
-different states starts late, by the fallback, when control is back);
-random guard and reaction (a chance per hit); input display history (the
-last keys with their ticks, as training modes show).
+Then: random guard (a chance rolled when `inGuardDist()` turns true, once
+per attack) and a chance for the reaction (rolled per hit); the input
+history on the Game window (runs of keys built from the frames' held
+counters: the smallest is the ticks since the last change); getting up
+recognised as any state after lying down whose movetype is no longer H,
+without ctrl (5120 is `type L`, `movetype I`), the lead checked again on
+ryu_pots (it uses the common 151 and 5120 too: ctrl on 1722, the move on
+1723 after guarding; 3771 and 3772 getting up).
+
+Phase 4 next steps: a character whose get up state does not end at its
+animation's end would start its reversal late (by the fallback, once
+control is back); none here to check it with.
 

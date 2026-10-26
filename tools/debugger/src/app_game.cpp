@@ -106,6 +106,8 @@ void ForwardKeys(bool focused) {
     }
 }
 
+static void UpdateInputHistory();
+
 void PollFrames() {
     if (!g_bridge.Running()) {
         g_frameLink.Close();
@@ -191,6 +193,7 @@ void PollFrames() {
                               ImVec4((float)b[1].num(), (float)b[2].num(), (float)b[3].num(), (float)b[4].num()),
                               ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy()});
     ReadScreenGeometry(j);
+    UpdateInputHistory();
     const Json &tg = j["tg"];
     int id = tg.isNull() ? -1 : tg["id"].i();
     if (id != g_trigId) g_trigTicks.clear();
@@ -203,6 +206,58 @@ void PollFrames() {
         // By source; one evaluated twice in a tick (loops) keeps its values in order, the last one counts
         std::stable_sort(tick.begin(), tick.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
         while (g_trigTicks.size() > kHistory) g_trigTicks.erase(g_trigTicks.begin());
+    }
+}
+
+// Each player's last keys, as runs (keys, ticks), the newest last: from the frames' counters of
+// how long each key has been held or released, the smallest being the ticks since the last change
+// (so frames the debugger misses lose nothing but runs shorter than them).
+struct InputRun {
+    int bits, ticks;
+};
+static std::map<int, std::deque<InputRun>> g_inputHist; // by player number
+
+static void UpdateInputHistory() {
+    for (const auto &e : g_frameEnts) {
+        if (e.helper || e.held.size() < 14) continue;
+        int bits = 0, since = INT_MAX;
+        for (int k = 0; k < 14; k++) {
+            if (e.held[k] > 0) bits |= 1 << k;
+            since = std::min(since, std::abs(e.held[k]));
+        }
+        auto &h = g_inputHist[e.pn];
+        if (h.empty() || h.back().bits != bits || since < h.back().ticks)
+            h.push_back({bits, since});
+        else
+            h.back().ticks = since;
+        while (h.size() > 40) h.pop_front();
+    }
+}
+
+// The history drawn down a side of the picture: P1 (and P3) on the left, P2 (and P4) on the right
+static void DrawInputHistory(ImDrawList *draw, ImVec2 p0, ImVec2 size) {
+    float line = ImGui::GetTextLineHeight(), pad = line * 0.4f;
+    int rows = std::max(1, (int)((size.y - line * 3) / line));
+    for (const auto &[pn, h] : g_inputHist) {
+        if (pn < 1 || pn > 2) continue;
+        bool left = pn == 1;
+        float y = p0.y + line * 2.5f;
+        int shown = 0;
+        for (auto r = h.rbegin(); r != h.rend() && shown < rows; ++r, ++shown) {
+            char text[48];
+            std::string keys = KeysText(r->bits);
+            if (r->ticks > 999)
+                snprintf(text, sizeof(text), "%s", keys.c_str());
+            else if (left)
+                snprintf(text, sizeof(text), "%3d %s", r->ticks, keys.c_str());
+            else
+                snprintf(text, sizeof(text), "%s %3d", keys.c_str(), r->ticks);
+            ImVec2 sz = ImGui::CalcTextSize(text);
+            float x = left ? p0.x + pad : p0.x + size.x - pad - sz.x;
+            draw->AddRectFilled(ImVec2(x - 3, y), ImVec2(x + sz.x + 3, y + line), IM_COL32(0, 0, 0, 150));
+            draw->AddText(ImVec2(x, y), shown == 0 ? IM_COL32(255, 230, 120, 255) : IM_COL32(230, 230, 230, 220), text);
+            y += line;
+        }
     }
 }
 
@@ -406,13 +461,17 @@ void GameWindow() {
     }
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     ForwardKeys(focused);
-    static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false;
+    static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false, showHistory = false;
     ImGui::Checkbox("Boxes", &showBoxes);
     ImGui::SameLine();
     ImGui::Checkbox("Axes", &showAxes);
     ImGui::SameLine();
     ImGui::Checkbox("Keys", &showKeys);
     ImGui::SetItemTooltip("Under each player, the keys it holds (its own, the AI's, a dummy's or a take's).");
+    ImGui::SameLine();
+    ImGui::Checkbox("History", &showHistory);
+    ImGui::SetItemTooltip("P1's last keys down the left side, P2's down the right, each with the ticks it lasted\n"
+                          "(newest on top), as training modes show them.");
     ImGui::SameLine();
     ImGui::Checkbox("Only the selected one", &onlySelected);
     ImGui::SameLine();
@@ -631,6 +690,7 @@ void GameWindow() {
         }
     }
     draw->ChannelsMerge();
+    if (showHistory) DrawInputHistory(draw, p0, size);
     draw->PopClipRect();
     if (focused) draw->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), IM_COL32(90, 200, 90, 200), 0, thick);
     ImGui::End();

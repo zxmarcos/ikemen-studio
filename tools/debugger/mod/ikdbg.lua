@@ -364,38 +364,40 @@ local function fromRuns(runs)
 	return take
 end
 
--- A player held by the editor: stance 'stand', 'crouch' or 'jump'; guard 'never', 'always' or
--- 'first' (after a first hit, until 90 ticks go by without one); life and power kept full
--- once each combo is over. pn 0: none.
-function ikdbg.dummy(pn, stance, guard, life, power)
+-- A player held by the editor: stance 'stand', 'crouch' or 'jump'; guard 'never', 'always',
+-- 'first' (after a first hit, until 90 ticks go by without one) or 'random' (each attack, with a
+-- chance in percent); life and power kept full once each combo is over. pn 0: none.
+function ikdbg.dummy(pn, stance, guard, life, power, chance)
 	local d = ikdbg.lab.dummy
 	if d and d.pn ~= pn then debugInputHold(d.pn, nil) end
 	ikdbg.lab.dummy = nil
 	if pn > 0 then
-		ikdbg.lab.dummy = {pn = pn, stance = stance, guard = guard, life = life, power = power, lastHit = -1000}
+		ikdbg.lab.dummy = {pn = pn, stance = stance, guard = guard, life = life, power = power, lastHit = -1000,
+			chance = chance or 50}
 		onPlayer(pn, function() setAILevel(0) end) -- its AI would play on
 	end
 	ikdbg.dirty = true
 end
 
 -- What the dummy does once it can act again (a reversal): a take, played so that its last tick is
--- the first one the dummy can act on; after 'guard', 'hit' (not knocked down), 'wakeup' or 'any'.
--- runs nil: nothing.
-function ikdbg.dummyReact(runs, after)
+-- the first one the dummy can act on; after 'guard', 'hit' (not knocked down), 'wakeup' or 'any';
+-- each time with a chance in percent. runs nil: nothing.
+function ikdbg.dummyReact(runs, after, chance)
 	local d = ikdbg.lab.dummy
 	if not d then return end
-	d.react = runs and {take = fromRuns(runs), after = after} or nil
+	d.react = runs and {take = fromRuns(runs), after = after, chance = chance or 100} or nil
 	d.ep = nil
 end
 
 -- Ticks from now to the first one the dummy can act on (its [Statedef -1] sees ctrl), when the
 -- engine tells: the hit or guard stun left, or the get up animation left. Measured on KFM: the
 -- shake counts down first, the hit time once it is 0 (from that tick on), the hit state ends the
--- tick after it reaches -1 giving ctrl, and [Statedef -1] sees it the next tick; getting up ends
--- the tick after AnimTime is 0, and [Statedef -1] sees ctrl the next.
+-- tick after it reaches -1 giving ctrl, and [Statedef -1] sees it the next tick; getting up (a
+-- state after lying down, movetype no longer H, without ctrl yet: the common 5120) ends the tick
+-- after AnimTime is 0, and [Statedef -1] sees ctrl the next.
 local kWakeLead = 2
-local function ticksToAct()
-	if stateNo() == 5120 then return -animTime() + kWakeLead end
+local function ticksToAct(ep)
+	if ep.down and moveType() ~= 'H' and not ctrl() then return -animTime() + kWakeLead end
 	if moveType() == 'H' and not getHitVar('fall') then
 		local shake, hittime = getHitVar('hitshaketime'), getHitVar('hittime')
 		if shake > 0 then return shake + hittime + 2 end
@@ -411,7 +413,7 @@ local function dummyReact(d, hit)
 	if not r then return end
 	local free = ctrl() and not hit
 	if hit or (d.ep and not free) then
-		d.ep = d.ep or {}
+		d.ep = d.ep or {skip = math.random(100) > r.chance}
 		if getHitVar('guarded') and hit then d.ep.guarded = true end
 		if stateType() == 'L' then d.ep.down = true end
 	end
@@ -419,8 +421,8 @@ local function dummyReact(d, hit)
 	if not ep then return end
 	local wanted = r.after == 'any' or (r.after == 'guard' and ep.guarded) or
 		(r.after == 'wakeup' and ep.down) or (r.after == 'hit' and not ep.guarded and not ep.down)
-	if wanted and not ep.started then
-		local left = ticksToAct()
+	if wanted and not ep.started and not ep.skip then
+		local left = ticksToAct(ep)
 		if free or (left and left <= #r.take) then
 			debugInputPlay(d.pn, r.take)
 			ep.started = true
@@ -437,9 +439,13 @@ local function runDummy()
 		local hit = moveType() == 'H'
 		if hit then d.lastHit = gameTime() end
 		dummyReact(d, hit)
-		local guard = d.guard == 'always' or (d.guard == 'first' and gameTime() - d.lastHit < 90)
+		local near = inGuardDist()
+		if near and not d.near then d.roll = math.random(100) <= d.chance end -- an attack coming: guard it?
+		d.near = near
+		local guard = d.guard == 'always' or (d.guard == 'first' and gameTime() - d.lastHit < 90) or
+			(d.guard == 'random' and d.roll)
 		keys = (d.stance == 'crouch' and 'D' or d.stance == 'jump' and 'U' or '') ..
-			(guard and inGuardDist() and 'B' or '')
+			(guard and near and 'B' or '')
 		if not hit and ctrl() then
 			if d.life and life() < lifeMax() then setLife(lifeMax()) end
 			if d.power and power() < powerMax() then setPower(powerMax()) end
