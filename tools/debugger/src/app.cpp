@@ -464,6 +464,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderDockWindow("Fight screen", bottom);
     ImGui::DockBuilderDockWindow("Motif", bottom);
+    ImGui::DockBuilderDockWindow("Storyboard", bottom);
     ImGui::DockBuilderFinish(dock);
 }
 

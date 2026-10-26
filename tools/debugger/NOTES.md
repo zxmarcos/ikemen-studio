@@ -75,7 +75,9 @@ when let go); its screens' BGs (`[TitleBGdef]` and its `[TitleBG ...]`, a
 `BGDef`: one line around each BG in `BGDef.draw`) picked and dragged by
 their `start`; the select screen (cells, names, cursors; portraits: the
 mod wraps `start.f_animGet` and `debugAnimSource` gives the new animation
-the source of the property's `AnimData`). Next: storyboards,
+the source of the property's `AnimData`). Then storyboards: window
+Storyboard, the one playing (`editor_storyboard.go`), reloaded at the same
+scene and time in a few ms. Next:
 the fight screen's animations (its `[Begin Action]` sections) in the
 Animation window.
 
@@ -102,6 +104,7 @@ src/editor_input.go      engine side: players' input buffers and commands under 
 src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a BG, reloading the stage
 src/editor_fight.go      engine side: where the fight screen's elements were drawn, reloading the fight screen
 src/editor_motif.go      engine side: the same for the motif (system.def), reloaded in place
+src/editor_storyboard.go engine side: the same for the storyboard playing
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -114,7 +117,7 @@ tools/debugger/
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_stage.cpp      Stage window, and the BGs on the Game window
-  src/app_screen.cpp     Fight screen and Motif windows, and their elements on the Game window
+  src/app_screen.cpp     Fight screen, Motif and Storyboard windows, and their elements on the Game window
   src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -193,7 +196,9 @@ helper "Bag"):
   When the demo has not started yet that key picks Arcade instead: for a
   repeatable path, set `[Demo Mode] enabled = 0` in a backed-up copy, then
   `click:740,350|key:Z|wait:1.5|key:Z|wait:10` reaches the select screen (Z is
-  P1's a, which confirms in menus; Enter does not).
+  P1's a, which confirms in menus; Enter does not). Two more Z (the first
+  character, its colour) start an arcade match, whose first character's intro
+  storyboard plays first (kfm_zss: `chars/kfm_zss/intro.def`).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -416,7 +421,15 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   ~350 ms of its own (inheritance between sections, every key set by
   reflection); reading the SFF and fonts again ~1.5 s more (borrowed).
 - In a match the motif draws little (pause menu, dialogue, win screens).
-- A screen's BGs are a `BGDef` (`bgdef.go`): `loadBGDef(sff, model, def,
+- Storyboards (`storyboard.go`): `loadStoryboard` reads the def into the
+  `Storyboard` struct the same way (`[Scene 1]` is the map key "scene_1", its
+  `layer0.*` keys `Layer["layer0"]`); a scene's BG is a BGDef named by its
+  `bg.name`. The scripts' `loadStoryboard` puts it in `sys.storyboard`, which
+  `runStoryboard` steps and draws each frame (layers drawn as copies of their
+  `AnimData`/`TextSpriteData`, at `layerall.pos + offset`); the scripts do
+  not hold its objects, so a reload replaces it whole and copies the time,
+  scene, typed text and BG times. `-storyboard path` plays one and exits
+  before the mods are loaded (no bridge).- A screen's BGs are a `BGDef` (`bgdef.go`): `loadBGDef(sff, model, def,
   bgname)` reads the def's sections whose first word is the bgname
   ("titlebg" for `[TitleBGdef]`), in order, as a stage reads its BGs; the
   BGDef does not keep that name (the editor takes it from the motif's field,

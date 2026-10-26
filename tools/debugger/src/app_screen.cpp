@@ -19,7 +19,8 @@ struct ScreenDef {
     const char *window;   // its window's title
     const char *what;     // as the tooltips name it
     const char *reloadFn; // the game's Lua function that loads it again
-    bool motif;
+    const char *geometry; // its key in the frame geometry
+    bool motif;           // read into a struct by ini tags (motif, storyboard): pos alone is not a group
     // Reloading takes ~20 ms (fight screen): a drag writes as it goes, the game following; or
     // ~400 ms (motif, in loadMotif): a drag shows the outlines moving and writes when let go
     bool live;
@@ -45,8 +46,10 @@ struct ScreenDef {
     }
 };
 
-static ScreenDef g_fight{"Fight screen", "fight screen", "debugReloadFight", false, true, 0.05};
-static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", true, false, 0.5};
+static ScreenDef g_fight{"Fight screen", "fight screen", "debugReloadFight", "fight", false, true, 0.05};
+static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", "motif", true, false, 0.5};
+static ScreenDef g_story{"Storyboard", "storyboard", "debugReloadStoryboard", "storyboard", true, true, 0.1};
+static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the ones drawn in front first
 bool g_screenPick;
 
 // The first word of a section's name, as Ikemen cuts it.
@@ -55,15 +58,15 @@ static std::string FirstWordOf(const IniSection &s) { return s.lower.substr(0, s
 // A BG section: its first word names a BGDef the def has ("titlebg" with [TitleBGdef]).
 static bool IsBgSection(const IniFile &ini, const IniSection &s) {
     std::string w = FirstWordOf(s);
-    if (w == s.lower) return false;
+    if (w == s.lower || w == "scene") return false; // [Scene 1] with a storyboard's [SceneDef]
     for (const IniSection &o : ini.sections)
         if (o.lower == w + "def") return true;
     return false;
 }
 
 void ReadScreenGeometry(const Json &j) {
-    for (ScreenDef *d : {&g_fight, &g_motif}) {
-        const Json &g = j[d->motif ? "motif" : "fight"];
+    for (ScreenDef *d : g_screens) {
+        const Json &g = j[d->geometry];
         d->def = g["def"].str();
         d->items.clear();
         SourceFile *sf = nullptr;
@@ -121,6 +124,8 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
         size_t dot = p.rfind('.', p.size() - 2); // the one before the last part
         p = dot == std::string::npos ? "" : p.substr(0, dot + 1);
     }
+    // A storyboard's layers move together by their scene's layerall.pos
+    if (s && s->lower.compare(0, 6, "scene ") == 0 && prefix.compare(0, 5, "layer") == 0) return "layerall.pos";
     // [Select Info]'s pos places its grid, the cells
     if (!motif || prefix.empty() || (s && s->lower == "select info" && prefix.compare(0, 5, "cell.") == 0))
         tries.push_back("pos");
@@ -191,8 +196,7 @@ static bool MoveField(ScreenDef &d, SourceFile &sf, const std::string &section, 
 
 bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                    ImVec2 scale) {
-    Pump(g_fight);
-    Pump(g_motif);
+    for (ScreenDef *d : g_screens) Pump(*d);
     struct Hit {
         ScreenDef *d = nullptr;
         int i = -1;
@@ -220,7 +224,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
     Hit hover;
     if (g_screenPick && hovered && !drag.d) {
         float best = FLT_MAX;
-        for (ScreenDef *d : {&g_fight, &g_motif})
+        for (ScreenDef *d : g_screens)
             for (int i = (int)d->items.size() - 1; i >= 0; i--) {
                 ImVec2 lo, hi;
                 corners(d->items[i], lo, hi);
@@ -272,7 +276,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
 
     // Outlines: the selected elements always, the others while picking
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
-    for (ScreenDef *d : {&g_motif, &g_fight}) {
+    for (ScreenDef *d : {&g_motif, &g_story, &g_fight}) {
         SourceFile *sf = d->Source();
         const IniFile *ini = sf ? &d->Ini(*sf) : nullptr;
         bool labelled = false; // an element drawn several times (menu items) is named once
@@ -349,13 +353,16 @@ static bool PositionDrag(ScreenDef &d, SourceFile &sf, const IniSection &s, cons
 
 static void ScreenWindow(ScreenDef &d) {
     Pump(d);
+    // A window the saved layout does not know joins Code's dock
+    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
+        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
     if (!ImGui::Begin(d.window)) {
         ImGui::End();
         return;
     }
     SourceFile *sfp = d.Source();
     if (!sfp) {
-        ImGui::TextDisabled(g_bridge.Running() ? (d.motif ? "Needs the game's frames (patched Ikemen GO)."
+        ImGui::TextDisabled(g_bridge.Running() ? (d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)." : d.motif ? "Needs the game's frames (patched Ikemen GO)."
                                                           : "Needs the game's frames (patched Ikemen GO), in a match.")
                                                : "Launch the game from the Session window.");
         ImGui::End();
@@ -506,6 +513,7 @@ static void ScreenWindow(ScreenDef &d) {
 void ScreenWindows() {
     ScreenWindow(g_fight);
     ScreenWindow(g_motif);
+    ScreenWindow(g_story);
 }
 
 } // namespace app
