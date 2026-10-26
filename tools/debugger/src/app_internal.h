@@ -235,6 +235,14 @@ void ShowWindow(const char *name); // opened if closed, its tab to the front, wi
 void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
 void LayoutSettingsLine(const std::string &key, const std::string &value);
 void LayoutSettingsWrite(ImGuiTextBuffer *buf);
+// The themes (app_theme.cpp)
+enum InkColor { kRed, kYellow, kGreen, kBlue, kOrange };
+ImVec4 Ink(InkColor c); // a colour for text on a window: darker on a light theme
+bool LightTheme();
+void ThemeMenu();
+void ThemeFrame(); // applies a theme asked for, at the start of a frame
+void ThemeSettingsLine(const std::string &key, const std::string &value);
+void ThemeSettingsWrite(ImGuiTextBuffer *buf);
 
 // Commands
 bool Connected();

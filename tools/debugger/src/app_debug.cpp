@@ -48,9 +48,9 @@ void SessionWindow() {
         ImGui::Text("pid %lu", g_bridge.Pid());
         ImGui::SameLine();
         if (g_hello)
-            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1), "bridge connected");
+            ImGui::TextColored(Ink(kGreen), "bridge connected");
         else
-            ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1), "waiting for the mod...");
+            ImGui::TextColored(Ink(kYellow), "waiting for the mod...");
         ImGui::TextDisabled("%s", g_ikemenVersion.c_str());
         ImGui::Text("%u snapshots, %u/s", g_snapshots, g_lastRate);
     } else {
@@ -110,13 +110,13 @@ void ControlWindow() {
         ImGui::TextDisabled("Launch the game from the Session window.");
     } else {
         const char *state = g_steps > 0 ? "STEPPING" : g_paused ? "PAUSED" : "RUNNING";
-        ImVec4 color = g_paused ? ImVec4(1, 0.75f, 0.3f, 1) : ImVec4(0.4f, 0.9f, 0.4f, 1);
+        ImVec4 color = g_paused ? Ink(kYellow) : Ink(kGreen);
         ImGui::TextColored(color, "%s", state);
         ImGui::SameLine();
         ImGui::Text("tick %d   round %d   round state %d   %d players/helpers", g_tick, g_roundNo, g_roundState,
                     (int)g_ents.size());
         if (!g_breakText.empty()) {
-            ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", g_breakText.c_str());
+            ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton("x")) g_breakText.clear();
         }
@@ -199,7 +199,7 @@ void VarGrid(const char *id, const std::vector<double> &vals, const std::vector<
         ImGui::TableNextColumn();
         bool changed = prev && n < prev->size() && (*prev)[n] != vals[n];
         bool zero = vals[n] == 0;
-        ImVec4 color = changed ? ImVec4(1, 0.8f, 0.3f, 1)
+        ImVec4 color = changed ? Ink(kYellow)
                      : zero    ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
                                : ImGui::GetStyleColorVec4(ImGuiCol_Text);
         // Its name (Analysis, Variables) when it has one
@@ -515,7 +515,7 @@ static void MovesTable(int id) {
         ImGui::TableNextColumn();
         if (m->hits == 0) ImGui::TextDisabled(m->end < 0 ? "" : "whiff");
         else {
-            ImGui::TextColored(m->guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1), "%s",
+            ImGui::TextColored(m->guarded ? Ink(kBlue) : Ink(kOrange), "%s",
                                m->guarded ? "guarded" : "hit");
             if (m->hits > 1) {
                 ImGui::SameLine(0, 0);
@@ -524,7 +524,7 @@ static void MovesTable(int id) {
         }
         ImGui::TableNextColumn();
         if (m->hasAdvantage)
-            ImGui::TextColored(m->advantage >= 0 ? ImVec4(0.4f, 0.9f, 0.4f, 1) : ImVec4(1, 0.45f, 0.45f, 1), "%+d",
+            ImGui::TextColored(m->advantage >= 0 ? Ink(kGreen) : Ink(kRed), "%+d",
                                m->advantage);
         else if (m->combo)
             ImGui::TextDisabled("combo");
@@ -597,7 +597,7 @@ static void TicksTable(std::deque<FrameRow> &rows) {
             ImGui::Text("%d", r->anim);
             ImGui::TableNextColumn();
             if (r->clsn1) {
-                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%d", r->elem);
+                ImGui::TextColored(Ink(kRed), "%d", r->elem);
                 ImGui::SetItemTooltip("Has a Clsn1 box");
             } else
                 ImGui::Text("%d", r->elem);
@@ -681,7 +681,7 @@ void TraceWindow() {
                 if (!t.guarded && t.combo > 1)
                     snprintf(combo, sizeof(combo), ", combo %d hits %d damage", t.combo, t.comboDamage);
                 if (t.fall && t.juggle >= 0) snprintf(juggle, sizeof(juggle), ", juggle %d left", t.juggle);
-                ImGui::TextColored(t.guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1),
+                ImGui::TextColored(t.guarded ? Ink(kBlue) : Ink(kOrange),
                                    "%s %s (state %d): %d damage%s, %s %d, shake %d, slide %d, ctrl %d%s%s",
                                    t.guarded ? "guarded" : "hit by", by.c_str(), t.bySt, t.damage, combo,
                                    t.guarded ? "guard time" : "hit time", t.hittime, t.shake, t.slide,
@@ -695,7 +695,7 @@ void TraceWindow() {
                     ImGui::EndTooltip();
                 }
             } else
-                ImGui::TextColored(t.kind == "hit" ? ImVec4(1, 0.5f, 0.5f, 1) : ImVec4(0.6f, 0.8f, 1, 1),
+                ImGui::TextColored(t.kind == "hit" ? Ink(kRed) : Ink(kBlue),
                                    "%s (in state %d)", t.kind == "hit" ? "its attack hit" : "its attack was guarded",
                                    t.st);
         }
@@ -850,9 +850,9 @@ void WatchWindow() {
             }
             ImGui::TableNextColumn();
             if (!w.error.empty())
-                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", w.error.c_str());
+                ImGui::TextColored(Ink(kRed), "%s", w.error.c_str());
             else if (w.changedTick >= 0 && w.changedTick == g_tick)
-                ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "%s", w.value.c_str());
+                ImGui::TextColored(Ink(kYellow), "%s", w.value.c_str());
             else
                 ImGui::TextUnformatted(w.value.c_str());
             if (ImGui::BeginItemTooltip()) {
@@ -891,10 +891,10 @@ void ConsoleWindow() {
     if (ImGui::BeginChild("log", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
         for (const auto &l : g_log) {
             if (l.kind == LogLine::Engine && !showEngine) continue;
-            ImVec4 color = l.kind == LogLine::Error    ? ImVec4(1, 0.45f, 0.45f, 1)
-                         : l.kind == LogLine::Result   ? ImVec4(0.6f, 0.9f, 0.6f, 1)
+            ImVec4 color = l.kind == LogLine::Error    ? Ink(kRed)
+                         : l.kind == LogLine::Result   ? Ink(kGreen)
                          : l.kind == LogLine::Engine   ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
-                         : l.kind == LogLine::Break    ? ImVec4(1, 0.75f, 0.3f, 1)
+                         : l.kind == LogLine::Break    ? Ink(kYellow)
                                                        : ImGui::GetStyleColorVec4(ImGuiCol_Text);
             ImGui::TextColored(color, "%s", l.text.c_str());
         }

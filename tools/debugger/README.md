@@ -64,6 +64,14 @@ A line asked from another window (Show in Code, a Lint row, a Trace HitDef)
 brings Code to the front, opening it if it is closed; with the game running,
 Code then stops following the state, which would leave that line at once.
 
+**Theme** colours the debugger: Dear ImGui's dark (the default) and light, and
+the twelve themes TheAncientOwl posted in
+[ocornut/imgui#707](https://github.com/ocornut/imgui/issues/707#issuecomment-4107169777)
+(Dark, Forest green, Amethyst, Sapphire, Amber yellow, Dracula, Catppuccin
+Mocha, Gruvbox hard, Crimson Vesuvius, Rose quartz, Cyberpunk, Paper and ink).
+With a light one (Dear ImGui light, Paper and ink) the code editor is light too,
+and the coloured texts are darker. The theme is kept with the settings.
+
 | Window | What it does |
 |---|---|
 | Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state |

@@ -125,7 +125,7 @@ void SoundsWindow() {
     ImGui::SameLine();
     if (ImGui::Button("Stop")) PlaySoundA(nullptr, nullptr, 0);
     ImGui::TextDisabled("%s%s  %zu sounds", sf.path.c_str(), sf.dirty ? " *" : "", snd.sounds.size());
-    if (!sf.error.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", sf.error.c_str());
+    if (!sf.error.empty()) ImGui::TextColored(Ink(kRed), "%s", sf.error.c_str());
 
     // The selected sound
     if (sf.sel >= 0 && sf.sel < (int)snd.sounds.size()) {
@@ -198,7 +198,7 @@ void SoundsWindow() {
             if (ok)
                 ImGui::TextDisabled("%u Hz, %u bits, %s", info.rate, info.bits, info.channels == 1 ? "mono" : "stereo");
             else
-                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", error.c_str());
+                ImGui::TextColored(Ink(kRed), "%s", error.c_str());
             ImGui::PopID();
         }
         ImGui::EndTable();

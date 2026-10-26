@@ -458,7 +458,7 @@ void StageWindow() {
     if (ImGui::SmallButton("Restart the stage")) SendRaw("debugStageReset()");
     ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
     if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
-        ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
+        ImGui::TextColored(Ink(kYellow), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
 
     bool hasModel = false;
     for (const IniSection &s : ini.sections)
@@ -490,7 +490,7 @@ void StageWindow() {
             std::string label = (bg >= 0 || ctrl >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
             bool dim = bg >= 0 && !drawn;
             if (dim) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            if (ran) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.45f, 1));
+            if (ran) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kGreen));
             if (ImGui::Selectable(label.c_str(), selSection == i)) {
                 selSection = i;
                 g_stageBg = selBg = bg;

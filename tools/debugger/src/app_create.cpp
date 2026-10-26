@@ -98,10 +98,10 @@ void MoveTab() {
     std::string taken = StatedefFile(pn, m.state);
     if (!taken.empty()) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "exists already (%s)", taken.c_str());
+        ImGui::TextColored(Ink(kRed), "exists already (%s)", taken.c_str());
     } else if (m.state < 200 || m.state >= 5000) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "a common state's number: it would take its place");
+        ImGui::TextColored(Ink(kYellow), "a common state's number: it would take its place");
     }
     ImGui::SetNextItemWidth(em * 8);
     ImGui::Combo("done", &m.kind, "standing\0crouching\0in the air\0");
@@ -139,7 +139,7 @@ void MoveTab() {
     m.hitElem = 0;
     m.sparkY = -70;
     if (!af || act == af->actions.end()) {
-        ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "There is no action %d.", m.action);
+        ImGui::TextColored(Ink(kRed), "There is no action %d.", m.action);
         ImGui::SetNextItemWidth(em * 6);
         ImGui::InputInt("##copy", &f.copyFrom, 0);
         ImGui::SameLine();
@@ -165,7 +165,7 @@ void MoveTab() {
         ImGui::BeginGroup();
         ImGui::Text("%zu elements, %d ticks%s", a.elems.size(), ticks, endless ? " and one that lasts" : "");
         if (m.hitElem) ImGui::Text("hits from element %d (its first Clsn1 box)", m.hitElem);
-        else ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "no Clsn1 box: it hits nothing until one is drawn");
+        else ImGui::TextColored(Ink(kYellow), "no Clsn1 box: it hits nothing until one is drawn");
         if (ImGui::SmallButton("Animation window")) ShowWindow("Animation");
         ImGui::EndGroup();
     }
@@ -182,7 +182,7 @@ void MoveTab() {
         ImGui::EndDisabled();
         if (snd && i < 0) {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "not in the SND file");
+            ImGui::TextColored(Ink(kRed), "not in the SND file");
         }
     }
 
@@ -551,7 +551,7 @@ void CharacterTab() {
     if (!c.status.empty()) {
         ImGui::SameLine();
         ImGui::PushTextWrapPos(0);
-        if (c.failed) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", c.status.c_str());
+        if (c.failed) ImGui::TextColored(Ink(kRed), "%s", c.status.c_str());
         else ImGui::TextUnformatted(c.status.c_str());
         ImGui::PopTextWrapPos();
     }
@@ -817,7 +817,7 @@ void StageTab() {
     if (!f.status.empty()) {
         ImGui::SameLine();
         ImGui::PushTextWrapPos(0);
-        if (f.failed) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", f.status.c_str());
+        if (f.failed) ImGui::TextColored(Ink(kRed), "%s", f.status.c_str());
         else ImGui::TextUnformatted(f.status.c_str());
         ImGui::PopTextWrapPos();
     }

@@ -164,6 +164,7 @@ tools/debugger/
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: state, commands, protocol handling, settings
   src/app_layout.cpp     the menu bar, each window's place and open flag, the two layouts (BeginTool)
+  src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)
   src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
   src/app_anim.cpp       Animation window (AIR)
@@ -668,4 +669,15 @@ not unlit, deleted after. A stage put in the match (`debugSwapStage`, or a
 reload whose model file changed) now sends its model's vertices to the GPU
 (the engine does it when a round starts, `handleStageSwap`) and swapping
 restarts the camera (`cam.Init`); the fight's aspect stays the match's.
+
+Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
+Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
+#707, as posted but for the colours renamed since (TabActive, NavHighlight:
+the build disables the obsolete names). A theme starts from Dear ImGui's
+sizes and dark or light colours, then the screen's scale. Text coloured on a
+window goes through `Ink(kRed...)`, darker on a light theme; drawings with
+their own dark background (the game, sprites, the command chips, the roster
+cells) keep their colours; grid borders and labels drawn on a window use the
+theme's text colour. The code editor has a dark and a light palette
+(`Editor_SetLight`).
 

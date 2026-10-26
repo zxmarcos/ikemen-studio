@@ -546,6 +546,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         LabSettingsLine(key, value);
         AnalysisSettingsLine(key, value);
         LayoutSettingsLine(key, value);
+        ThemeSettingsLine(key, value);
     }
 }
 
@@ -563,6 +564,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     LabSettingsWrite(buf);
     AnalysisSettingsWrite(buf);
     LayoutSettingsWrite(buf);
+    ThemeSettingsWrite(buf);
     buf->append("\n");
 }
 

@@ -237,9 +237,9 @@ void SpritesWindow() {
     ImGui::SameLine();
     ImGui::TextDisabled("%s%s%s%s%s  %zu sprites, %zu palettes", screen ? "the " : "", screen ? screen : "",
                         screen ? "'s " : "", sf.path.c_str(), sf.dirty ? " *" : "", d.sprites.size(), d.pals.size());
-    if (!d.error.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", d.error.c_str());
+    if (!d.error.empty()) ImGui::TextColored(Ink(kRed), "%s", d.error.c_str());
     if (d.converted)
-        ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "An SFF v1 file: saving writes SFF v2 (palette 1,1 from the .act).");
+        ImGui::TextColored(Ink(kYellow), "An SFF v1 file: saving writes SFF v2 (palette 1,1 from the .act).");
 
     static int addGroup = 0, addNumber = 0, addAxis = SFF_AXIS_FEET, addPal = SFF_PAL_SHARED;
     if (ImGui::BeginPopup("add")) {
@@ -316,7 +316,7 @@ void SpritesWindow() {
     ImGui::EndDisabled();
     if (taken) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "taken");
+        ImGui::TextColored(Ink(kRed), "taken");
     }
     int axis[2] = {s.x, s.y};
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);

@@ -210,12 +210,12 @@ void TakesSection() {
     ImGui::Checkbox("Only of the characters in the match", &g_onlyMatch);
     ImGui::EndDisabled();
     if (!g_lab.waiting.empty())
-        ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Waiting for the fight to start to %s...",
+        ImGui::TextColored(Ink(kYellow), "Waiting for the fight to start to %s...",
                            g_lab.waiting == "rec" ? "record" : "play");
     else if (g_lab.rec)
-        ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "Recording P%d: %d ticks", g_lab.rec, g_lab.recTicks);
+        ImGui::TextColored(Ink(kRed), "Recording P%d: %d ticks", g_lab.rec, g_lab.recTicks);
     else if (g_lab.play)
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1), "Playing as P%d: tick %d of %d", g_lab.play, g_lab.at, g_lab.len);
+        ImGui::TextColored(Ink(kGreen), "Playing as P%d: tick %d of %d", g_lab.play, g_lab.at, g_lab.len);
     else
         ImGui::TextDisabled("Record a player's input (the keys it holds tick by tick, back and forward as it "
                             "faces), then play it back as any player.");

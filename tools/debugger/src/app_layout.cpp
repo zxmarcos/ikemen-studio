@@ -1,6 +1,6 @@
 // The windows and where they go: the menu bar (Windows opens and closes each one, Layout puts
-// them in one of the ready layouts), each window's place in the dock, and a window opened again
-// joining the others of its place.
+// them in one of the ready layouts, Theme colours them), each window's place in the dock, and a
+// window opened again joining the others of its place.
 #include "app_internal.h"
 
 #include "imgui_internal.h"
@@ -146,6 +146,7 @@ void ShowWindow(const char *name) {
 }
 
 void LayoutFrame() {
+    ThemeFrame();
     ImGuiID dock = ImGui::GetID("IkemenDebuggerDock");
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Windows")) {
@@ -168,6 +169,10 @@ void LayoutFrame() {
                 if (ImGui::MenuItem(kLayouts[n].name)) g_layoutAsked = n;
                 ImGui::SetItemTooltip("%s", kLayouts[n].help);
             }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Theme")) {
+            ThemeMenu();
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

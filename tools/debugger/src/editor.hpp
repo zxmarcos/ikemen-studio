@@ -41,6 +41,8 @@ void Editor_SetDecorations(CodeEditor *ed, std::function<int(int)> mark_of, std:
 int  Editor_MarkClicked(const CodeEditor *ed);
 /* A note after the end of each line in view (1-based): its text ("" for none), and *color. */
 void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> note_of);
+/* The colours of every editor: dark (the default) or light, for a light theme. */
+void Editor_SetLight(bool light);
 
 } // namespace dbg
 

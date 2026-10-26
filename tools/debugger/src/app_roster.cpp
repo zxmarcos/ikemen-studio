@@ -407,7 +407,7 @@ void RosterWindow() {
                     ImGui::EndDragDropTarget();
                 }
                 DrawCell(draw, a, cell, ci >= 0 ? &r.chars[ci] : nullptr, budget);
-                ImU32 col = ci >= 0 && ci == sel ? IM_COL32(255, 220, 60, 255) : hovered ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 255, 255, 40);
+                ImU32 col = ci >= 0 && ci == sel ? ImGui::GetColorU32(Ink(kYellow)) : ImGui::GetColorU32(ImGuiCol_Text, hovered ? 0.8f : 0.16f);
                 draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), col, 0, ci == sel ? 2.0f : 1.0f);
                 ImGui::PopID();
             };
@@ -415,7 +415,7 @@ void RosterWindow() {
             for (int i = 0; i < rows * cols; i++) {
                 ImVec2 a(origin.x + (i % cols) * (cell + gap), origin.y + (i / cols) * (cell + gap));
                 if (grid[i] == -2)
-                    draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), IM_COL32(255, 255, 255, 20)); // skipped by the motif
+                    draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), ImGui::GetColorU32(ImGuiCol_Text, 0.08f)); // skipped by the motif
                 else
                     slotOf(grid[i], a, i);
             }

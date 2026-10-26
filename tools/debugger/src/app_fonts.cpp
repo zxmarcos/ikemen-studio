@@ -381,13 +381,13 @@ void FontsWindow() {
             ImVec2 a(p0.x + (cell - s.w * k) / 2, p0.y + (cell - s.h * k) / 2);
             draw->AddImage(TexRef(tex), a, ImVec2(a.x + s.w * k, a.y + s.h * k));
         }
-        draw->AddRect(p0, ImVec2(p0.x + cell, p0.y + cell), hovered ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 255, 255, 40));
+        draw->AddRect(p0, ImVec2(p0.x + cell, p0.y + cell), ImGui::GetColorU32(ImGuiCol_Text, hovered ? 0.8f : 0.16f));
         char label[16];
         if (s.number >= 33 && s.number < 127)
             snprintf(label, sizeof(label), "%c", (char)s.number);
         else
             snprintf(label, sizeof(label), "%d", s.number);
-        draw->AddText(ImVec2(p0.x + 2, p0.y + cell), IM_COL32(200, 200, 200, 255), label);
+        draw->AddText(ImVec2(p0.x + 2, p0.y + cell), ImGui::GetColorU32(ImGuiCol_Text), label);
         if (hovered) ImGui::SetTooltip("sprite 0, %d: %d x %d, axis %d, %d", s.number, s.w, s.h, s.x, s.y);
         ImGui::PopID();
     }

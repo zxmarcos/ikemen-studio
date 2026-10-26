@@ -157,6 +157,9 @@ const ImU32 kButtonColors[10] = {IM_COL32(220, 90, 90, 255),  IM_COL32(230, 180,
                                  IM_COL32(160, 160, 160, 255), IM_COL32(200, 130, 90, 255), IM_COL32(130, 170, 110, 255),
                                  IM_COL32(120, 120, 140, 255)};
 
+// A button of the pad, off
+ImVec4 PadOff() { return LightTheme() ? ImVec4(0.85f, 0.86f, 0.9f, 1) : ImVec4(0.2f, 0.22f, 0.28f, 1); }
+
 float StepWidth(const CmdStep &s, float em) {
     if (!s.raw.empty()) return std::max(em * 3, ImGui::CalcTextSize(s.raw.c_str()).x + em * 0.8f);
     int buttons = __builtin_popcount(s.buttons);
@@ -304,7 +307,7 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
                 changed = true;
             }
             if (!changed && !s.raw.empty()) {
-                ImGui::TextColored(ImVec4(1, 0.55f, 0.55f, 1), "\"%s\" is edited in the command's text.", s.raw.c_str());
+                ImGui::TextColored(Ink(kRed), "\"%s\" is edited in the command's text.", s.raw.c_str());
             } else if (!changed) {
                 // The direction pad, facing right
                 static const int pad[3][3] = {{8, 7, 6}, {1, 0, 5}, {2, 3, 4}};
@@ -317,14 +320,14 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
                         if (col) ImGui::SameLine(0, 2);
                         ImGui::PushID(r * 3 + col);
                         ImVec2 bp = ImGui::GetCursorScreenPos();
-                        ImGui::PushStyleColor(ImGuiCol_Button, s.dir == d ? ImVec4(0.75f, 0.6f, 0.2f, 1) : ImVec4(0.2f, 0.22f, 0.28f, 1));
+                        ImGui::PushStyleColor(ImGuiCol_Button, s.dir == d ? ImVec4(0.75f, 0.6f, 0.2f, 1) : PadOff());
                         if (ImGui::Button("##d", ImVec2(cell, cell))) {
                             s.dir = d;
                             changed = true;
                         }
                         ImGui::PopStyleColor();
                         DrawArrow(ImGui::GetWindowDrawList(), ImVec2(bp.x + cell / 2, bp.y + cell / 2), cell * 0.32f, d,
-                                  d ? IM_COL32(235, 235, 235, 255) : IM_COL32(150, 150, 150, 255));
+                                  d ? (s.dir == d || !LightTheme() ? IM_COL32(235, 235, 235, 255) : IM_COL32(60, 60, 70, 255)) : IM_COL32(150, 150, 150, 255));
                         ImGui::SetItemTooltip(d ? "%s" : "no direction", kCmdDirs[d]);
                         ImGui::PopID();
                     }
@@ -337,7 +340,7 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
                     bool on = (s.buttons >> i) & 1;
                     char t[2] = {kCmdButtons[i], 0};
                     ImGui::PushID(100 + i);
-                    ImGui::PushStyleColor(ImGuiCol_Button, on ? ImGui::ColorConvertU32ToFloat4(kButtonColors[i]) : ImVec4(0.2f, 0.22f, 0.28f, 1));
+                    ImGui::PushStyleColor(ImGuiCol_Button, on ? ImGui::ColorConvertU32ToFloat4(kButtonColors[i]) : PadOff());
                     ImGui::PushStyleColor(ImGuiCol_Text, on ? ImVec4(0.08f, 0.08f, 0.08f, 1) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
                     if (ImGui::Button(t, ImVec2(cell, cell))) {
                         s.buttons ^= 1u << i;
@@ -364,7 +367,7 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
                 changed |= ImGui::Checkbox("$: the diagonals count", &s.four);
                 changed |= ImGui::Checkbox(">: nothing else in between", &s.strict);
                 ImGui::EndGroup();
-                if (!s.dir && !s.buttons) ImGui::TextColored(ImVec4(1, 0.55f, 0.55f, 1), "A step needs a direction or a button.");
+                if (!s.dir && !s.buttons) ImGui::TextColored(Ink(kRed), "A step needs a direction or a button.");
             }
         }
     }
@@ -472,7 +475,7 @@ void CommandsWindow() {
                         g_applying ? "  applying..." : "");
     if (!g_applyError.empty()) {
         ImGui::PushTextWrapPos(0);
-        ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", g_applyError.c_str());
+        ImGui::TextColored(Ink(kRed), "%s", g_applyError.c_str());
         ImGui::PopTextWrapPos();
     }
 

@@ -444,28 +444,67 @@ enum {
     C_Count
 };
 
-static const ImU32 kColors[C_Count] = {
-    IM_COL32(212, 212, 212, 255),   /* text */
-    IM_COL32(106, 153, 85, 255),    /* ; comments */
-    IM_COL32(230, 180, 90, 255),    /* [group headers] */
-    IM_COL32(156, 220, 254, 255),   /* key = */
-    IM_COL32(160, 160, 172, 255),   /* = and operators */
-    IM_COL32(181, 206, 168, 255),   /* numbers */
-    IM_COL32(206, 145, 120, 255),   /* "strings" */
-    IM_COL32(220, 220, 150, 255),   /* triggers */
-    IM_COL32(197, 134, 192, 255),   /* redirections */
-    IM_COL32(78, 201, 176, 255),    /* controller types */
-    IM_COL32(197, 134, 192, 255),   /* loopstart */
+struct Palette {
+    ImU32 syntax[C_Count];
+    ImU32 background, gutter_bg, line_number, line_number_cur, current_line, selection, error_bg, error_mark, cursor;
 };
-static const ImU32 kBackground = IM_COL32(28, 28, 32, 255);
-static const ImU32 kGutterBg = IM_COL32(34, 34, 40, 255);
-static const ImU32 kLineNumber = IM_COL32(110, 110, 125, 255);
-static const ImU32 kLineNumberCur = IM_COL32(200, 200, 210, 255);
-static const ImU32 kCurrentLine = IM_COL32(255, 255, 255, 14);
-static const ImU32 kSelection = IM_COL32(38, 79, 120, 255);
-static const ImU32 kErrorBg = IM_COL32(150, 30, 30, 110);
-static const ImU32 kErrorMark = IM_COL32(230, 60, 60, 255);
-static const ImU32 kCursor = IM_COL32(240, 240, 240, 255);
+
+static const Palette kDark = {
+    {
+        IM_COL32(212, 212, 212, 255),   /* text */
+        IM_COL32(106, 153, 85, 255),    /* ; comments */
+        IM_COL32(230, 180, 90, 255),    /* [group headers] */
+        IM_COL32(156, 220, 254, 255),   /* key = */
+        IM_COL32(160, 160, 172, 255),   /* = and operators */
+        IM_COL32(181, 206, 168, 255),   /* numbers */
+        IM_COL32(206, 145, 120, 255),   /* "strings" */
+        IM_COL32(220, 220, 150, 255),   /* triggers */
+        IM_COL32(197, 134, 192, 255),   /* redirections */
+        IM_COL32(78, 201, 176, 255),    /* controller types */
+        IM_COL32(197, 134, 192, 255),   /* loopstart */
+    },
+    IM_COL32(28, 28, 32, 255),          /* background */
+    IM_COL32(34, 34, 40, 255),          /* gutter */
+    IM_COL32(110, 110, 125, 255),       /* line numbers */
+    IM_COL32(200, 200, 210, 255),       /* the cursor's line number */
+    IM_COL32(255, 255, 255, 14),        /* the cursor's line */
+    IM_COL32(38, 79, 120, 255),         /* selection */
+    IM_COL32(150, 30, 30, 110),         /* the error's line */
+    IM_COL32(230, 60, 60, 255),         /* the error's mark */
+    IM_COL32(240, 240, 240, 255),       /* cursor */
+};
+
+static const Palette kLight = {
+    {
+        IM_COL32(30, 30, 30, 255),
+        IM_COL32(0, 128, 0, 255),
+        IM_COL32(170, 85, 0, 255),
+        IM_COL32(0, 60, 150, 255),
+        IM_COL32(95, 95, 105, 255),
+        IM_COL32(9, 134, 88, 255),
+        IM_COL32(163, 21, 21, 255),
+        IM_COL32(121, 94, 38, 255),
+        IM_COL32(150, 0, 190, 255),
+        IM_COL32(20, 120, 145, 255),
+        IM_COL32(150, 0, 190, 255),
+    },
+    IM_COL32(255, 255, 255, 255),
+    IM_COL32(242, 242, 238, 255),
+    IM_COL32(150, 150, 150, 255),
+    IM_COL32(40, 40, 40, 255),
+    IM_COL32(0, 0, 0, 12),
+    IM_COL32(173, 214, 255, 255),
+    IM_COL32(255, 80, 80, 60),
+    IM_COL32(205, 40, 40, 255),
+    IM_COL32(20, 20, 20, 255),
+};
+
+static const Palette *pal = &kDark;
+
+void Editor_SetLight(bool light)
+{
+    pal = light ? &kLight : &kDark;
+}
 
 static bool IsBlank(char c)
 {
@@ -1417,7 +1456,7 @@ static void AcceptCompletion(CodeEditor *ed)
 
 static ImVec4 Colour(int c)
 {
-    return ImGui::ColorConvertU32ToFloat4(kColors[c]);
+    return ImGui::ColorConvertU32ToFloat4(pal->syntax[c]);
 }
 
 /* The documentation of a name: a trigger (or redirection) unless controller_first and it is a controller. */
@@ -1805,7 +1844,7 @@ static void DrawLine(ImDrawList *dl, const Metrics &m, const char *s, const char
             break;
         }
         if (sx + a >= clip_l && c != ' ' && c != '\t' && c != '\r') {
-            m.font->RenderChar(dl, m.size, ImVec2(sx, y), kColors[colors[s - b]], (ImWchar)c);
+            m.font->RenderChar(dl, m.size, ImVec2(sx, y), pal->syntax[colors[s - b]], (ImWchar)c);
         }
         x += a;
         s += n;
@@ -1879,7 +1918,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
 
     ImGui::SetNextWindowContentSize(ImVec2(content_w, content_h));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, kBackground);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, pal->background);
     bool visible = ImGui::BeginChild(id, size, ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
@@ -2034,9 +2073,9 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             }
         }
         if (l + 1 == ed->error_line) {
-            dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), kErrorBg);
+            dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), pal->error_bg);
         } else if (l == cur_line && active && sb == se) {
-            dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), kCurrentLine);
+            dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), pal->current_line);
         }
         if (sb != se && sb <= le && se > lb) {
             size_t a = std::max(sb, lb), b = std::min(se, le);
@@ -2045,7 +2084,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             if (se > le) {
                 xb += m.space * 0.5f;   /* the line end is selected too */
             }
-            dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + m.line_h), kSelection);
+            dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + m.line_h), pal->selection);
         }
         Highlight(d + lb, le - lb, ed->colors);
         DrawLine(dl, m, d + lb, d + le, ed->colors.data(), ImVec2(origin.x, y), text_min.x, area.Max.x);
@@ -2059,7 +2098,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
                 float right = area.Max.x - ImGui::GetStyle().ScrollbarSize - m.space - w;
                 if (x > right && right > text_min.x) {
                     x = right;
-                    dl->AddRectFilled(ImVec2(x - m.space, y), ImVec2(x + w + m.space, y + m.line_h), IM_COL32(28, 28, 32, 235));
+                    dl->AddRectFilled(ImVec2(x - m.space, y), ImVec2(x + w + m.space, y + m.line_h), (pal->background & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 235));
                 }
                 dl->AddText(ImVec2(x, y + floorf((m.line_h - m.size) * 0.5f)), note_col, note.c_str());
             }
@@ -2073,7 +2112,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
         ed->blink += io.DeltaTime;
         bool on = !io.ConfigInputTextCursorBlink || ed->blink <= 0.0f || fmodf(ed->blink, 1.2f) <= 0.8f;
         if (on) {
-            dl->AddRectFilled(ImVec2(floorf(cx), cy), ImVec2(floorf(cx) + 1.5f, cy + m.line_h), kCursor);
+            dl->AddRectFilled(ImVec2(floorf(cx), cy), ImVec2(floorf(cx) + 1.5f, cy + m.line_h), pal->cursor);
         }
         /* where the IME goes; io.WantTextInput from the next frame */
         ImGuiPlatformImeData *ime = &g.PlatformImeData;
@@ -2089,14 +2128,14 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
     }
 
     /* the line numbers */
-    dl->AddRectFilled(area.Min, ImVec2(area.Min.x + gutter, area.Max.y), kGutterBg);
+    dl->AddRectFilled(area.Min, ImVec2(area.Min.x + gutter, area.Max.y), pal->gutter_bg);
     for (int l = first; l <= last; l++) {
         float y = origin.y + l * m.line_h;
         char num[16];
         int len = ImFormatString(num, sizeof(num), "%d", l + 1);
         float w = len * m.adv['0'];
         if (l + 1 == ed->error_line) {
-            dl->AddRectFilled(ImVec2(area.Min.x, y), ImVec2(area.Min.x + 4.0f, y + m.line_h), kErrorMark);
+            dl->AddRectFilled(ImVec2(area.Min.x, y), ImVec2(area.Min.x + 4.0f, y + m.line_h), pal->error_mark);
         }
         if (ed->mark_of) {
             ImVec2 c(area.Min.x + mark_w * 0.5f + 2.0f, y + m.line_h * 0.5f);
@@ -2107,7 +2146,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             default: break;
             }
         }
-        ImU32 col = l + 1 == ed->error_line ? kErrorMark : l == cur_line ? kLineNumberCur : kLineNumber;
+        ImU32 col = l + 1 == ed->error_line ? pal->error_mark : l == cur_line ? pal->line_number_cur : pal->line_number;
         dl->AddText(ImVec2(area.Min.x + gutter - m.space - w, y + floorf((m.line_h - m.size) * 0.5f)), col, num,
                     num + len);
     }
@@ -2158,7 +2197,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             ImGui::BeginTooltip();
             if (on_error) {
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
-                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", ed->error_msg.c_str());
+                ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(pal->error_mark), "%s", ed->error_msg.c_str());
                 ImGui::PopTextWrapPos();
                 if (show_doc) {
                     ImGui::Separator();

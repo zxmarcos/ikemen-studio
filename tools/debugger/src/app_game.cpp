@@ -487,7 +487,7 @@ void GameWindow() {
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
         ImGui::SameLine();
         if (focused)
-            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1), "keys go to the game");
+            ImGui::TextColored(Ink(kGreen), "keys go to the game");
         else
             ImGui::TextDisabled("click the picture to play");
     }

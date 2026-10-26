@@ -262,7 +262,7 @@ void AnimationWindow() {
         ImGui::SameLine();
         ok |= ImGui::Button("OK");
         bool taken = AirOf(sf).actions.count(newNo) != 0;
-        if (taken) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "Action %d exists already.", newNo);
+        if (taken) ImGui::TextColored(Ink(kRed), "Action %d exists already.", newNo);
         if (ok && !taken) {
             if (copy ? Air_CopyAction(sf.text, *t.act, newNo) : Air_RenumberAction(sf.text, *t.act, newNo)) {
                 apply(sf);
@@ -392,10 +392,10 @@ void AnimationWindow() {
                 draw->AddImage(TexRef(tex), a, ImVec2(a.x + s.w * k, a.y + s.h * k));
             }
             draw->AddRect(p0, ImVec2(p0.x + cell, p0.y + cell),
-                          cur ? IM_COL32(255, 220, 60, 255) : ImGui::IsItemHovered() ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 255, 255, 40));
+                          cur ? ImGui::GetColorU32(Ink(kYellow)) : ImGui::GetColorU32(ImGuiCol_Text, ImGui::IsItemHovered() ? 0.8f : 0.16f));
             char label[32];
             snprintf(label, sizeof(label), "%d, %d", s.group, s.number);
-            draw->AddText(ImVec2(p0.x, p0.y + cell), IM_COL32(220, 220, 220, 255), label);
+            draw->AddText(ImVec2(p0.x, p0.y + cell), ImGui::GetColorU32(ImGuiCol_Text), label);
             if (picked && Air_SetElem(sf.text, el, s.group, s.number, el.x, el.y, el.time)) {
                 apply(sf);
                 ImGui::CloseCurrentPopup();

@@ -396,7 +396,7 @@ void LintTab(Model &m) {
     int count[3] = {};
     for (const auto &f : m.findings) count[f.level]++;
     const char *names[3] = {"Errors", "Warnings", "Notes"};
-    const ImVec4 colors[3] = {ImVec4(1, 0.45f, 0.45f, 1), ImVec4(1, 0.8f, 0.3f, 1), ImVec4(0.6f, 0.75f, 1, 1)};
+    const ImVec4 colors[3] = {Ink(kRed), Ink(kYellow), Ink(kBlue)};
     for (int i = 0; i < 3; i++) {
         char label[32];
         snprintf(label, sizeof(label), "%s (%d)", names[i], count[i]);
@@ -660,7 +660,7 @@ void GraphTab(Model &m, const Entity &e) {
                 auto at = m.states[no];
                 ImGui::Text("State %d: %s:%d", no, m.files[at.first].path.c_str(), m.files[at.first].cns.states[at.second].line);
             } else {
-                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "State %d does not exist", no);
+                ImGui::TextColored(Ink(kRed), "State %d does not exist", no);
             }
             ImGui::TextDisabled("%zu change to it, it changes to %zu", in[no].size(), out[no].size());
             ImGui::EndTooltip();

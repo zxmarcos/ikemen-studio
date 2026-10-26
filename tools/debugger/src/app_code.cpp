@@ -288,14 +288,14 @@ void CodeWindow() {
     if (ImGui::SmallButton("Statedef")) JumpTo(stateSrc);
     if (dirty) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "%d unsaved", dirty);
+        ImGui::TextColored(Ink(kYellow), "%d unsaved", dirty);
     }
     if (g_applying) {
         ImGui::SameLine();
         ImGui::TextDisabled("applying...");
     }
     if (!g_applyError.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.45f, 1));
+        ImGui::PushStyleColor(ImGuiCol_Text, Ink(kRed));
         ImGui::TextWrapped("Not applied, the game keeps the previous version. %s", g_applyError.c_str());
         ImGui::PopStyleColor();
     }
@@ -407,8 +407,8 @@ void CodeWindow() {
                 for (int src : it->second) {
                     int v = TriggerValue(rowTick, src);
                     if (v < 0) continue;
-                    *color = v == 1 ? IM_COL32(90, 220, 110, 255) : v == 0 ? IM_COL32(240, 100, 100, 255)
-                                                                           : IM_COL32(160, 160, 160, 255);
+                    *color = v == 1 ? ImGui::GetColorU32(Ink(kGreen)) : v == 0 ? ImGui::GetColorU32(Ink(kRed))
+                                                                               : IM_COL32(150, 150, 150, 255);
                     return v == 1 ? "true" : v == 0 ? "false" : "undefined";
                 }
         }
