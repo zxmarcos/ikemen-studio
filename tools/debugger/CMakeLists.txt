@@ -36,7 +36,8 @@ add_executable(ikemen-debugger WIN32
   src/frame.cpp
   src/editor.cpp
   src/air.cpp
-  src/sff.cpp)
+  src/sff.cpp
+  src/snd.cpp)
 target_compile_definitions(ikemen-debugger PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX UNICODE _UNICODE)
 if(MSVC)
   target_compile_options(ikemen-debugger PRIVATE /W3 /utf-8 /EHsc)
@@ -45,7 +46,7 @@ else()
   # wWinMain, and no MSYS2 DLLs needed next to the exe
   target_link_options(ikemen-debugger PRIVATE -municode -static)
 endif()
-target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32)
+target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32 winmm)
 # No per-configuration folder: the exe looks for ikdbg.lua next to itself.
 set_target_properties(ikemen-debugger PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>")
 
@@ -64,3 +65,5 @@ target_include_directories(air-test PRIVATE src)
 add_executable(sff-test tests/sff_test.cpp src/sff.cpp)
 target_include_directories(sff-test PRIVATE src)
 target_link_libraries(sff-test PRIVATE lodepng)
+add_executable(snd-test tests/snd_test.cpp src/snd.cpp)
+target_include_directories(snd-test PRIVATE src)

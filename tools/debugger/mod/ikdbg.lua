@@ -256,6 +256,12 @@ function ikdbg.sprites(pn)
 	ikdbg.dirty = true
 end
 
+-- Reads a player's SND again (the debugger wrote it), for every player using it.
+function ikdbg.sounds(pn)
+	local ok, err = debugReloadSounds(pn)
+	if not ok then send('@IKRES', {ok = false, r = 'sounds of P' .. pn .. ': ' .. tostring(err)}) end
+end
+
 -- A breakpoint on a state controller: the game stops after a tick in which it ran.
 function ikdbg.ctrlBrkSet(src, on)
 	ikdbg.ctrlBreak[src] = on or nil
