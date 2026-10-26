@@ -440,6 +440,48 @@ if debugAnimSource and start and start.f_animGet then
 	end
 end
 
+-- The select screen's cells: each item of its draw list gets the grid index of its cell (the
+-- nearest), and the motif's animations are drawn marked with it (debugAnimTag), so that the
+-- editor knows which cell an outline on the game is.
+if debugAnimTag and start and start.updateDrawList and batchDraw then
+	local update, draw = start.updateDrawList, batchDraw
+	start.updateDrawList = function(...)
+		local list = update(...)
+		local si = motif.select_info
+		for _, item in ipairs(list) do
+			local best, bestD = nil, math.huge
+			for r, row in ipairs(start.t_grid) do
+				for c, t in ipairs(row) do
+					local dx, dy = item.x - (si.pos[1] + t.x), item.y - (si.pos[2] + t.y)
+					if dx * dx + dy * dy < bestD then
+						best, bestD = (r - 1) * si.columns + c, dx * dx + dy * dy
+					end
+				end
+			end
+			item.ikdbgCell = best
+		end
+		list.ikdbgCells = true
+		return list
+	end
+	batchDraw = function(list, ...)
+		if type(list) ~= 'table' or not list.ikdbgCells then
+			return draw(list, ...)
+		end
+		for _, item in ipairs(list) do
+			debugAnimTag(item.anim, item.ikdbgCell or 0)
+			draw({item}, ...)
+			debugAnimTag(item.anim, 0)
+		end
+	end
+end
+
+-- Moves P1's cursor to a cell of the select screen (0-based column and row), on one.
+function ikdbg.selectCursor(col, row)
+	if ikdbg.inSelect and start.c and start.c[1] then
+		start.c[1].selX, start.c[1].selY = col, row
+	end
+end
+
 -- Where the game is, for ikdbg.reloadRoster: in a game mode (from its select screen to its
 -- end), on a select screen, choosing a challenger. Each of these functions runs its own loop.
 if start then

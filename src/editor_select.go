@@ -44,6 +44,20 @@ func editorSelectReset() error {
 }
 
 func editorSelectFunctions(l *lua.LState) {
+	luaRegister(l, "debugAnimTag", func(l *lua.LState) int {
+		/*Mark where an animation drawn at several places is drawn next (a select screen's cell, for
+		the frame geometry): the copies drawn take it (batchDraw copies the animation).
+		@function debugAnimTag
+		@tparam Anim anim
+		@tparam int32 tag 0 for none*/
+		a, ok := toUserData(l, 1).(*Anim)
+		if ok && a != nil && a.editor > 0 && int(a.editor) <= len(edFight.sources) && debuggerAttached() {
+			src := edFight.sources[a.editor-1]
+			src.tag = int32(numArg(l, 2))
+			a.editor = editorSourceIndex(src)
+		}
+		return 0
+	})
 	luaRegister(l, "debugSelectReset", func(l *lua.LState) int {
 		/*Empty the characters and stages added (select.def), so that the scripts add them again.
 		Not during a match.

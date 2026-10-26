@@ -94,9 +94,12 @@ characters' portraits, cells moved, inserted, deleted, their parameters,
 the extra stages; each change has the game add the roster again
 (`editor_select.go` empties the engine's lists; the scripts' parsing and
 grid became `main.f_loadSelectDef` and `start.f_makeGrid`, run again by the
-mod's `ikdbg.reloadRoster`). What is left of phase 3: fonts, the operators
-in fight screen keys (`p*.pos`), TrueType texts' rectangles, the select
-screen's cells picked on the Game window to the Roster window.
+mod's `ikdbg.reloadRoster`); the select screen's cells picked on the Game
+window select them in Roster, and the other way (P1's cursor goes there):
+the mod draws the cells' items one by one, each motif animation marked with
+its cell (`debugAnimTag`: a source like its own, with a `tag`, which the
+copy `batchDraw` queues keeps). What is left of phase 3: fonts, the
+operators in fight screen keys (`p*.pos`), TrueType texts' rectangles.
 
 ## Where things are
 

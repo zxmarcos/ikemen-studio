@@ -13,6 +13,7 @@
 namespace app {
 
 std::string g_selectDef; // as the game names it (frame geometry)
+int g_rosterPick;
 
 // ---------------------------------------------------------------------------
 // What the entries name: a character's def, name and portrait (sprite 9000,0), a stage's name
@@ -348,6 +349,28 @@ void RosterWindow() {
     if (rows <= 0 || cols <= 0) rows = 0, cols = 8;
     static int sel = -1; // index into r.chars
     if (sel >= (int)r.chars.size()) sel = -1;
+    // The roster cell each cell of the grid shows (-1 none, -2 skipped by the motif), in the
+    // order the scripts fill them (excluded characters take none); the cells past the grid
+    std::vector<int> grid(rows * cols, -1), past;
+    {
+        int next = 0;
+        auto nextCell = [&]() {
+            while (next < (int)r.chars.size() && r.chars[next].exclude) next++;
+            return next < (int)r.chars.size() ? next++ : -1;
+        };
+        for (int i = 0; i < rows * cols; i++) {
+            char key[48];
+            snprintf(key, sizeof(key), "cell.%d-%d.skip", i % cols, i / cols);
+            const IniField *skip = si ? si->Field(key) : nullptr;
+            grid[i] = skip && atoi(skip->value.c_str()) != 0 ? -2 : nextCell();
+        }
+        for (int ci; (ci = nextCell()) >= 0;) past.push_back(ci);
+    }
+    // A cell picked on the Game window
+    if (g_rosterPick > 0) {
+        if (g_rosterPick <= (int)grid.size() && grid[g_rosterPick - 1] >= 0) sel = grid[g_rosterPick - 1];
+        g_rosterPick = 0;
+    }
 
     if (ImGui::BeginTabBar("rostertabs")) {
         if (ImGui::BeginTabItem("Characters")) {
@@ -359,14 +382,19 @@ void RosterWindow() {
             ImDrawList *draw = ImGui::GetWindowDrawList();
             int dropFrom = -1, dropTo = -1; // a cell dropped on another (to: r.chars.size() for the end)
             bool openInsert = false;        // a character to insert before the cell selected
-            int next = 0;                   // the next roster cell to place
-            auto slotOf = [&](int ci, ImVec2 a, int gridIndex) { // ci -1: an empty cell of the grid
+            // A cell: ci -1 for an empty one of the grid; gridIndex -1 for one past the grid
+            auto slotOf = [&](int ci, ImVec2 a, int gridIndex) {
                 ImGui::SetCursorScreenPos(a);
                 ImGui::PushID(ci < 0 ? 100000 + gridIndex : ci);
                 ImGui::InvisibleButton("c", ImVec2(cell, cell));
                 bool hovered = ImGui::IsItemHovered();
                 if (ci >= 0) {
                     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) sel = ci;
+                    // On a select screen, P1's cursor goes there
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && gridIndex >= 0) {
+                        SendRaw("ikdbg.selectCursor(" + std::to_string(gridIndex % cols) + ", " + std::to_string(gridIndex / cols) + ")");
+                        OutlineSelectCell(gridIndex + 1);
+                    }
                     if (ImGui::BeginDragDropSource()) {
                         ImGui::SetDragDropPayload("rostercell", &ci, sizeof(int));
                         ImGui::TextUnformatted(r.chars[ci].Text().c_str());
@@ -388,27 +416,18 @@ void RosterWindow() {
                 draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), col, 0, ci == sel ? 2.0f : 1.0f);
                 ImGui::PopID();
             };
-            auto nextCell = [&]() {
-                while (next < (int)r.chars.size() && r.chars[next].exclude) next++;
-                return next < (int)r.chars.size() ? next++ : -1;
-            };
             ImVec2 origin = ImGui::GetCursorScreenPos();
             for (int i = 0; i < rows * cols; i++) {
-                int c = i % cols, row = i / cols;
-                ImVec2 a(origin.x + c * (cell + gap), origin.y + row * (cell + gap));
-                char key[48];
-                snprintf(key, sizeof(key), "cell.%d-%d.skip", c, row);
-                if (si && si->Field(key) && atoi(si->Field(key)->value.c_str()) != 0) {
-                    draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), IM_COL32(255, 255, 255, 20));
-                    continue; // the motif skips it: no character takes it
-                }
-                slotOf(nextCell(), a, i);
+                ImVec2 a(origin.x + (i % cols) * (cell + gap), origin.y + (i / cols) * (cell + gap));
+                if (grid[i] == -2)
+                    draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), IM_COL32(255, 255, 255, 20)); // skipped by the motif
+                else
+                    slotOf(grid[i], a, i);
             }
             ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + rows * (cell + gap)));
             ImGui::Dummy(ImVec2(1, 1));
             // Past the grid (still added), excluded
-            std::vector<int> past, excluded;
-            for (int ci; (ci = nextCell()) >= 0;) past.push_back(ci);
+            std::vector<int> excluded;
             for (int ci = 0; ci < (int)r.chars.size(); ci++)
                 if (r.chars[ci].exclude) excluded.push_back(ci);
             for (int pass = 0; pass < 2; pass++) {

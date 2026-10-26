@@ -29,6 +29,7 @@ struct ScreenDef {
     std::string sff;                  // its SFF file, the same way
     std::vector<FrameFightItem> items; // where its elements were drawn in the last frame
     std::string section, prefix;      // the element selected (lower case)
+    int tag = 0;                      // and where it was drawn, when picked at one of its places (a cell)
     bool pending = false;             // an edit not sent yet
     double sent = -1;                 // when the last reload was sent
     std::string parsedText;
@@ -57,8 +58,8 @@ static ScreenDef *g_lastScreen; // the one whose element was selected last
 int g_screenAnimPicked, g_screenPicked;
 
 // An element selected (picked on the game or in its window).
-static void SelectElement(ScreenDef &d, const std::string &section, const std::string &prefix) {
-    d.section = section, d.prefix = prefix;
+static void SelectElement(ScreenDef &d, const std::string &section, const std::string &prefix, int tag = 0) {
+    d.section = section, d.prefix = prefix, d.tag = tag;
     g_lastScreen = &d;
     g_screenPicked++;
     for (const auto &f : d.items)
@@ -96,6 +97,7 @@ void ReadScreenGeometry(const Json &j) {
                                 ImVec2((float)f[6].num(), (float)f[7].num())};
             item.action = f[9].isNull() ? -1 : f[9].i();
             item.elem = f[10].i();
+            item.tag = f[11].i();
             if (int bg = f[8].i(); bg > 0) {
                 // The bg-th section named after the BGDef ("titlebg"), as loadBGDef reads them
                 if (!sf && !(sf = d->Source())) continue;
@@ -268,8 +270,11 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                                   ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), f.prefix.c_str());
             if (clicked) {
                 if (d.section != f.section || d.prefix != f.prefix) d.animAction = -1;
-                SelectElement(d, f.section, f.prefix);
-                ShowTab(d.window);
+                SelectElement(d, f.section, f.prefix, f.tag);
+                // A select screen's cell: the Roster window shows it
+                bool cell = &d == &g_motif && f.section == "select info" && f.tag > 0;
+                if (cell) g_rosterPick = f.tag;
+                ShowTab(cell ? "Roster" : d.window);
                 drag = f.k.x > 0 && f.k.y > 0 ? hover : Hit();
                 dragK = f.k;
                 dragAlone = ImGui::GetIO().KeyAlt;
@@ -307,7 +312,8 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
         bool labelled = false; // an element drawn several times (menu items) is named once
         for (int i = 0; i < (int)d->items.size(); i++) {
             const FrameFightItem &f = d->items[i];
-            bool sel = f.section == d->section && f.prefix == d->prefix, hot = hover.d == d && i == hover.i;
+            bool sel = f.section == d->section && f.prefix == d->prefix && (!d->tag || f.tag == d->tag),
+                 hot = hover.d == d && i == hover.i;
             bool dragged = inDrag(*d, f);
             if (!sel && !hot && !dragged && !g_screenPick) continue;
             ImVec2 lo, hi;
@@ -563,6 +569,10 @@ bool SelectedScreenAnim(ScreenAnim &out) {
     out.apply = [d, sf] { Edited(*d, *sf); };
     out.sprites = d->Sprites();
     return true;
+}
+
+void OutlineSelectCell(int tag) {
+    g_motif.section = "select info", g_motif.prefix = "cell.bg.", g_motif.tag = tag;
 }
 
 const IniSection *MotifSection(const char *lower) {

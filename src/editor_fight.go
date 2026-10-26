@@ -29,6 +29,7 @@ type editorFightSource struct {
 	section string // lowercase, as "simul lifebar"
 	prefix  string // lowercase, as "p1.bg0."
 	bg      int32  // a BG of a BGDef: 1 + its index among the sections named after section ("titlebg")
+	tag     int32  // which of the places the scripts draw it at (debugAnimTag: a select screen's cell), 0 none
 }
 
 type editorFightDrawn struct {
@@ -150,7 +151,7 @@ func editorLayoutSource(pre string) int32 {
 	if e.section == "" {
 		return 0
 	}
-	return editorSourceIndex(editorFightSource{editorFileFight, e.section, strings.ToLower(pre), 0})
+	return editorSourceIndex(editorFightSource{editorFileFight, e.section, strings.ToLower(pre), 0, 0})
 }
 
 // editorLayoutDraw runs before a Layout draws (scl: as the Layout scales the def's positions),
@@ -212,13 +213,14 @@ func editorRenderSprite(rp *RenderParams) {
 // editorScreenGeometry adds the fight screen and the motif to the frame geometry and starts the
 // next frame's list:
 //
-//	"fight": {"def", "sff", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem], ...]}: its SFF's
-//	  file, and in drawing order,
+//	"fight": {"def", "sff", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem, tag], ...]}: its
+//	  SFF's file, and in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
 //	  rectangle in the game picture's pixels and the pixels per unit of the def's positions, 0 (bg),
-//	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1;
+//	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1, and
+//	  which place of the scripts' it was drawn at (debugAnimTag; 0 none);
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
-//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem] (kx, ky: per unit of its start);
+//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem, 0] (kx, ky: per unit of its start);
 //	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go);
 //	"select": the motif's select.def (editor_select.go).
 func editorScreenGeometry(b []byte) []byte {
@@ -254,7 +256,7 @@ func editorScreenGeometry(b []byte) []byte {
 				b = append(b, ',')
 				b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
 			}
-			for _, v := range [...]int32{src.bg, d.action, d.elem} {
+			for _, v := range [...]int32{src.bg, d.action, d.elem, src.tag} {
 				b = append(b, ',')
 				b = strconv.AppendInt(b, int64(v), 10)
 			}

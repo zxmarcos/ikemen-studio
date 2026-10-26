@@ -330,6 +330,7 @@ struct FrameFightItem {
     bool bg = false;     // a BG of a BGDef (its section found in the def; it moves by its start)
     int action = -1;     // the action of the def it shows ([Begin Action]), -1: none
     int elem = 0;        // and its element, 1-based
+    int tag = 0;         // where the scripts drew it (a select screen's cell: 1 + its grid index), 0 none
 };
 // The element selected in the Fight screen, Motif or Storyboard window, when it shows an action
 // of its def: for the Animation window, which edits the action in the def's text
@@ -358,6 +359,8 @@ const IniSection *MotifSection(const char *lower); // a section of the motif's d
 
 // Roster: the motif's select.def
 extern std::string g_selectDef; // as the game names it (frame geometry), "" when not known
+extern int g_rosterPick;        // a select screen's cell picked on the Game window: 1 + its grid index
+void OutlineSelectCell(int tag); // the Game window outlines that cell (1 + its grid index)
 void RosterWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console

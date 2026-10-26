@@ -145,7 +145,7 @@ func editorDefSource(file int8, path string) int32 {
 	if dot := strings.IndexByte(path, '.'); dot >= 0 {
 		section, prefix = path[:dot], path[dot+1:]+"."
 	}
-	return editorSourceIndex(editorFightSource{file, strings.ReplaceAll(section, "_", " "), prefix, 0})
+	return editorSourceIndex(editorFightSource{file, strings.ReplaceAll(section, "_", " "), prefix, 0, 0})
 }
 
 // editorPristine remembers an object as the def made it, the first time it is seen.
@@ -194,7 +194,7 @@ func editorBgDefDraw(s *BGDef, b *backGround) {
 	}
 	for i, bg := range s.bg {
 		if bg == b {
-			src := editorSourceIndex(editorFightSource{file, name, "", int32(i + 1)})
+			src := editorSourceIndex(editorFightSource{file, name, "", int32(i + 1), 0})
 			editorDrawBegin(src, s.scale[0]*s.localscl*sys.widthScale, s.scale[1]*s.localscl*sys.heightScale)
 			return
 		}
