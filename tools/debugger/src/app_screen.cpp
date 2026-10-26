@@ -55,6 +55,8 @@ static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", "motif", true, fa
 static ScreenDef g_story{"Storyboard", "storyboard", "debugReloadStoryboard", "storyboard", true, true, 0.1};
 static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the ones drawn in front first
 static ScreenDef *g_lastScreen; // the one whose element was selected last
+
+std::string FightScreenDef() { return g_fight.def; }
 int g_screenAnimPicked, g_screenPicked;
 
 // An element selected (picked on the game or in its window).
@@ -402,7 +404,7 @@ static void ScreenWindow(ScreenDef &d) {
     if (!sfp) {
         ImGui::TextDisabled(g_bridge.Running() ? (d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)." : d.motif ? "Needs the game's frames (patched Ikemen GO)."
                                                           : "Needs the game's frames (patched Ikemen GO), in a match.")
-                                               : "Launch the game from the Session window.");
+                                               : "Launch the game (Launch, on the toolbar).");
         ImGui::End();
         return;
     }

@@ -492,7 +492,7 @@ void GameWindow() {
             ImGui::TextDisabled("click the picture to play");
     }
     if (!g_frameTex || !g_bridge.Running()) {
-        ImGui::TextDisabled(!g_bridge.Running()    ? "Launch the game from the Session window."
+        ImGui::TextDisabled(!g_bridge.Running()    ? "Launch the game (Launch, on the toolbar)."
                             : !g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
                                                     : "Waiting for the first frame...");
         ImGui::End();

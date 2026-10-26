@@ -626,8 +626,6 @@ void App_Frame() {
     ScreenWindows();
     RosterWindow();
     FontsWindow();
-    SessionWindow();
-    ControlWindow();
     PlayersWindow();
     InspectorWindow();
     FrameDataWindow();

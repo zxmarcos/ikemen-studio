@@ -163,7 +163,7 @@ tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: state, commands, protocol handling, settings
-  src/app_layout.cpp     the menu bar, each window's place and open flag, the two layouts (BeginTool)
+  src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool
   src/app_perf.cpp       Performance window: the game's frames by phase (debugPerf), this program's frame
   src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)
@@ -175,7 +175,7 @@ tools/debugger/
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_stage.cpp      Stage window, and the BGs on the Game window
   src/app_screen.cpp     Fight screen, Motif and Storyboard windows, and their elements on the Game window
-  src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
+  src/app_debug.cpp      the toolbar, Players, Inspector, Frame data, Trace, Breakpoints, Watch, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
   src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
@@ -250,11 +250,11 @@ helper "Bag"):
 - Stage tests: `test_ui.ps1 -Fresh -IniExtra "Stage=kfm"` (later lines of the
   ini win). Back up the def first and restore it after a test that saves.
   The same for `data/fight.def` (`data` is not in git either). The Stage,
-  Fight screen, Motif, Storyboard, Roster and Fonts windows are closed in the
-  first layout: `click:123,11|wait:0.4|click:170,62` picks Layout > Stage and
-  screens (`click:123,11|wait:0.4|click:137,41`: back to Debugging); Stage,
-  Fight screen, Motif and Storyboard are then the top right tabs, Roster and
-  Fonts the left ones (take a shot for the coordinates, the Game window's
+  Fight screen, Motif, Storyboard, Roster and Fonts windows are in the Stage
+  and Screenpack workspaces: `ctrl:4` and `ctrl:5` show them (`ctrl:1`: back
+  to Debug, `ctrl:2` Code, `ctrl:3` Character); Stage, Fight screen, Motif
+  and Storyboard are the right column's tabs, Roster and Fonts the left ones
+  (take a shot for the coordinates, the Game window's
   "Screenpack" checkbox too). Motif tests: `-P1 "" -P2 ""` starts in
   the menus (a demo match first: `click:740,350|key:RETURN` shows the title
   menu); the motif in use is `data/ikemen1/system.def` (`save/config.ini`).
@@ -302,7 +302,7 @@ helper "Bag"):
   real ones), `ikdbg.record(1, true)` and `ikdbg.stopTake()` record a take
   (it shows in the log as "Take N: P1, n ticks" and is saved in the ini),
   and a run without `-Fresh` keeps it to play from the Lab window (its tab
-  is at `click:690,577` in the first layout; take a shot for its buttons).
+  is a bottom tab of the Debug workspace; take a shot for its buttons).
   `-IniExtra "Dummy=2|1|1|1|0"` makes P2 a crouching dummy that guards.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and
@@ -709,6 +709,25 @@ appear (`NoFocusOnAppearing`): the last one begun took its place's front tab
 front for a few frames after a layout, and a window opened from the menu or
 by `ShowWindow` likewise.
 
+Then the workspaces (`app_layout.cpp`), in place of the two layouts: Debug,
+Code, Character, Stage and Screenpack, picked on the menu bar or with
+Ctrl+1..5. Each is an arrangement written as text, `X<ratio>(left)(right)`,
+`Y<ratio>(top)(bottom)`, `L:a,b*,c` for a node's tabs (* in front) and
+`|name@x,y,w,h;` for the floating windows; it is built in the one dock
+space with the DockBuilder (inactive dock spaces lose their empty nodes,
+so each workspace is not a dock space of its own). Leaving a workspace
+writes its dock space as that text (split ratios from the nodes' sizes,
+tabs in their order); coming back builds it again, and the settings keep
+every workspace's text (`WorkspaceLayout=Debug|...`) and the one shown
+(`Workspace=`), which ImGui's own [Docking] lines restore at start. Tabs are
+put in the arrangement's order for the first frames (the windows already
+shown join a new node first, and ImGui's DockOrder follows the tabs as they
+are). Session and Control became the toolbar above the dock space (the
+dock space's host window draws it). Code shows the stage's def in Stage
+and the fight screen's in Screenpack (`CodeShow`, once the game has told
+them), and follows the state in the others. A window opened where the
+workspace does not have it goes next to its first open neighbour (a list
+per window), else with Console, Code or Game.
 The Stage window's Checks (`stagecheck.cpp`, `tests/stagecheck_test.cpp`):
 the def as `loadStage`, `readBackGround` and `bgCtrl.read` read it. A BG's
 type is its first letter (n, a, p, v, d) and one without a type is skipped;

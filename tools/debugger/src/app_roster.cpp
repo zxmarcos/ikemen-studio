@@ -302,7 +302,7 @@ void RosterWindow() {
         RosterReload(LoadSource(g_selectDef), true);
     if (!BeginTool("Roster")) return;
     if (g_selectDef.empty()) {
-        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game from the Session window.");
+        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game (Launch, on the toolbar).");
         ImGui::End();
         return;
     }

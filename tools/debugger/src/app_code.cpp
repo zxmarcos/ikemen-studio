@@ -210,6 +210,17 @@ void JumpTo(int src) {
     g_codeLine = g_codeScrollTo = g_sources[src].line;
 }
 
+bool g_codeFollow = true; // Code follows the selected entity's state
+
+void CodeShow(const std::string &path) {
+    if (path.empty()) {
+        g_codeFollow = true;
+        return;
+    }
+    g_codeFollow = false;
+    if (g_codeFile != path) g_codeFile = path, g_codeLine = 0;
+}
+
 void CodeWindow() {
     WatchSources();
     // The game records the trigger values of the selected entity
@@ -220,7 +231,7 @@ void CodeWindow() {
     }
     // A line asked from another window (not the state followed here): Code comes to the front.
     // With the game running it stops following the state, which would leave that line at once.
-    static bool follow = true;
+    bool &follow = g_codeFollow;
     static int askedLine;
     if (g_codeScrollTo > 0 && g_codeScrollTo != askedLine) {
         ShowWindow("Code");

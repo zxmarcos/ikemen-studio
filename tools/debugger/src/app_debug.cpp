@@ -1,4 +1,4 @@
-// The debugger's windows: Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Watch,
+// The debugger's toolbar and windows: Players, Inspector, Frame data, Trace, Breakpoints, Watch,
 // Console.
 #include "app_internal.h"
 #include "cns.h"
@@ -12,30 +12,26 @@
 
 namespace app {
 
-void SessionWindow() {
-    if (!BeginTool("Session")) return;
+// The toolbar above the windows: the game started and stopped, the match it starts with, its
+// time (pause, steps, speed) and state; the rest of the session in Settings.
+void Toolbar() {
     Settings &s = g_settings;
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##exe", "Ikemen_GO.exe", &s.exe);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    ImGui::InputText("P1", &s.p1);
-    ImGui::SameLine();
-    ImGui::Checkbox("AI##1", &s.ai1);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    ImGui::InputText("P2", &s.p2);
-    ImGui::SameLine();
-    ImGui::Checkbox("AI##2", &s.ai2);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    ImGui::InputText("Stage", &s.stage);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    ImGui::InputText("Extra", &s.extra);
-    HelpMarker("Leave P1 or P2 empty to start at the title screen. Any other Ikemen GO command line flags go "
-               "in Extra.");
-    ImGui::Checkbox("Show the game's own window", &s.gameWindow);
-    HelpMarker("With the patched Ikemen GO the game is shown in the Game window and its own window is hidden.");
+    bool running = g_bridge.Running(), live = Connected();
+    ImGuiIO &io = ImGui::GetIO();
+    if (live && !io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
+        if (ImGui::IsKeyPressed(ImGuiKey_F10)) SendRaw("ikdbg.step(1)");
+        if (ImGui::IsKeyPressed(ImGuiKey_F11)) SendRaw("ikdbg.step(10)");
+    }
+    float em = ImGui::GetFontSize();
+    // On the same line while there is room
+    auto flow = [&](float width) {
+        ImGui::SameLine(0, em);
+        if (ImGui::GetContentRegionAvail().x < width) ImGui::NewLine();
+    };
 
-    bool running = g_bridge.Running();
     if (ImGui::Button(running ? "Restart" : "Launch")) Launch();
+    ImGui::SetItemTooltip(running ? "Starts the game again with the match below." : "Starts the game with the match below.");
     ImGui::SameLine();
     ImGui::BeginDisabled(!running);
     if (ImGui::Button("Stop")) {
@@ -44,85 +40,122 @@ void SessionWindow() {
     }
     ImGui::EndDisabled();
 
-    ImGui::Separator();
-    if (running) {
-        ImGui::Text("pid %lu", g_bridge.Pid());
+    // The match it starts with
+    flow(em * 30);
+    auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
         ImGui::SameLine();
-        if (g_hello)
-            ImGui::TextColored(Ink(kGreen), "bridge connected");
-        else
-            ImGui::TextColored(Ink(kYellow), "waiting for the mod...");
-        ImGui::TextDisabled("%s", g_ikemenVersion.c_str());
-        ImGui::Text("%u snapshots, %u/s", g_snapshots, g_lastRate);
-    } else {
-        ImGui::TextDisabled("not running");
-    }
-    ImGui::End();
-}
+        ImGui::SetNextItemWidth(em * 7);
+        ImGui::InputText((std::string("##") + label).c_str(), &name);
+        ImGui::SameLine();
+        ImGui::Checkbox(id, &ai);
+    };
+    player("P1", s.p1, s.ai1, "AI##1");
+    ImGui::SameLine(0, em);
+    player("P2", s.p2, s.ai2, "AI##2");
+    ImGui::SameLine(0, em);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Stage");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 7);
+    ImGui::InputText("##stage", &s.stage);
+    HelpMarker("The match the game starts with (Launch, Restart). Leave P1 or P2 empty to start at the title "
+               "screen. AI: that side plays by itself.");
 
-void ControlWindow() {
-    // Its keys work with the window closed too
-    bool live = Connected();
-    ImGuiIO &io = ImGui::GetIO();
-    if (live && !io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
-        if (ImGui::IsKeyPressed(ImGuiKey_F10)) SendRaw("ikdbg.step(1)");
-        if (ImGui::IsKeyPressed(ImGuiKey_F11)) SendRaw("ikdbg.step(10)");
-    }
-    if (!BeginTool("Control")) return;
+    // The game's time
+    flow(em * 26);
     ImGui::BeginDisabled(!live);
     if (ImGui::Button(g_paused ? "Continue (F5)" : "Pause (F5)")) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
     ImGui::SameLine();
     if (ImGui::Button("Step (F10)")) SendRaw("ikdbg.step(1)");
     ImGui::SameLine();
-    if (ImGui::Button("Step 10 (F11)")) SendRaw("ikdbg.step(10)");
+    if (ImGui::Button("+10 (F11)")) SendRaw("ikdbg.step(10)");
+    ImGui::SetItemTooltip("Ten ticks");
     ImGui::SameLine();
-    static int stepN = 60;
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5);
-    ImGui::InputInt("##n", &stepN, 0);
-    ImGui::SameLine();
-    if (ImGui::Button("Run N ticks")) SendRaw("ikdbg.step(" + std::to_string(std::max(1, stepN)) + ")");
-
-    ImGui::TextUnformatted("Speed");
-    for (float speed : {0.25f, 0.5f, 1.0f, 2.0f, 4.0f}) {
-        ImGui::SameLine();
-        char label[16];
-        snprintf(label, sizeof(label), "%gx", speed);
-        if (ImGui::SmallButton(label)) Exec("setAccel(" + std::to_string(speed) + ")");
+    static float speed = 1;
+    char speedLabel[16];
+    snprintf(speedLabel, sizeof(speedLabel), "%gx", speed);
+    ImGui::SetNextItemWidth(em * 4.5f);
+    if (ImGui::BeginCombo("##speed", speedLabel)) {
+        for (float v : {0.25f, 0.5f, 1.0f, 2.0f, 4.0f}) {
+            char label[16];
+            snprintf(label, sizeof(label), "%gx", v);
+            if (ImGui::Selectable(label, v == speed)) {
+                speed = v;
+                Exec("setAccel(" + std::to_string(v) + ")");
+            }
+        }
+        ImGui::EndCombo();
     }
-    ImGui::SameLine(0, ImGui::GetFontSize() * 2);
-    if (ImGui::SmallButton("Save state")) Exec("saveState()");
+    ImGui::SetItemTooltip("The game's speed");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Load state")) Exec("loadState()");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Reset round")) Exec("resetRound()");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Reload match")) Exec("reload()");
-    HelpMarker("Reload match reads the characters, stage and fight screen from disk again: edit a file, "
-               "then reload.");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Collision boxes")) Exec("toggleClsnDisplay()");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Debug display")) Exec("toggleDebugDisplay()");
+    if (ImGui::Button("More")) ImGui::OpenPopup("more");
+    if (ImGui::BeginPopup("more")) {
+        static int stepN = 60;
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("##n", &stepN, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("Run N ticks")) SendRaw("ikdbg.step(" + std::to_string(std::max(1, stepN)) + ")");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Save state")) Exec("saveState()");
+        if (ImGui::MenuItem("Load state")) Exec("loadState()");
+        if (ImGui::MenuItem("Reset round")) Exec("resetRound()");
+        if (ImGui::MenuItem("Reload match")) Exec("reload()");
+        ImGui::SetItemTooltip("Reads the characters, stage and fight screen from disk again: edit a file, then reload.");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Ikemen's collision boxes")) Exec("toggleClsnDisplay()");
+        if (ImGui::MenuItem("Ikemen's debug display")) Exec("toggleDebugDisplay()");
+        ImGui::EndPopup();
+    }
     ImGui::EndDisabled();
 
-    ImGui::Separator();
-    if (!live) {
-        ImGui::TextDisabled("Launch the game from the Session window.");
+    // Its state
+    flow(em * 22);
+    ImGui::AlignTextToFramePadding();
+    if (!running) {
+        ImGui::TextDisabled("not running");
+    } else if (!live) {
+        ImGui::TextColored(Ink(kYellow), "waiting for the mod...");
     } else {
         const char *state = g_steps > 0 ? "STEPPING" : g_paused ? "PAUSED" : "RUNNING";
-        ImVec4 color = g_paused ? Ink(kYellow) : Ink(kGreen);
-        ImGui::TextColored(color, "%s", state);
+        ImGui::TextColored(g_paused ? Ink(kYellow) : Ink(kGreen), "%s", state);
         ImGui::SameLine();
-        ImGui::Text("tick %d   round %d   round state %d   %d players/helpers", g_tick, g_roundNo, g_roundState,
-                    (int)g_ents.size());
-        if (!g_breakText.empty()) {
-            ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("x")) g_breakText.clear();
-        }
+        ImGui::Text("tick %d  round %d (%d)", g_tick, g_roundNo, g_roundState);
+        ImGui::SetItemTooltip("Round %d, round state %d; %d players and helpers", g_roundNo, g_roundState,
+                              (int)g_ents.size());
     }
-    ImGui::End();
+    if (!g_breakText.empty()) {
+        ImGui::SameLine(0, em);
+        ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x")) g_breakText.clear();
+    }
+
+    // The rest of the session
+    flow(em * 6);
+    if (ImGui::Button("Settings")) ImGui::OpenPopup("session");
+    if (ImGui::BeginPopup("session")) {
+        ImGui::SetNextItemWidth(em * 28);
+        ImGui::InputTextWithHint("Ikemen GO", "Ikemen_GO.exe", &s.exe);
+        ImGui::SetNextItemWidth(em * 28);
+        ImGui::InputText("Extra", &s.extra);
+        HelpMarker("Other Ikemen GO command line flags.");
+        ImGui::Checkbox("Show the game's own window", &s.gameWindow);
+        HelpMarker("With the patched Ikemen GO the game is shown in the Game window and its own window is hidden.");
+        ImGui::Separator();
+        if (running) {
+            ImGui::Text("pid %lu", g_bridge.Pid());
+            ImGui::SameLine();
+            if (g_hello) ImGui::TextColored(Ink(kGreen), "bridge connected");
+            else ImGui::TextColored(Ink(kYellow), "waiting for the mod...");
+            ImGui::TextDisabled("%s", g_ikemenVersion.c_str());
+            ImGui::Text("%u snapshots, %u/s", g_snapshots, g_lastRate);
+        } else {
+            ImGui::TextDisabled("not running");
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void PlayersWindow() {

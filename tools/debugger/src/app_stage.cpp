@@ -471,7 +471,7 @@ void StageWindow() {
     SourceFile *sfp = StageSource();
     if (!sfp) {
         ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO), in a match."
-                                               : "Launch the game from the Session window.");
+                                               : "Launch the game (Launch, on the toolbar).");
         ImGui::End();
         return;
     }

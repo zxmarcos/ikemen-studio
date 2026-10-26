@@ -209,7 +209,7 @@ void FontsWindow() {
     if (g_fontPicked != seenPicked) seenPicked = sel = g_fontPicked; // a text picked on the game
     float em = ImGui::GetFontSize();
     if (g_fontFiles.empty()) {
-        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game from the Session window.");
+        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game (Launch, on the toolbar).");
         ImGui::End();
         return;
     }

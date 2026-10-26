@@ -206,6 +206,8 @@ extern std::map<std::string, SourceFile> g_files;
 extern std::string g_codeFile;
 extern int g_codeLine, g_codeScrollTo;
 extern bool g_codeHold;
+void CodeShow(const std::string &path); // Code shows that file and stops following the state; "": follows it
+std::string FightScreenDef();           // the fight screen's def, as the game names it ("" not known yet)
 
 extern FrameLink g_frameLink;
 extern GameFrame g_frame;
@@ -463,8 +465,7 @@ void FontSpritesSaved(const std::string &path); // the fonts using that SFF are 
 void FontsWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
-void SessionWindow();
-void ControlWindow();
+void Toolbar(); // above the windows: launch, the match, pause and steps, the game's state
 void PlayersWindow();
 void InspectorWindow();
 void FrameDataWindow();
