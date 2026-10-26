@@ -51,7 +51,8 @@ add_executable(ikemen-debugger WIN32
   src/snd.cpp
   src/cmd.cpp
   src/ini.cpp
-  src/roster.cpp)
+  src/roster.cpp
+  src/fnt.cpp)
 target_compile_definitions(ikemen-debugger PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX UNICODE _UNICODE)
 if(MSVC)
   target_compile_options(ikemen-debugger PRIVATE /W3 /utf-8 /EHsc)
@@ -87,3 +88,5 @@ add_executable(ini-test tests/ini_test.cpp src/ini.cpp)
 target_include_directories(ini-test PRIVATE src)
 add_executable(roster-test tests/roster_test.cpp src/roster.cpp)
 target_include_directories(roster-test PRIVATE src)
+add_executable(fnt-test tests/fnt_test.cpp src/fnt.cpp)
+target_include_directories(fnt-test PRIVATE src)

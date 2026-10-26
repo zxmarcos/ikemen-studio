@@ -776,3 +776,8 @@ void Sff_SetAxis(SffSprite &s, int mode) {
     s.x = mode == SFF_AXIS_TOP_LEFT ? 0 : s.w / 2;
     s.y = mode == SFF_AXIS_FEET ? s.h : mode == SFF_AXIS_CENTRE ? s.h / 2 : 0;
 }
+
+bool Sff_DecodePcx(const std::string &data, int *w, int *h, std::vector<unsigned char> &px, unsigned char *pal) {
+    bool hasPal = false;
+    return DecodePcx((const unsigned char *)data.data(), data.size(), w, h, px, pal, &hasPal);
+}

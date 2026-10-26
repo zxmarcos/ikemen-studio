@@ -102,8 +102,13 @@ copy `batchDraw` queues keeps). Then fonts: window Fonts (`editor_font.go`
 records every font loaded; a `.def` font's `[Def]` edited live, its glyphs
 in the Sprites window, a text picked on the game selects its font). Then the
 fight screen keys written with a selector (`p*.pos`, `p1|p3.pos`), found
-and edited as the def has them. What is left of phase 3: TrueType texts'
-rectangles, `.fnt` fonts.
+and edited as the def has them. Then TrueType texts picked on the game
+(the OpenGL renderers' `Printf` passes each glyph's quad to
+`editorTtfGlyph`) and `.fnt` fonts edited (`src/fnt.cpp`: their text
+replaced, their character map read as the engine does). Phase 3 is done:
+every file of a screenpack the engine reads (`system.def`, `fight.def`,
+storyboards, `select.def`, fonts, their SFFs and animations) is edited with
+the game showing it.
 
 ## Where things are
 
@@ -486,7 +491,11 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   missing character moves by `size`. Texts hold the `*Fnt` (`TextSprite.fnt`,
   the fight screen's `fnt[]`), so reloading copies the new font into the old
   one. A `.fnt` with several palettes queues `sys.mainThreadTask`s while
-  loading: not reloaded from a command (it runs on the main thread).
+  loading (a buffered channel, run each frame): its other banks fill in the
+  next frame. TrueType glyphs are drawn by each renderer's `Printf` in the
+  game's coordinates (y down, `gameWidth` x `gameHeight`): picture pixels
+  are those times `widthScale`, `heightScale`. Vulkan's is not hooked
+  (frames are not shared from it).
 - A BGDef just loaded has no velocity nor sin (`bga` is zero): the
   `backGround.reset()` that a screen starting runs (`BGDef.Reset`, through
   the scripts) gives them from the def. A reload therefore resets the new

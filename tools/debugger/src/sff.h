@@ -53,3 +53,7 @@ enum { SFF_AXIS_FEET, SFF_AXIS_CENTRE, SFF_AXIS_TOP_LEFT };
 std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &doc, const std::vector<std::string> &files, int palMode,
                                          const std::function<void(const std::string &)> &log);
 void Sff_SetAxis(SffSprite &s, int mode);
+
+// An 8-bit PCX image (a .fnt's): its palette indices, and its palette as RGBA (256 x 4 bytes; colour 0
+// transparent).
+bool Sff_DecodePcx(const std::string &data, int *w, int *h, std::vector<unsigned char> &px, unsigned char *pal);
