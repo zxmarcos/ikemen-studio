@@ -599,3 +599,12 @@ Phase 4 next steps: a character whose get up state does not end at its
 animation's end would start its reversal late (by the fallback, once
 control is back); none here to check it with.
 
+Phase 5, the analysis of a character's files (app only, but for
+`debugCharFiles` naming the common files), begun: `src/cns.cpp` reads CNS
+and ZSS state files (statedefs, ZSS functions, controllers and their
+parameters, every line of code with its state; `tests/cns_test.cpp`: the
+counts match the engine's sources, but a Null controller the engine does
+not compile), and window Analysis has the Lint (`app_check.cpp`: a model
+of the character made again when a text changes). A duplicate statedef in
+one file kept the engine on "NOW LOADING" in a test: Lint warns of it.
+

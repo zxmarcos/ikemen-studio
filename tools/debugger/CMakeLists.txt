@@ -44,6 +44,8 @@ add_executable(ikemen-debugger WIN32
   src/app_roster.cpp
   src/app_fonts.cpp
   src/app_lab.cpp
+  src/app_check.cpp
+  src/cns.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp

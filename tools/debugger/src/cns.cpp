@@ -89,6 +89,7 @@ void ParseCns(const std::vector<std::string> &lines, CnsFile &out) {
             ctrl->type = Lower(p.value);
         } else if (p.key.compare(0, 7, "trigger") == 0) {
             if (p.key == "trigger1" || p.key == "triggerall") ctrl->hasTrigger = true;
+            ctrl->triggers += Lower(p.value) + "\n";
         } else {
             ctrl->params.push_back(p);
         }

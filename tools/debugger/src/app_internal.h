@@ -303,7 +303,12 @@ std::string PickSaveFile(const char *filter, const char *ext, const std::string 
 void SpritesWindow();
 
 // Sounds
+const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)
 void SoundsWindow();
+
+// Analysis: a character's states checked (Lint), its variables, the graph of its states
+void AnalysisWindow();
+std::string VarName(const std::string &def, char kind, int index); // "" without one ('v', 'f', 's', 'S')
 
 // Code
 extern bool g_applying;          // waiting for the game's answer to Apply

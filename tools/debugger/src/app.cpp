@@ -539,6 +539,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Trace", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderDockWindow("Lab", bottom);
+    ImGui::DockBuilderDockWindow("Analysis", bottom);
     for (const char *w : kScreenWindows) ImGui::DockBuilderDockWindow(w, screens);
     ImGui::DockBuilderFinish(dock);
 }
@@ -675,6 +676,7 @@ void App_Frame() {
     BreakpointsWindow();
     WatchWindow();
     LabWindow();
+    AnalysisWindow();
     ConsoleWindow();
     CodeWindow();
     if (g_autoLaunch) {

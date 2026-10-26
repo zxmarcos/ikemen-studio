@@ -29,6 +29,11 @@ SoundFile *SoundsOf(int pn) {
     return &sf;
 }
 
+const SndFile *SndOf(int pn) {
+    SoundFile *sf = SoundsOf(pn);
+    return sf && sf->error.empty() ? &sf->snd : nullptr;
+}
+
 // Plays a WAV file here (PlaySound reads it while it plays: it is kept).
 void PlayWav(const std::string &wav) {
     static std::string playing;
