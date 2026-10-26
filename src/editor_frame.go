@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"sync/atomic"
+	"time"
 	"unsafe"
 )
 
@@ -78,6 +79,9 @@ func (f *EditorFrame) u32(off int) *uint32 { return (*uint32)(unsafe.Pointer(&f.
 
 // editorFrameCapture shares the frame just drawn; it runs before the buffers are swapped.
 func editorFrameCapture() {
+	if edPerf.on {
+		defer func(t time.Time) { edPerf.capture += time.Since(t) }(time.Now())
+	}
 	f := &edFrame
 	if !f.tried {
 		f.tried = true

@@ -145,6 +145,7 @@ func debuggerFunctions(l *lua.LState) {
 	editorLabFunctions(l)
 	editorModelFunctions(l)
 	editorConsoleFunctions(l)
+	editorPerfFunctions(l)
 	luaRegister(l, "debugTriggerWatch", func(l *lua.LState) int {
 		/*Record the trigger values of one character (shared with the frames, see editor_frame.go).
 		@function debugTriggerWatch

@@ -281,6 +281,11 @@ function ikdbg.model()
 	send('@IKMODEL', m or {none = true})
 end
 
+-- The frames' timings since the last call (it starts the measures).
+function ikdbg.perf()
+	send('@IKPERF', debugPerf ~= nil and debugPerf() or {none = true})
+end
+
 -- Compiles a player's animations from unsaved text (a file the debugger wrote).
 function ikdbg.anims(pn, textFile)
 	local ok, err = debugReloadAnims(pn, textFile)

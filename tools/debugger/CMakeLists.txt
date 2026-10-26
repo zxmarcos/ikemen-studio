@@ -46,6 +46,7 @@ add_executable(ikemen-debugger WIN32
   src/app_lab.cpp
   src/app_layout.cpp
   src/app_theme.cpp
+  src/app_perf.cpp
   src/app_create.cpp
   src/app_model.cpp
   src/app_check.cpp

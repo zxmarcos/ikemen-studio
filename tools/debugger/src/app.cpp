@@ -4,6 +4,7 @@
 #include "app.h"
 #include "app_internal.h"
 
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -468,6 +469,8 @@ void OnLine(const Bridge::Line &line) {
         OnFiles(j);
     } else if (tag == "@IKMODEL") {
         OnModel(j);
+    } else if (tag == "@IKPERF") {
+        OnPerf(j);
     } else if (tag == "@IKRES") {
         bool ok = j["ok"].truthy();
         std::string r = j["r"].str();
@@ -610,6 +613,7 @@ void App_Poll() {
 }
 
 void App_Frame() {
+    auto start = std::chrono::steady_clock::now();
     App_Poll();
     LayoutFrame();
     PollFrames();
@@ -635,10 +639,12 @@ void App_Frame() {
     CreateToolWindow();
     ConsoleWindow();
     CodeWindow();
+    PerformanceWindow();
     if (g_autoLaunch) {
         g_autoLaunch = false;
         Launch();
     }
+    AppFrameTime(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
 
 void App_Console(const char *lua) {

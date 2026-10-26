@@ -164,6 +164,7 @@ tools/debugger/
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: state, commands, protocol handling, settings
   src/app_layout.cpp     the menu bar, each window's place and open flag, the two layouts (BeginTool)
+  src/app_perf.cpp       Performance window: the game's frames by phase (debugPerf), this program's frame
   src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)
   src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
@@ -689,4 +690,16 @@ compiler set for the player (its constants, command list and ZSS
 functions); it runs once with `c.minus = -2`, untraced, and a ChangeState
 in it is taken at once (`stateChange2`; the new state's code runs on the
 next tick). Error lines are the text's.
+
+The Performance window (`app_perf.cpp`, `editor_perf.go`): one-line marks
+in `system.go` end each phase of a match frame (top of the loop, after
+`action`, after `uiAction`, before `cueDraw`, after `renderFrame`, and in
+`await` once the frame is shown); `editorFrameCapture` times itself. The
+engine measures only while the window asks (`debugPerf` every 0.25 s; it
+stops 5 s after the last call) and keeps up to 600 frames between reads.
+First result: the debugger's capture of the frame (`glReadPixels` before
+the swap) takes about 5-6 ms a frame on this machine's Intel UHD, a third of
+a 60 fps frame, with peaks past 50 ms; the game itself (kfm, ryu_pots) well
+under 1 ms, the motif and Lua (the mod) about 1 ms. Rollback matches
+(`hijackRunMatch`) are not measured.
 

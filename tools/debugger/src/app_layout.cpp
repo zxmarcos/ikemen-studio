@@ -32,6 +32,7 @@ ToolWindow g_windows[] = {
     {"Trace", "Debugging", kBottom},
     {"Frame data", "Debugging", kBottom},
     {"Console", "Debugging", kBottom},
+    {"Performance", "Debugging", kBottom},
     {"Code", "Debugging", kCode},
     {"Lab", "Character", kBottom},
     {"Analysis", "Character", kBottom},
@@ -57,9 +58,9 @@ struct Layout {
 const Layout kLayouts[] = {
     {"Debugging", "A fight: the players, their states and code, the character's files.", 0.19f,
      {"Session", "Control", "Game", "Players", "Breakpoints", "Watch", "Inspector", "Trace", "Frame data",
-      "Console", "Code", "Lab", "Analysis", "Animation", "Sprites", "Sounds", "Commands"}},
+      "Console", "Code", "Lab", "Analysis", "Performance", "Animation", "Sprites", "Sounds", "Commands"}},
     {"Stage and screens", "The stage, the fight screen and the screenpack's screens.", 0.24f,
-     {"Session", "Control", "Game", "Console", "Code", "Stage", "Fight screen", "Motif", "Storyboard", "Roster",
+     {"Session", "Control", "Game", "Console", "Performance", "Code", "Stage", "Fight screen", "Motif", "Storyboard", "Roster",
       "Fonts"}},
 };
 

@@ -910,6 +910,7 @@ func (s *System) await(fps int) bool {
 		// the screen if network input is present.
 		defer gfx.BeginFrame(sys.netConnection == nil)
 	}
+	editorPerfMark(perfPresent)
 
 	s.runMainThreadTask()
 
@@ -4124,6 +4125,7 @@ func (s *System) runMatch() (reload bool) {
 
 	// Loop until end of match
 	for s.keepMatchRunning() {
+		editorPerfMark(perfFrame)
 		s.frameStepFlag = false
 
 		for _, v := range s.shortcutScripts {
@@ -4151,9 +4153,11 @@ func (s *System) runMatch() (reload bool) {
 
 		// Update game state
 		s.action()
+		editorPerfMark(perfGame)
 
 		// Update motif
 		s.uiAction()
+		editorPerfMark(perfUI)
 
 		// Patch: Pause stage videos while game is paused
 		// This is necessary for the time being because videos are paused in the stage's action() and pauses now just skip that entirely
@@ -4242,8 +4246,10 @@ func (s *System) runMatch() (reload bool) {
 		}
 
 		// Cue sprites, then render
+		editorPerfMark(perfInput)
 		s.cueDraw()
 		s.renderFrame()
+		editorPerfMark(perfDraw)
 
 		// Update system. Break if update returns false (engine shutdown).
 		if !s.update() {

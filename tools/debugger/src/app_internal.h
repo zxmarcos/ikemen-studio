@@ -235,6 +235,10 @@ void ShowWindow(const char *name); // opened if closed, its tab to the front, wi
 void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
 void LayoutSettingsLine(const std::string &key, const std::string &value);
 void LayoutSettingsWrite(ImGuiTextBuffer *buf);
+// The Performance window (app_perf.cpp)
+void PerformanceWindow();
+void OnPerf(const Json &j);
+void AppFrameTime(double ms); // this program's work in its last frame
 // The themes (app_theme.cpp)
 enum InkColor { kRed, kYellow, kGreen, kBlue, kOrange };
 ImVec4 Ink(InkColor c); // a colour for text on a window: darker on a light theme
