@@ -1188,6 +1188,7 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		customShader:   shader,
 	}
 
+	editorSpriteDrawn(a, &rp, xcs, ycs, isReflection)
 	RenderSprite(rp)
 }
 

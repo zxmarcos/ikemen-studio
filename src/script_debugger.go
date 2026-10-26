@@ -135,6 +135,7 @@ func debugTriggerGeometry(b []byte) []byte {
 
 func debuggerFunctions(l *lua.LState) {
 	editorReloadFunctions(l)
+	editorStageFunctions(l)
 	luaRegister(l, "debugTriggerWatch", func(l *lua.LState) int {
 		/*Record the trigger values of one character (shared with the frames, see editor_frame.go).
 		@function debugTriggerWatch

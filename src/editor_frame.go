@@ -32,7 +32,8 @@ import (
 //	   "ax": [x, y], "an": action, "el": element, "apn": player of the action,
 //	   "k": [x, y] pixels per AIR unit, "c1": [l, t, w, h, ...], "c2": [...],
 //	   players only: "in" and "cm", see editor_input.go}],
-//	   "tg": trigger values of the character debugTriggerWatch names (script_debugger.go)}
+//	   "tg": trigger values of the character debugTriggerWatch names (script_debugger.go),
+//	   "stage": the stage's def and where its BGs were drawn (editor_stage.go)}
 //	  "vp" is where the game's picture is in the frame (top-left origin), "scr"
 //	  the size of the game's picture; "ax" and boxes are in its pixels.
 //	event ring after the slots: events of 4 int32 values, kind first:
@@ -279,6 +280,7 @@ func editorFrameGeometry(winW, winH int32) []byte {
 	}
 	b = append(b, ']')
 	b = debugTriggerGeometry(b)
+	b = editorStageGeometry(b)
 	b = append(b, '}')
 	f.geom = b
 	return b
