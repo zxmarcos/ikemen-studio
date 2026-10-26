@@ -535,9 +535,12 @@ detection and clears it in the next tick's `actionFinish`, so the loop hook
 sees it on the hit's tick; `ghv.damage` is still the pending damage then);
 the watched entity's explods and projectiles in Inspector
 (`editor_objects.go`, `debugObjects`: all of them in one call; an Explod
-without an ID gets 0, so `numExplod` counts it too).
+without an ID gets 0, so `numExplod` counts it too); move frame data
+(Frame data, tab Moves: each tick's row says whether the element has a
+Clsn1 box, `clsnVar('clsn1', 0, 'back')` not NaN; the moves are found in
+the history by `FindMoves`, a tick counting as a frame when the previous
+one had no hit pause left).
 
 Cheap next steps (mod and app only): an "only if" condition on controller
-breakpoints; move frame data (startup/active/recovery/advantage) computed
-from the snapshot history.
+breakpoints.
 

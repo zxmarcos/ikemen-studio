@@ -292,6 +292,7 @@ void ReadEntity(const Json &j, Entity &e) {
     e.moveContact = j["mc"].i();
     e.moveGuarded = j["mg"].i();
     e.stateSrc = j["ss"].i();
+    e.clsn1 = j["c1"].truthy();
     for (const auto &v : j["vars"].items) e.vars.push_back(v.num());
     for (const auto &v : j["fvars"].items) e.fvars.push_back(v.num());
     e.hasObjects = j["explods"].type == Json::Array;
@@ -368,7 +369,7 @@ void OnSnapshot(const Json &j) {
         for (const auto &e : g_ents) {
             auto &rows = g_history[e.id];
             rows.push_back({g_tick, e.st, e.anim, e.elem, e.etime, e.hitpause, e.life, e.ctrl, changed[e.id],
-                            contact[e.id], e.mvt, e.stt, e.x, e.y, e.vx, e.vy, e.stateSrc, g_ran[e.id]});
+                            contact[e.id], e.clsn1, e.mvt, e.stt, e.x, e.y, e.vx, e.vy, e.stateSrc, g_ran[e.id]});
             while (rows.size() > kHistory) rows.pop_front();
         }
         g_selTick = -1;

@@ -394,6 +394,152 @@ void InspectorWindow() {
     ImGui::End();
 }
 
+// A move of an entity, from its tick history: from entering an attack state (movetype A) until
+// control comes back. Its frames are the ticks it was not in hit pause.
+struct Move {
+    int start, end = -1; // ticks: its first, and the first one with control back (-1: not yet)
+    std::vector<int> states;
+    int frames = 0;
+    int firstActive = 0, lastActive = 0; // frames (1-based) with a Clsn1 box
+    std::vector<int> runs;               // lengths of the runs of frames with a Clsn1 box
+    bool canceled = false, interrupted = false;
+    // what its hits did: how many, their damage; the last one: when, on whom, guarded
+    int hits = 0, damage = 0, target = 0, hitTick = -1;
+    bool guarded = false;
+    bool hasAdvantage = false, combo = false;
+    int advantage = 0; // ticks the attacker is free before the one hit (negative: after)
+};
+
+// The first tick from `from` on at which the entity has control back after losing it.
+static int FreeAgain(const std::deque<FrameRow> &rows, int from) {
+    bool lost = false;
+    for (const auto &r : rows) {
+        if (r.t < from) continue;
+        if (!r.ctrl) lost = true;
+        else if (lost) return r.t;
+    }
+    return -1;
+}
+
+static std::vector<Move> FindMoves(int id) {
+    std::vector<Move> moves;
+    auto it = g_history.find(id);
+    if (it == g_history.end()) return moves;
+    const auto &rows = it->second;
+    bool lastActive = false;
+    for (size_t n = 0; n < rows.size(); n++) {
+        const FrameRow &r = rows[n];
+        const FrameRow *p = n ? &rows[n - 1] : nullptr;
+        Move *m = moves.empty() || moves.back().end >= 0 ? nullptr : &moves.back();
+        // A move begins entering an attack state, or changing state in one after its hits (a cancel)
+        bool begins = r.mvt == "A" && (!p || p->mvt != "A" || (r.st != p->st && m && m->firstActive));
+        if (begins) {
+            if (m) m->canceled = true, m->end = r.t;
+            moves.push_back({r.t});
+            m = &moves.back();
+            lastActive = false;
+        } else if (m && (r.mvt == "H" || r.ctrl)) {
+            m->interrupted = r.mvt == "H";
+            m->end = r.t;
+            continue;
+        }
+        if (!m) continue;
+        if (m->states.empty() || m->states.back() != r.st) m->states.push_back(r.st);
+        if (!begins && p->hitpause > 0) continue; // a tick of hit pause
+        m->frames++;
+        if (r.clsn1) {
+            if (!m->firstActive) m->firstActive = m->frames;
+            m->lastActive = m->frames;
+            if (lastActive) m->runs.back()++;
+            else m->runs.push_back(1);
+        }
+        lastActive = r.clsn1;
+    }
+    for (auto &m : moves) {
+        for (const auto &t : g_trace) {
+            if (t.kind != "got" || t.by != id || t.t < m.start || (m.end >= 0 && t.t >= m.end)) continue;
+            m.hits++;
+            m.damage += t.damage;
+            m.target = t.id, m.hitTick = t.t, m.guarded = t.guarded;
+        }
+        if (m.hitTick < 0 || m.end < 0 || m.canceled || m.interrupted) continue;
+        auto target = g_history.find(m.target);
+        if (target == g_history.end()) continue;
+        int free = FreeAgain(target->second, m.hitTick);
+        if (free < 0) continue;
+        // Hit again before it was free: a combo, no advantage to tell
+        for (const auto &t : g_trace)
+            if (t.kind == "got" && t.id == m.target && t.t > m.hitTick && t.t < free) m.combo = true;
+        if (!m.combo) m.hasAdvantage = true, m.advantage = free - m.end;
+    }
+    return moves;
+}
+
+static void TicksTable(std::deque<FrameRow> &rows);
+
+static void MovesTable(int id) {
+    std::vector<Move> moves = FindMoves(id);
+    if (moves.empty()) {
+        ImGui::TextDisabled("No attack (a state with movetype A) in the last %zu ticks.", kHistory);
+        return;
+    }
+    ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
+    if (!ImGui::BeginTable("moves", 9, flags)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    for (const char *h : {"Tick", "States", "Startup", "Active", "Recovery", "Total", "Result", "Advantage", "Damage"})
+        ImGui::TableSetupColumn(h);
+    ImGui::TableHeadersRow();
+    for (auto m = moves.rbegin(); m != moves.rend(); ++m) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        char tick[16];
+        snprintf(tick, sizeof(tick), "%d", m->start);
+        ImGui::PushID(m->start);
+        if (ImGui::Selectable(tick, g_selTick == m->start, ImGuiSelectableFlags_SpanAllColumns)) g_selTick = m->start;
+        ImGui::PopID();
+        ImGui::TableNextColumn();
+        std::string states;
+        for (int s : m->states) states += (states.empty() ? "" : " > ") + std::to_string(s);
+        ImGui::TextUnformatted(states.c_str());
+        ImGui::TableNextColumn();
+        if (m->firstActive) ImGui::Text("%d", m->firstActive);
+        else ImGui::TextDisabled("-");
+        ImGui::TableNextColumn();
+        std::string runs;
+        for (int r : m->runs) runs += (runs.empty() ? "" : "+") + std::to_string(r);
+        ImGui::TextUnformatted(runs.empty() ? "-" : runs.c_str());
+        if (m->firstActive) ImGui::SetItemTooltip("Frames %d to %d", m->firstActive, m->lastActive);
+        ImGui::TableNextColumn();
+        if (m->end < 0) ImGui::TextDisabled("...");
+        else if (m->canceled) ImGui::TextDisabled("canceled");
+        else if (m->interrupted) ImGui::TextDisabled("got hit");
+        else if (m->firstActive) ImGui::Text("%d", m->frames - m->lastActive);
+        else ImGui::TextDisabled("-");
+        ImGui::TableNextColumn();
+        if (m->end >= 0) ImGui::Text("%d", m->frames);
+        ImGui::TableNextColumn();
+        if (m->hits == 0) ImGui::TextDisabled(m->end < 0 ? "" : "whiff");
+        else {
+            ImGui::TextColored(m->guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1), "%s",
+                               m->guarded ? "guarded" : "hit");
+            if (m->hits > 1) {
+                ImGui::SameLine(0, 0);
+                ImGui::Text(" (%d hits)", m->hits);
+            }
+        }
+        ImGui::TableNextColumn();
+        if (m->hasAdvantage)
+            ImGui::TextColored(m->advantage >= 0 ? ImVec4(0.4f, 0.9f, 0.4f, 1) : ImVec4(1, 0.45f, 0.45f, 1), "%+d",
+                               m->advantage);
+        else if (m->combo)
+            ImGui::TextDisabled("combo");
+        ImGui::TableNextColumn();
+        if (m->hits) ImGui::Text("%d", m->damage);
+    }
+    ImGui::EndTable();
+}
+
 void FrameDataWindow() {
     if (!ImGui::Begin("Frame data")) {
         ImGui::End();
@@ -405,10 +551,31 @@ void FrameDataWindow() {
         ImGui::End();
         return;
     }
+    if (ImGui::BeginTabBar("frametabs")) {
+        if (ImGui::BeginTabItem("Ticks")) {
+            TicksTable(it->second);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Moves")) {
+            ImGui::TextDisabled("Frames: ticks out of hit pause. Startup: the first with a Clsn1 box; recovery: "
+                                "until control is back.");
+            HelpMarker("A move begins entering a state with movetype A, or changing state in one after its Clsn1 "
+                       "frames (a cancel, or a follow-up state). Advantage: the tick its last hit's target has "
+                       "control back, less the tick the attacker has (positive: the attacker is free first); none "
+                       "when the target was hit again first (a combo). From the last ticks the debugger keeps.");
+            MovesTable(g_selId);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::End();
+}
+
+static void TicksTable(std::deque<FrameRow> &rows) {
     static bool onlyChanges = false;
     ImGui::Checkbox("Only ticks with a state change or a hit", &onlyChanges);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear")) it->second.clear();
+    if (ImGui::SmallButton("Clear")) rows.clear();
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
     if (g_canTrace) {
@@ -421,7 +588,6 @@ void FrameDataWindow() {
                               "Pos", "Vel", "Controllers"})
             ImGui::TableSetupColumn(h);
         ImGui::TableHeadersRow();
-        const auto &rows = it->second;
         for (auto r = rows.rbegin(); r != rows.rend(); ++r) {
             if (onlyChanges && !r->stateChanged && !r->contact) continue;
             ImGui::TableNextRow();
@@ -439,7 +605,11 @@ void FrameDataWindow() {
             ImGui::TableNextColumn();
             ImGui::Text("%d", r->anim);
             ImGui::TableNextColumn();
-            ImGui::Text("%d", r->elem);
+            if (r->clsn1) {
+                ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%d", r->elem);
+                ImGui::SetItemTooltip("Has a Clsn1 box");
+            } else
+                ImGui::Text("%d", r->elem);
             ImGui::TableNextColumn();
             ImGui::Text("%d", r->etime);
             ImGui::TableNextColumn();
@@ -459,7 +629,6 @@ void FrameDataWindow() {
         }
         ImGui::EndTable();
     }
-    ImGui::End();
 }
 
 void TraceWindow() {

@@ -48,7 +48,8 @@ struct Entity {
     bool ctrl = false, alive = true;
     std::string stt, mvt, phy;
     int hitpause = 0, moveHit = 0, moveContact = 0, moveGuarded = 0;
-    int stateSrc = 0; // source index of the current statedef (patched Ikemen only)
+    bool clsn1 = false; // its animation element has a Clsn1 box
+    int stateSrc = 0;   // source index of the current statedef (patched Ikemen only)
     std::vector<double> vars, fvars;
     // Its explods and projectiles (the watched entity, patched Ikemen only)
     struct Object {
@@ -64,7 +65,7 @@ struct Entity {
 
 struct FrameRow {
     int t, st, anim, elem, etime, hitpause, life;
-    bool ctrl, stateChanged, contact;
+    bool ctrl, stateChanged, contact, clsn1;
     std::string mvt, stt;
     double x, y, vx, vy;
     int stateSrc;

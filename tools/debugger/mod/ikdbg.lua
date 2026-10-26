@@ -140,6 +140,13 @@ local function forEachEntity(f)
 	playerId(oldid)
 end
 
+-- Whether its animation element has a Clsn1 box (nil: this Ikemen GO cannot tell).
+local function hasClsn1()
+	if not clsnVar then return nil end
+	local back = clsnVar('clsn1', 0, 'back')
+	return back == back -- NaN without one
+end
+
 local function readEntity()
 	local e = {
 		id = id(), pn = playerNo(), h = isHelper(), name = name(),
@@ -151,7 +158,7 @@ local function readEntity()
 		ctrl = ctrl(), stt = stateType(), mvt = moveType(), phy = physics(),
 		hp = hitPauseTime(), alive = alive(),
 		mh = moveHit(), mc = moveContact(), mg = moveGuarded(),
-		ss = stateSource and stateSource() or nil,
+		ss = stateSource and stateSource() or nil, c1 = hasClsn1(),
 	}
 	if ikdbg.watch[e.id] then
 		local v, fv = {_array = true}, {_array = true}
