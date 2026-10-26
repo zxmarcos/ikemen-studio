@@ -33,7 +33,7 @@ ikdbg = {
 		set = setVar ~= nil,
 	},
 	srcSent = 0,      -- sources already sent
-	ctrlBreak = {},   -- source index -> true
+	ctrlBreak = {},   -- source index -> true, or {fn}: stop only if fn() is true
 	steps = 0,        -- ticks left to run before pausing again
 	dirty = true,     -- send a snapshot even while paused
 	idle = 0,         -- hook calls since the last snapshot
@@ -322,9 +322,20 @@ function ikdbg.reloadRoster(textFile)
 	if not ok then error(err, 0) end
 end
 
--- A breakpoint on a state controller: the game stops after a tick in which it ran.
-function ikdbg.ctrlBrkSet(src, on)
-	ikdbg.ctrlBreak[src] = on or nil
+-- A breakpoint on a state controller: the game stops after a tick in which it ran; with a
+-- condition, only if that is true then for the one that ran it.
+function ikdbg.ctrlBrkSet(src, on, cond)
+	local b = on or nil
+	if on and cond and cond:find('%S') then
+		local fn, err = loadstring('return ' .. cond)
+		if not fn then
+			send('@IKRES', {ok = false, r = 'breakpoint condition: ' .. tostring(err)})
+			b = nil
+		else
+			b = {fn = fn}
+		end
+	end
+	ikdbg.ctrlBreak[src] = b
 end
 
 --;-----------------------------------------------------------
@@ -373,8 +384,13 @@ local function checkCtrlBreak(tr)
 	if next(ikdbg.ctrlBreak) == nil then return end
 	for i = 1, #tr - 1, 2 do
 		local src = tr[i + 1]
-		if ikdbg.ctrlBreak[src] then
-			local eid = tr[i]
+		local b, eid = ikdbg.ctrlBreak[src], tr[i]
+		local stop = b == true
+		if b and b.fn then
+			local ok, r = ikdbg.with(eid, b.fn)
+			stop = ok and r ~= nil and r ~= false and r ~= 0
+		end
+		if stop then
 			local _, st, pn = ikdbg.with(eid, function() return stateNo(), playerNo() end)
 			togglePause(true)
 			ikdbg.steps = 0

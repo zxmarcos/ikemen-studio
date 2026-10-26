@@ -759,9 +759,10 @@ void BreakpointsWindow() {
     if (g_ctrlBreaks.empty())
         ImGui::TextDisabled(g_canTrace || !Connected() ? "Click left of a controller in the Code window."
                                                        : "Needs an Ikemen GO with the debugger patch.");
-    if (!g_ctrlBreaks.empty() && ImGui::BeginTable("ctrlbps", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+    if (!g_ctrlBreaks.empty() && ImGui::BeginTable("ctrlbps", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("On");
         ImGui::TableSetupColumn("Where", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Only if", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Hits");
         ImGui::TableSetupColumn("");
         ImGui::TableHeadersRow();
@@ -778,6 +779,12 @@ void BreakpointsWindow() {
                 g_codeFile = b.file;
                 g_codeLine = g_codeScrollTo = b.line;
             }
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##if", "always", &b.cond);
+            if (ImGui::IsItemDeactivatedAfterEdit() && b.enabled && Connected()) SendCtrlBreak(b, true);
+            ImGui::SetItemTooltip("Lua over Ikemen's triggers, read after the tick on the one that ran the "
+                                  "controller:\n  var(3) == 2   stateNo() == 200 and time() > 4");
             ImGui::TableNextColumn();
             ImGui::Text("%d", b.hits);
             ImGui::TableNextColumn();

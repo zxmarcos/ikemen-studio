@@ -85,6 +85,7 @@ struct CtrlBreak {
     int line;
     bool enabled = true;
     int hits = 0;
+    std::string cond; // Lua: stop only if true for the one that ran it (empty: always)
 };
 
 // A source file shown and edited in the Code window. The text has '\n' line ends and no BOM;

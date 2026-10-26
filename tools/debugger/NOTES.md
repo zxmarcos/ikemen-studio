@@ -539,8 +539,8 @@ without an ID gets 0, so `numExplod` counts it too); move frame data
 (Frame data, tab Moves: each tick's row says whether the element has a
 Clsn1 box, `clsnVar('clsn1', 0, 'back')` not NaN; the moves are found in
 the history by `FindMoves`, a tick counting as a frame when the previous
-one had no hit pause left).
-
-Cheap next steps (mod and app only): an "only if" condition on controller
-breakpoints.
+one had no hit pause left); an "only if" condition on controller
+breakpoints (`ikdbg.ctrlBrkSet(src, on, cond)`, read after the tick on
+the entity that ran it: a controller "runs" when its triggers held, as
+`tracedSctrl.Run` records).
 

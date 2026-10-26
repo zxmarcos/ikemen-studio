@@ -141,7 +141,7 @@ void SendCtrlBreak(const CtrlBreak &b, bool on, size_t from) {
     std::string file = NormPath(b.file);
     for (size_t i = std::max<size_t>(from, 1); i < g_sources.size(); i++)
         if (SourceAt(g_sources[i], file, b.line))
-            SendRaw("ikdbg.ctrlBrkSet(" + std::to_string(i) + (on ? ", true)" : ", false)"));
+            SendRaw("ikdbg.ctrlBrkSet(" + std::to_string(i) + (on ? ", true, " + LuaQuote(b.cond) + ")" : ", false)"));
 }
 
 CtrlBreak *FindCtrlBreak(const std::string &file, int line) {
@@ -550,6 +550,8 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         int on = 1, lineNo = 0, used = 0;
         if (sscanf(value.c_str(), "%d|%d|%n", &on, &lineNo, &used) == 2 && used > 0)
             g_ctrlBreaks.push_back({value.substr(used), lineNo, on != 0});
+    } else if (key == "CtrlBreakIf") {
+        if (!g_ctrlBreaks.empty()) g_ctrlBreaks.back().cond = value; // of the CtrlBreak line before
     } else if (key == "WatchExpr") {
         // target|code
         int t = 0, used = 0;
@@ -564,7 +566,10 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     buf->appendf("Exe=%s\nP1=%s\nP2=%s\nStage=%s\nExtra=%s\nAI1=%d\nAI2=%d\nGameWindow=%d\n", s.exe.c_str(),
                  s.p1.c_str(), s.p2.c_str(), s.stage.c_str(), s.extra.c_str(), s.ai1, s.ai2, s.gameWindow);
     for (const auto &b : g_breakpoints) buf->appendf("Breakpoint=%d|%d|%s\n", b.target, b.enabled, b.cond.c_str());
-    for (const auto &b : g_ctrlBreaks) buf->appendf("CtrlBreak=%d|%d|%s\n", b.enabled, b.line, b.file.c_str());
+    for (const auto &b : g_ctrlBreaks) {
+        buf->appendf("CtrlBreak=%d|%d|%s\n", b.enabled, b.line, b.file.c_str());
+        if (!b.cond.empty()) buf->appendf("CtrlBreakIf=%s\n", b.cond.c_str());
+    }
     for (const auto &w : g_watches) buf->appendf("WatchExpr=%d|%s\n", w.target, w.code.c_str());
     buf->append("\n");
 }
