@@ -75,12 +75,25 @@ func editorFontDrawn(f *Fnt) {
 	}
 }
 
+// editorTtfGlyph runs where the OpenGL renderers place a TrueType glyph (x, y, w, h in the game's
+// coordinates, y down; w, h negative when flipped): it is added to the text being recorded, as a
+// sprite's quad is (editorRenderSprite).
+func editorTtfGlyph(x, y, w, h float32, window [4]int32) {
+	if edFight.cur == 0 {
+		return
+	}
+	if w < 0 {
+		x, w = x+w, -w
+	}
+	if h < 0 {
+		y, h = y+h, -h
+	}
+	editorAddRect([4]float32{x * sys.widthScale, y * sys.heightScale, w * sys.widthScale, h * sys.heightScale}, &window)
+}
+
 // editorReloadFont reads a font's file again into every font loaded from it. textFile, when
 // not empty, is read instead, then deleted (unsaved text, next to the file).
 func editorReloadFont(filename, textFile string) (err error) {
-	if HasExtension(filename, ".fnt") {
-		return fmt.Errorf("only .def fonts are reloaded")
-	}
 	from := filename
 	if textFile != "" {
 		from = textFile

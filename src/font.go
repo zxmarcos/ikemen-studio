@@ -730,6 +730,7 @@ func (f *Fnt) DrawTtf(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation,
 	if len(txt) == 0 {
 		return
 	}
+	editorFontDrawn(f)
 
 	if f.ttf != nil {
 		f.ttf.UpdateResolution(int(sys.gameWidth), int(sys.gameHeight))

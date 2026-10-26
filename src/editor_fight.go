@@ -165,9 +165,15 @@ func editorRenderSprite(rp *RenderParams) {
 	if e.cur == 0 {
 		return
 	}
+	editorAddRect(editorQuadRect(rp), rp.window)
+}
+
+// editorAddRect adds a rectangle (x, y, w, h in the game picture's pixels), clipped by its window,
+// to what is being recorded.
+func editorAddRect(r [4]float32, window *[4]int32) {
+	e := &edFight
 	d := &e.drawn[e.cur-1]
-	r := editorQuadRect(rp)
-	if w := rp.window; w != nil && *w != sys.scrrect {
+	if w := window; w != nil && *w != sys.scrrect {
 		x0, y0 := Max(r[0], float32(w[0])), Max(r[1], float32(w[1]))
 		x1, y1 := Min(r[0]+r[2], float32(w[0]+w[2])), Min(r[1]+r[3], float32(w[1]+w[3]))
 		if x1 <= x0 || y1 <= y0 {

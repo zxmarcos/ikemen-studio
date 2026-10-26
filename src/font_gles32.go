@@ -280,6 +280,7 @@ func (f *Font_GLES32) Printf(x, y float32, xscl, yscl float32, spacingXAdd float
 		ypos := y - float32(ch.height-ch.bearingV)*yscl
 		w := float32(ch.width) * xscl
 		h := float32(ch.height) * yscl
+		editorTtfGlyph(xpos, ypos, w, h, window)
 
 		x1, y1 := xpos+w, ypos
 		x2, y2 := xpos, ypos
