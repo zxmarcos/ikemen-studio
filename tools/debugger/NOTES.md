@@ -611,8 +611,13 @@ parameters; names saved as `VarName=def|kind|index|name`) and States (the
 graph from the model's state references). A duplicate statedef in one
 file kept the engine on "NOW LOADING" in a test: Lint warns of it.
 
-Phase 5 next steps: the Lint over a ZSS character's own files (KFM's are
-CNS; the common ZSS files are read but not checked); a CNS expression's
-numbers (`ifElse(..., 200, 210)`) are not followed; the state graph knows
-nothing of the engine's own changes (landing, hits).
+Then the Lint over a ZSS character (kfm_zss): its headers go over lines
+("[StateDef 181;\n type: S; ...]"), a controller's triggers are the
+conditions of the ifs around it (what `SelfAnimExist` guards), and the
+negative statedefs of several files are put together, not duplicates.
+kfm_zss gives the same as KFM: no error, the same 4 notes.
+
+Phase 5 next steps: a CNS expression's numbers (`ifElse(..., 200, 210)`)
+are not followed; the state graph knows nothing of the engine's own
+changes (landing, hits).
 

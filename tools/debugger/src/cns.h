@@ -19,7 +19,7 @@ struct CnsCtrl {
     std::string type;        // lower case ("changestate"); "" when it has none
     int line = 0;            // CNS: of its [State] header; ZSS: of its name
     bool hasTrigger = false; // CNS: a triggerall or trigger1; ZSS: always (its ifs)
-    std::string triggers;    // CNS: its trigger lines' values, lower case, one per line ("" in ZSS)
+    std::string triggers;    // lower case, one per line: CNS its trigger lines' values, ZSS the conditions of the ifs around it
     std::vector<CnsParam> params; // CNS: every line but type and the triggers; ZSS: the braces' pairs
     const CnsParam *Param(const char *key) const;
 };

@@ -63,7 +63,10 @@ static const char *kZss =
     "ignoreHitPause if time = 1 {\n"             // 15
     "\tplaySnd{value: S0, 1}\n"                  // 16
     "}\n"                                        // 17
-    "persistent(0) if 1 { changeState{value: 0} }\n"; // 18
+    "persistent(0) if 1 { changeState{value: 0} }\n" // 18
+    "[StateDef 220;\n"                                 // 19: a header over lines
+    "type: S; anim: 220;]\n"                           // 20
+    "changeState{value: 0}\n";                         // 21
 
 static void TestCns() {
     CnsFile f;
@@ -90,8 +93,10 @@ static void TestCns() {
 static void TestZss() {
     CnsFile f;
     Cns_Parse(kZss, true, f);
-    CHECK(f.zss && f.states.size() == 3);
-    if (f.states.size() != 3) return;
+    CHECK(f.zss && f.states.size() == 4);
+    if (f.states.size() != 4) return;
+    CHECK(f.states[3].no == 220 && f.states[3].line == 19 && f.states[3].Param("anim") &&
+          f.states[3].Param("anim")->value == "220" && f.states[3].ctrls.size() == 1);
     const CnsState &s0 = f.states[0], &fn = f.states[1], &s210 = f.states[2];
     CHECK(s0.no == 0 && s0.literal && s0.line == 2 && s0.Param("anim")->value == "0");
     CHECK(fn.function == "F" && !fn.literal && fn.ctrls.empty());
@@ -109,6 +114,7 @@ static void TestZss() {
         CHECK(h.Param("damage") && h.Param("damage")->value == "23, 0" && h.Param("damage")->line == 14);
         CHECK(h.Param("p2stateno") && h.Param("p2stateno")->value == "5000");
         CHECK(s210.ctrls[1].type == "playsnd" && s210.ctrls[1].Param("value")->value == "S0, 1");
+        CHECK(s210.ctrls[1].triggers == "time = 1\n" && s210.ctrls[0].triggers.empty()); // its if's condition
         CHECK(s210.ctrls[2].type == "changestate" && s210.ctrls[2].Param("value")->value == "0");
     }
     bool assign = false;
@@ -175,6 +181,15 @@ static void TestFiles() {
         }
         printf("common1.cns.zss: %zu statedefs, %zu controllers\n", f.states.size(), ctrls);
         CHECK(f.states.size() > 50 && dead);
+    }
+    if (ReadText("chars/kfm_zss/kfm.zss", text)) {
+        CnsFile f;
+        Cns_Parse(text, true, f);
+        size_t ctrls = 0, functions = 0;
+        for (const auto &s : f.states) ctrls += s.ctrls.size(), functions += !s.function.empty();
+        printf("kfm_zss/kfm.zss: %zu statedefs, %zu functions, %zu controllers\n", f.states.size() - functions,
+               functions, ctrls);
+        CHECK(f.states.size() - functions == 55 && functions == 4); // its headers go over lines
     }
     if (ReadText("data/functions.zss", text)) {
         CnsFile f;

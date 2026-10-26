@@ -121,6 +121,8 @@ void ParseZss(const std::vector<std::string> &lines, CnsFile &out) {
     // The state each line is in, from the headers
     std::vector<int> stateOfLine(lines.size() + 2, -1);
     int st = -1;
+    std::vector<std::string> conds; // the conditions of the blocks open ("" for an else, a loop...)
+    std::string pending;            // of the next block
     size_t pos = 0, n = text.size();
     while (pos < n) {
         char c = text[pos];
@@ -128,9 +130,12 @@ void ParseZss(const std::vector<std::string> &lines, CnsFile &out) {
         if (lineStart) {
             size_t p = text.find_first_not_of(" \t", pos);
             if (p != std::string::npos && p < n && text[p] == '[') {
-                size_t close = text.find(']', p), eol = text.find('\n', p);
-                if (close != std::string::npos && close < eol) {
+                // A header may go on over lines ("[StateDef 181;\n type: S; ...]")
+                size_t close = text.find(']', p), open = text.find('[', p + 1);
+                if (close != std::string::npos && (open == std::string::npos || close < open)) {
                     std::string head = text.substr(p + 1, close - p - 1);
+                    for (char &ch : head)
+                        if (ch == '\n') ch = ' ';
                     std::vector<std::string> parts;
                     size_t a = 0;
                     while (a <= head.size()) {
@@ -162,6 +167,8 @@ void ParseZss(const std::vector<std::string> &lines, CnsFile &out) {
                         st = -1;
                     }
                     for (int l = line; l < (int)stateOfLine.size(); l++) stateOfLine[l] = st;
+                    conds.clear();
+                    pending.clear();
                     pos = close + 1;
                     continue;
                 }
@@ -172,10 +179,28 @@ void ParseZss(const std::vector<std::string> &lines, CnsFile &out) {
             pos = q == std::string::npos ? n : q + 1;
             continue;
         }
+        // Blocks: an if's condition holds over its block (a controller in it has them as triggers)
+        if (c == '{') {
+            conds.push_back(pending);
+            pending.clear();
+            pos++;
+            continue;
+        }
+        if (c == '}') {
+            if (!conds.empty()) conds.pop_back();
+            pos++;
+            continue;
+        }
         if (IdentStart(c) && (pos == 0 || !IdentChar(text[pos - 1]))) {
             size_t e = pos;
             while (e < n && IdentChar(text[e])) e++;
             std::string word = Lower(text.substr(pos, e - pos));
+            if (word == "if") {
+                size_t brace = text.find('{', e);
+                pending = Lower(Trim(text.substr(e, brace == std::string::npos ? std::string::npos : brace - e)));
+                pos = e;
+                continue;
+            }
             size_t j = text.find_first_not_of(" \t\r\n", e);
             if (word == "persistent" && j != std::string::npos && text[j] == '(') {
                 size_t close = text.find(')', j);
@@ -194,6 +219,8 @@ void ParseZss(const std::vector<std::string> &lines, CnsFile &out) {
             ctrl.type = word;
             ctrl.line = lineOf(pos);
             ctrl.hasTrigger = true;
+            for (const auto &cond : conds)
+                if (!cond.empty()) ctrl.triggers += cond + "\n";
             int depth = 0;
             bool quoted = false;
             size_t k = j + 1, itemStart = k;

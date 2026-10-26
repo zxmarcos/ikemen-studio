@@ -189,9 +189,10 @@ void Build(Model &m, int pn, const std::vector<std::string> &paths, const std::v
             const CnsState &st = states[s];
             if (!st.literal) continue;
             auto it = m.states.find(st.no);
+            // Negative states of several files are put together (Ikemen characters): no duplicate
             if (it == m.states.end())
                 m.states[st.no] = {f, s};
-            else if (m.files[f].own && m.files[it->second.first].own)
+            else if (m.files[f].own && m.files[it->second.first].own && st.no >= 0)
                 find(1, f, st.line, "Statedef " + std::to_string(st.no) + " again: the first one (" +
                                         m.files[it->second.first].path + ":" +
                                         std::to_string(m.files[it->second.first].cns.states[it->second.second].line) +
@@ -236,7 +237,7 @@ void Build(Model &m, int pn, const std::vector<std::string> &paths, const std::v
     for (int f = 0; f < (int)m.files.size(); f++) {
         const ParsedFile &pf = m.files[f];
         for (const CnsState &st : pf.cns.states) {
-            bool used = st.literal && m.states[st.no] == std::make_pair(f, (int)(&st - pf.cns.states.data()));
+            bool used = st.literal && (st.no < 0 || m.states[st.no] == std::make_pair(f, (int)(&st - pf.cns.states.data())));
             if (st.literal && !used) continue; // a statedef the engine does not use
             bool custom = st.literal && given.count(st.no) && !entered.count(st.no);
             if (const CnsParam *a = st.Param("anim"); a && pf.own && !custom) {
