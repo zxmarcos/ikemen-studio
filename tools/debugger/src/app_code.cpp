@@ -218,10 +218,16 @@ void CodeWindow() {
         trigWatch = {(unsigned long)g_bridge.Pid(), g_selId};
         SendRaw("if debugTriggerWatch then debugTriggerWatch(" + std::to_string(g_selId) + ") end");
     }
-    if (!ImGui::Begin("Code")) {
-        ImGui::End();
-        return;
+    // A line asked from another window (not the state followed here): Code comes to the front.
+    // With the game running it stops following the state, which would leave that line at once.
+    static bool follow = true;
+    static int askedLine;
+    if (g_codeScrollTo > 0 && g_codeScrollTo != askedLine) {
+        ShowWindow("Code");
+        if (!g_paused) follow = false;
     }
+    askedLine = g_codeScrollTo;
+    if (!BeginTool("Code")) return;
     const Entity *e = FindEntity(g_selId);
     const FrameRow *row = nullptr;
     auto hist = g_history.find(g_selId);
@@ -233,7 +239,6 @@ void CodeWindow() {
     }
 
     // Follow the selected entity's state, but not while its file is being edited
-    static bool follow = true;
     static int followedSrc;
     SourceFile *shown = g_codeFile.empty() ? nullptr : &LoadSource(g_codeFile);
     bool editing = shown && dbg::Editor_IsFocused(shown->ed);

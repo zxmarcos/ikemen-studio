@@ -204,11 +204,7 @@ void FontsWindow() {
         FontReload(g_fontPending, &bytes);
         g_fontPending.clear();
     }
-    DockWithScreens();
-    if (!ImGui::Begin("Fonts")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Fonts")) return;
     static std::string sel, seenPicked;
     if (g_fontPicked != seenPicked) seenPicked = sel = g_fontPicked; // a text picked on the game
     float em = ImGui::GetFontSize();

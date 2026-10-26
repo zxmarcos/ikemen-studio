@@ -121,10 +121,7 @@ void CmdChanged(SourceFile &sf, bool ok) {
 
 void CommandsWindow() {
     UpdateInputs();
-    if (!ImGui::Begin("Commands")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Commands")) return;
     const Entity *e = FindEntity(g_selId);
     if (!e) {
         ImGui::TextDisabled("Pick a player.");

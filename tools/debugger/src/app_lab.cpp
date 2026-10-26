@@ -401,13 +401,7 @@ void LabHello() {
 }
 
 void LabWindow() {
-    // A window the saved layout does not know joins Code's dock
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
-        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Lab")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Lab")) return;
     ImGui::SeparatorText("Dummy");
     DummySection();
     ImGui::SeparatorText("Takes");

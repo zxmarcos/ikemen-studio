@@ -375,7 +375,6 @@ void ShowLine(const Model &m, int file, int line) {
     g_codeFile = m.files[file].path;
     g_codeLine = g_codeScrollTo = line;
     g_codeHold = true;
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code")) ImGui::FocusWindow(code);
 }
 
 void LintTab(Model &m) {
@@ -678,13 +677,7 @@ void AnalysisSettingsWrite(ImGuiTextBuffer *buf) {
 }
 
 void AnalysisWindow() {
-    // A window the saved layout does not know joins Code's dock
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
-        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Analysis")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Analysis")) return;
     const Entity *e = FindEntity(g_selId);
     if (!g_canTrace || !e) {
         ImGui::TextDisabled(!Connected() ? "Launch the game." : !g_canTrace ? "Needs an Ikemen GO with the debugger patch."

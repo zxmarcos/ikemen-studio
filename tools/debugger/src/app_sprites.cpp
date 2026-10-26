@@ -182,10 +182,7 @@ void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b) {
 }
 
 void SpritesWindow() {
-    if (!ImGui::Begin("Sprites")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Sprites")) return;
     // Whose: the selected player's, the SFF of the screen whose element was picked last, or the
     // file another window showed here (a font's), whichever came last
     enum { Player, Screen, Shown };

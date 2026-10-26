@@ -161,7 +161,8 @@ src/editor_lab.go        engine side: a player's keys held, recorded, played; a 
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
-  src/app.cpp            the debugger: state, commands, protocol handling, layout, settings
+  src/app.cpp            the debugger: state, commands, protocol handling, settings
+  src/app_layout.cpp     the menu bar, each window's place and open flag, the two layouts (BeginTool)
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)
   src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
   src/app_anim.cpp       Animation window (AIR)
@@ -240,11 +241,13 @@ helper "Bag"):
   `tests/ini_test.cpp`, def parsing and edits, stages/kfm.def's 7 BGs).
 - Stage tests: `test_ui.ps1 -Fresh -IniExtra "Stage=kfm"` (later lines of the
   ini win). Back up the def first and restore it after a test that saves.
-  The same for `data/fight.def` (`data` is not in git either). The Fight
-  screen window is the first tab of the bottom right dock, with Motif,
-  Storyboard, Roster and Fonts (default layout: `click:810,621`; Session's
-  "Reset window layout", `click:100,203`, rebuilds it); Game's "Screenpack"
-  checkbox is at `click:900,162`. Motif tests: `-P1 "" -P2 ""` starts in
+  The same for `data/fight.def` (`data` is not in git either). The Stage,
+  Fight screen, Motif, Storyboard, Roster and Fonts windows are closed in the
+  first layout: `click:123,11|wait:0.4|click:170,62` picks Layout > Stage and
+  screens (`click:123,11|wait:0.4|click:137,41`: back to Debugging); Stage,
+  Fight screen, Motif and Storyboard are then the top right tabs, Roster and
+  Fonts the left ones (take a shot for the coordinates, the Game window's
+  "Screenpack" checkbox too). Motif tests: `-P1 "" -P2 ""` starts in
   the menus (a demo match first: `click:740,350|key:RETURN` shows the title
   menu); the motif in use is `data/ikemen1/system.def` (`save/config.ini`).
   When the demo has not started yet that key picks Arcade instead: for a
@@ -286,7 +289,7 @@ helper "Bag"):
   real ones), `ikdbg.record(1, true)` and `ikdbg.stopTake()` record a take
   (it shows in the log as "Take N: P1, n ticks" and is saved in the ini),
   and a run without `-Fresh` keeps it to play from the Lab window (its tab
-  is at `click:540,577`, a take's "P1" button at `click:632,812`).
+  is at `click:690,577` in the first layout; take a shot for its buttons).
   `-IniExtra "Dummy=2|1|1|1|0"` makes P2 a crouching dummy that guards.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and

@@ -77,10 +77,7 @@ bool ReadWavFile(const std::string &path, std::string &wav) {
 const char kWavFilter[] = "WAV files (*.wav)\0*.wav\0All files (*.*)\0*.*\0";
 
 void SoundsWindow() {
-    if (!ImGui::Begin("Sounds")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Sounds")) return;
     const Entity *e = FindEntity(g_selId);
     int pn = e ? e->pn : 0;
     SoundFile *sp = pn > 0 ? SoundsOf(pn) : nullptr;

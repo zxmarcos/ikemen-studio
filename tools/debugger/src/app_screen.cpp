@@ -120,12 +120,6 @@ void ReadScreenGeometry(const Json &j) {
     }
 }
 
-// A docked window's tab comes to the front, without taking the keyboard from the Game window.
-static void ShowTab(const char *name) {
-    ImGuiWindow *w = ImGui::FindWindowByName(name);
-    if (w && w->DockNode && w->DockNode->TabBar) w->DockNode->TabBar->NextSelectedTabId = w->TabId;
-}
-
 // The section the engine names (lower case), the first one with that name as the engine reads it.
 static const IniSection *FindSection(const IniFile &ini, const std::string &lower) {
     for (const IniSection &s : ini.sections)
@@ -293,7 +287,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                 bool cell = &d == &g_motif && f.section == "select info" && f.tag > 0;
                 if (cell) g_rosterPick = f.tag;
                 if (f.font > 0 && f.font <= (int)g_fontFiles.size()) g_fontPicked = g_fontFiles[f.font - 1]; // the Fonts window follows
-                ShowTab(cell ? "Roster" : d.window);
+                ShowWindow(cell ? "Roster" : d.window);
                 drag = f.k.x > 0 && f.k.y > 0 ? hover : Hit();
                 dragK = f.k;
                 dragAlone = ImGui::GetIO().KeyAlt;
@@ -403,11 +397,7 @@ static bool PositionDrag(ScreenDef &d, SourceFile &sf, const IniSection &s, cons
 
 static void ScreenWindow(ScreenDef &d) {
     Pump(d);
-    DockWithScreens();
-    if (!ImGui::Begin(d.window)) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool(d.window)) return;
     SourceFile *sfp = d.Source();
     if (!sfp) {
         ImGui::TextDisabled(g_bridge.Running() ? (d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)." : d.motif ? "Needs the game's frames (patched Ikemen GO)."

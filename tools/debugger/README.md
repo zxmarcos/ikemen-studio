@@ -48,13 +48,27 @@ Ikemen GO itself is built by `build/build.sh Win64`; it needs `chars`,
    not affected. `ikemen-debugger.exe --launch` starts the game at once with
    the saved settings.
 
-Windows:
+Windows: the menu bar's **Windows** opens and closes each one (a window
+opened again goes back to its place, with the others of that place); **Layout**
+puts them in one of two layouts:
+
+- **Debugging** (the first one): Session and the lists on the left (Players,
+  Breakpoints, Watch); Control and Game in the middle; Inspector and the
+  character's files on the right (Animation, Sprites, Sounds, Commands); below,
+  the whole width: Trace, Frame data, Console, Lab and Analysis, then Code. The
+  stage and screenpack windows are closed.
+- **Stage and screens**: Roster and Fonts on the left; Stage, Fight screen,
+  Motif and Storyboard on the right; Console and Code below.
+
+A line asked from another window (Show in Code, a Lint row, a Trace HitDef)
+brings Code to the front, opening it if it is closed; with the game running,
+Code then stops following the state, which would leave that line at once.
 
 | Window | What it does |
 |---|---|
-| Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state; reset the window layout (the screenpack windows, Fight screen to Fonts, share the bottom with the debugging ones, side by side) |
+| Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state |
 | Game (engine side) | The game itself: its frames, with the collision boxes and axes over them; hover a player or helper to see it, click to select it, drag it to move it. The mouse wheel zooms (the game's pixels, kept sharp), the right button pans, "Follow it" keeps the selected one in view, "Keys" shows under each player the keys it holds (its own, the AI's, a dummy's or a take's), "History" P1's last keys down the left side and P2's down the right, each with the ticks it lasted. While the window has focus, the keyboard goes to the game (but F5, F10, F11). The game's own window is hidden unless Session says otherwise |
-| Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
+| Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11) (the keys work with the window closed too), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
 | Players | Every player and helper: state, previous state, animation, element, time, types, ctrl, position, velocity, life, power, how many explods and projectiles it has |
 | Animation (engine side) | The selected entity's animation element in its AIR file: the elements (a click shows one on the game), the element's sprite, offset and time, its Clsn1 and Clsn2 boxes (own, or the action's default and how many elements share it), add and delete boxes. The action can be shown on the player, copied, renumbered or deleted; an element duplicated, deleted, moved or made the loop start. With **On the game, drag its boxes**, the boxes are drawn on the Game window with handles: drag an edge, a corner or the inside; with **the sprite**, a drag near the player moves the element's offset. The previous element's boxes can be shown faint. Every change goes to the game at once (only the animations are compiled again); **Save** writes the AIR file, which the Code window edits too. A screen's element picked on the Game window (fight screen, motif, storyboard) that shows an action of its def (`[Begin Action]`) takes the window instead: the same editing of its elements (no boxes; the sprite picker shows the screen's SFF), the def loaded again at each change, the animations going on from where they were |
 | Sprites (engine side) | The SFF file (v1 or v2) of the selected player, or of the screen whose element was picked last on the Game window (`fight.sff`, the motif's `system.sff`, the storyboard's; it opens at the sprite that element shows): the sprites, filtered by group; a preview (wheel: zoom, drag: move the axis) with any of the palettes; renumber, axis, replace with a PNG, save as a PNG, delete; add PNG files (to the character's palette 1,1, or with palettes of their own). **Save** writes SFF v2 (the first time the old file is kept as `.bak`) and the game reads it again at once (a screen: its def is loaded again with the new SFF, the round or the menu going on). The Animation window picks an element's sprite among thumbnails and can show the previous element's sprite faint on the game |
@@ -76,7 +90,7 @@ Windows:
 | Analysis (engine side) | The selected player's character read from its files as the engine compiles them (its `st` files, `cmd`, `stcommon`, then config.ini's common states: the first statedef of a number is the one used), CNS and ZSS. **Lint**: errors (states, actions, sounds and commands named that do not exist; a controller without a type, or without trigger1), warnings (a statedef given twice, the AIR's sprites missing from the SFF), notes (states 200 to 4999 nothing changes to by number, commands no trigger names); only numbers written as numbers are checked, and an action guarded by `SelfAnimExist` of it, or shown in a state the character only gives to others, is not. It runs again when a file changes (on disk or in Code); a click shows the line in Code. **Variables**: each var, fvar, sysvar, sysfvar with where it is written (VarSet, VarAdd, VarRandom, VarRangeSet, ParentVarSet/Add, `:=`) and read, by state (a click shows the line), the selected entity's value now, and a name kept per character (shown in the Inspector). **States**: the graph around a state (it follows the player, or a state clicked): the states that change to it on the left, those it changes to on the right, 1 to 4 steps, by numbers written in ChangeState, SelfState, p1stateno (dashed: p2stateno, TargetState, Helper); the path the player came by green, states that do not exist red; double-click shows a statedef in Code. Changes the engine makes by itself (landing, getting hit) are not in it |
 | Console | Any Lua, run in the game (`player(2); return stateNo(), var(3)`). Ikemen's own log is shown too |
 
-Settings, breakpoints and the window layout are saved in
+Settings, breakpoints, the window layout and the windows closed are saved in
 `ikemen-debugger.ini` next to the exe.
 
 ## Engine side

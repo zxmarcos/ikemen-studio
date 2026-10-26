@@ -12,10 +12,7 @@
 namespace app {
 
 void SessionWindow() {
-    if (!ImGui::Begin("Session")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Session")) return;
     Settings &s = g_settings;
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##exe", "Ikemen_GO.exe", &s.exe);
@@ -35,7 +32,6 @@ void SessionWindow() {
                "in Extra.");
     ImGui::Checkbox("Show the game's own window", &s.gameWindow);
     HelpMarker("With the patched Ikemen GO the game is shown in the Game window and its own window is hidden.");
-    if (ImGui::SmallButton("Reset window layout")) g_firstRun = true; // App_Frame builds the default one
 
     bool running = g_bridge.Running();
     if (ImGui::Button(running ? "Restart" : "Launch")) Launch();
@@ -64,11 +60,15 @@ void SessionWindow() {
 }
 
 void ControlWindow() {
-    if (!ImGui::Begin("Control")) {
-        ImGui::End();
-        return;
-    }
+    // Its keys work with the window closed too
     bool live = Connected();
+    ImGuiIO &io = ImGui::GetIO();
+    if (live && !io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
+        if (ImGui::IsKeyPressed(ImGuiKey_F10)) SendRaw("ikdbg.step(1)");
+        if (ImGui::IsKeyPressed(ImGuiKey_F11)) SendRaw("ikdbg.step(10)");
+    }
+    if (!BeginTool("Control")) return;
     ImGui::BeginDisabled(!live);
     if (ImGui::Button(g_paused ? "Continue (F5)" : "Pause (F5)")) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
     ImGui::SameLine();
@@ -122,20 +122,10 @@ void ControlWindow() {
         }
     }
     ImGui::End();
-
-    ImGuiIO &io = ImGui::GetIO();
-    if (live && !io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
-        if (ImGui::IsKeyPressed(ImGuiKey_F10)) SendRaw("ikdbg.step(1)");
-        if (ImGui::IsKeyPressed(ImGuiKey_F11)) SendRaw("ikdbg.step(10)");
-    }
 }
 
 void PlayersWindow() {
-    if (!ImGui::Begin("Players")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Players")) return;
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable |
                             ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
     if (ImGui::BeginTable("players", 14, flags)) {
@@ -251,10 +241,7 @@ void VarGrid(const char *id, const std::vector<double> &vals, const std::vector<
 }
 
 void InspectorWindow() {
-    if (!ImGui::Begin("Inspector")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Inspector")) return;
     const Entity *e = FindEntity(g_selId);
     if (!e) {
         ImGui::TextDisabled(g_selId < 0 ? "Pick a player in the Players window." : "The selected entity is gone.");
@@ -548,10 +535,7 @@ static void MovesTable(int id) {
 }
 
 void FrameDataWindow() {
-    if (!ImGui::Begin("Frame data")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Frame data")) return;
     auto it = g_history.find(g_selId);
     if (it == g_history.end() || it->second.empty()) {
         ImGui::TextDisabled("Tick by tick history of the selected player appears here.");
@@ -639,10 +623,7 @@ static void TicksTable(std::deque<FrameRow> &rows) {
 }
 
 void TraceWindow() {
-    if (!ImGui::Begin("Trace")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Trace")) return;
     static bool showStates = true, showHits = true, follow = true;
     static int player = 0;
     ImGui::Checkbox("State changes", &showStates);
@@ -725,10 +706,7 @@ void TraceWindow() {
 }
 
 void BreakpointsWindow() {
-    if (!ImGui::Begin("Breakpoints")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Breakpoints")) return;
     static int target = 0;
     static std::string cond = "stateNo() == 200";
     const char *targets[] = {"Any", "P1", "P1 + helpers", "P2", "P2 + helpers"};
@@ -828,13 +806,7 @@ void BreakpointsWindow() {
 }
 
 void WatchWindow() {
-    // A window the saved layout does not know joins Breakpoints
-    if (ImGuiWindow *bp = ImGui::FindWindowByName("Breakpoints"); bp && bp->DockId)
-        ImGui::SetNextWindowDockID(bp->DockId, ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Watch")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Watch")) return;
     // Expressions on the selected entity are read on the one whose variables are watched
     if (Connected() && g_selId >= 0) Watch(g_selId);
     static int target = 0;
@@ -906,10 +878,7 @@ void WatchWindow() {
 }
 
 void ConsoleWindow() {
-    if (!ImGui::Begin("Console")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Console")) return;
     static bool showEngine = true;
     static std::string input;
     static std::vector<std::string> history;

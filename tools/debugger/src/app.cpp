@@ -507,54 +507,6 @@ void HelpMarker(const char *text) {
     }
 }
 
-void DefaultLayout(ImGuiID dock) {
-    ImGui::DockBuilderRemoveNode(dock);
-    ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dock, ImGui::GetMainViewport()->WorkSize);
-    ImGuiID left, rest, right, center, top, bottom, screens, control, players, leftTop, leftBottom;
-    ImGui::DockBuilderSplitNode(dock, ImGuiDir_Left, 0.19f, &left, &rest);
-    ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.32f, &right, &center);
-    ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.36f, &bottom, &top);
-    ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.5f, &screens, &bottom);
-    // Control: its tab and three rows
-    const ImGuiStyle &st = ImGui::GetStyle();
-    float controlH = ImGui::GetFrameHeight() * 4 + st.ItemSpacing.y * 2 + st.WindowPadding.y * 2;
-    ImGui::DockBuilderSplitNode(top, ImGuiDir_Up, controlH / (ImGui::GetMainViewport()->WorkSize.y * 0.64f), &control,
-                                &players);
-    ImGui::DockBuilderSplitNode(left, ImGuiDir_Up, 0.45f, &leftTop, &leftBottom);
-    ImGui::DockBuilderDockWindow("Session", leftTop);
-    ImGui::DockBuilderDockWindow("Players", leftBottom);
-    ImGui::DockBuilderDockWindow("Breakpoints", leftBottom);
-    ImGui::DockBuilderDockWindow("Watch", leftBottom);
-    ImGui::DockBuilderDockWindow("Control", control);
-    ImGui::DockBuilderDockWindow("Game", players);
-    ImGui::DockBuilderDockWindow("Inspector", right);
-    ImGui::DockBuilderDockWindow("Animation", right);
-    ImGui::DockBuilderDockWindow("Sprites", right);
-    ImGui::DockBuilderDockWindow("Sounds", right);
-    ImGui::DockBuilderDockWindow("Stage", right);
-    ImGui::DockBuilderDockWindow("Code", bottom);
-    ImGui::DockBuilderDockWindow("Commands", bottom);
-    ImGui::DockBuilderDockWindow("Frame data", bottom);
-    ImGui::DockBuilderDockWindow("Trace", bottom);
-    ImGui::DockBuilderDockWindow("Console", bottom);
-    ImGui::DockBuilderDockWindow("Lab", bottom);
-    ImGui::DockBuilderDockWindow("Analysis", bottom);
-    for (const char *w : kScreenWindows) ImGui::DockBuilderDockWindow(w, screens);
-    ImGui::DockBuilderFinish(dock);
-}
-
-// A screenpack window the saved layout does not know joins the others, or Code's dock.
-void DockWithScreens() {
-    for (const char *name : kScreenWindows)
-        if (ImGuiWindow *w = ImGui::FindWindowByName(name); w && w->DockId) {
-            ImGui::SetNextWindowDockID(w->DockId, ImGuiCond_FirstUseEver);
-            return;
-        }
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
-        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
-}
-
 // Settings live in the ImGui ini, in an [IkemenDebugger][Settings] section.
 void *SettingsOpen(ImGuiContext *, ImGuiSettingsHandler *, const char *) { return &g_settings; }
 
@@ -591,6 +543,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
     } else {
         LabSettingsLine(key, value);
         AnalysisSettingsLine(key, value);
+        LayoutSettingsLine(key, value);
     }
 }
 
@@ -607,6 +560,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     for (const auto &w : g_watches) buf->appendf("WatchExpr=%d|%s\n", w.target, w.code.c_str());
     LabSettingsWrite(buf);
     AnalysisSettingsWrite(buf);
+    LayoutSettingsWrite(buf);
     buf->append("\n");
 }
 
@@ -653,12 +607,7 @@ void App_Poll() {
 
 void App_Frame() {
     App_Poll();
-    ImGuiID dock = ImGui::GetID("IkemenDebuggerDock");
-    if (g_firstRun) {
-        DefaultLayout(dock);
-        g_firstRun = false;
-    }
-    ImGui::DockSpaceOverViewport(dock);
+    LayoutFrame();
     PollFrames();
     GameWindow();
     AnimationWindow();

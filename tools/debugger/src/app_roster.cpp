@@ -300,11 +300,7 @@ static bool PickName(const char *id, bool stages, std::string &picked) {
 void RosterWindow() {
     if (g_rosterPending && ImGui::GetTime() - g_rosterSent > 0.3 && !g_selectDef.empty())
         RosterReload(LoadSource(g_selectDef), true);
-    DockWithScreens();
-    if (!ImGui::Begin("Roster")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Roster")) return;
     if (g_selectDef.empty()) {
         ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game from the Session window.");
         ImGui::End();

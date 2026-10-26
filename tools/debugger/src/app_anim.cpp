@@ -145,10 +145,7 @@ static AnimTarget ScreenAnimTarget(const ScreenAnim &sa) {
 }
 
 void AnimationWindow() {
-    if (!ImGui::Begin("Animation")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Animation")) return;
     // What it shows: the selected player's animation, or that of the screen's element picked last
     static bool onScreen = false;
     static int seenSel = -2, seenSelPicked = 0, seenPicked = 0;

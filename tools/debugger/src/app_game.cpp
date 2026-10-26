@@ -454,9 +454,8 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
 }
 
 void GameWindow() {
-    if (!ImGui::Begin("Game", nullptr, ImGuiWindowFlags_NoNavInputs)) {
+    if (!BeginTool("Game", ImGuiWindowFlags_NoNavInputs)) {
         ForwardKeys(false);
-        ImGui::End();
         return;
     }
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);

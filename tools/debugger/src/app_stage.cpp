@@ -393,10 +393,7 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 }
 
 void StageWindow() {
-    if (!ImGui::Begin("Stage")) {
-        ImGui::End();
-        return;
-    }
+    if (!BeginTool("Stage")) return;
     SourceFile *sfp = StageSource();
     if (!sfp) {
         ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO), in a match."

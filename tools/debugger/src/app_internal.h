@@ -1,5 +1,6 @@
 // What the debugger's files share: its state and the functions of each window's file.
-//   app.cpp          state, commands to the game, what the game sends, layout, settings
+//   app.cpp          state, commands to the game, what the game sends, settings
+//   app_layout.cpp   the menu bar, the windows opened and closed, the layouts
 //   app_game.cpp     Game: the game's frames, the players' boxes over them, keys to the game
 //   app_anim.cpp     Animation: the AIR element of the selected player
 //   app_sprites.cpp  Sprites: the SFF file
@@ -227,9 +228,12 @@ std::string NormPath(const std::string &path);
 std::string ExeDir();
 std::string ReadWholeFile(const std::string &path);
 void HelpMarker(const char *text);
-// The screenpack windows, docked together apart from the debugging ones
-inline constexpr const char *kScreenWindows[] = {"Fight screen", "Motif", "Storyboard", "Roster", "Fonts"};
-void DockWithScreens();
+// The windows: the menu bar, each one opened or closed, the layouts (app_layout.cpp)
+bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden
+void ShowWindow(const char *name); // opened if closed, its tab to the front, without taking the keyboard
+void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
+void LayoutSettingsLine(const std::string &key, const std::string &value);
+void LayoutSettingsWrite(ImGuiTextBuffer *buf);
 
 // Commands
 bool Connected();
