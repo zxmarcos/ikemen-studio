@@ -38,3 +38,11 @@ void Ini_Parse(const std::string &text, IniFile &out);
 bool Ini_SetField(std::string &text, const IniSection &s, const char *key, const std::string &value);
 // Numbers as a field value: "10, -2.5"
 std::string Ini_Floats(const float *v, int count);
+
+// A fight screen's keys can start with a selector the engine resolves for each player or team
+// (resolveLifebarPrefixOperators): "p*" (every p<n>), "p1|p3" (those).
+bool Ini_SelectorMatches(const std::string &sel, const std::string &first); // sel is first ("p1") or selects it
+bool Ini_KeyApplies(const std::string &key, const std::string &prefix);     // "p*.bg0.anim" to the element "p1.bg0."
+// The key of the section giving a key ("p1.pos") its value: itself, else one with a selector
+// ("p1|p3.pos", then "p*.pos"); "" when none.
+std::string Ini_DefKeyFor(const IniSection *s, const std::string &key);

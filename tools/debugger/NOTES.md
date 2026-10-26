@@ -100,9 +100,10 @@ the mod draws the cells' items one by one, each motif animation marked with
 its cell (`debugAnimTag`: a source like its own, with a `tag`, which the
 copy `batchDraw` queues keeps). Then fonts: window Fonts (`editor_font.go`
 records every font loaded; a `.def` font's `[Def]` edited live, its glyphs
-in the Sprites window, a text picked on the game selects its font). What is
-left of phase 3: the operators in fight screen keys (`p*.pos`), TrueType
-texts' rectangles, `.fnt` fonts.
+in the Sprites window, a text picked on the game selects its font). Then the
+fight screen keys written with a selector (`p*.pos`, `p1|p3.pos`), found
+and edited as the def has them. What is left of phase 3: TrueType texts'
+rectangles, `.fnt` fonts.
 
 ## Where things are
 
@@ -412,7 +413,7 @@ Fight screen (`fightscreen.go`, `common.go`, `editor_fight.go`):
   the fight screen's localcoord; one unit is `scale * widthScale` picture
   pixels across, `scale * heightScale` down (`scl` of the draw calls).
   Player-numbered keys can be written with operators (`p*.pos`, `p1|p3.pos`,
-  `resolveLifebarPrefixOperators`); the editor only finds the plain keys.
+  `resolveLifebarPrefixOperators`, for the bases `p` and `team`; when both a plain key and a selector give one, which wins depends on Go's map order). The editor finds them (`Ini_DefKeyFor`: the plain key, else `p1|p3`, else `p*`) and edits the key the def has, which moves every element it selects.
 - Reloading: `loadFightScreen(textFile)` then the runtime parts are carried
   over (as `FightScreen.reload` does, plus the round's display timers and
   fades, win icons, lifebar values, portraits); `reset()` rebuilds the

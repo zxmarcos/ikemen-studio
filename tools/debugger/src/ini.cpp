@@ -158,3 +158,46 @@ std::string Ini_Floats(const float *v, int count) {
     }
     return out;
 }
+
+// A fight screen's key can start with a selector the engine resolves for each player or team
+// (resolveLifebarPrefixOperators): "p*" (every p<n>), "p1|p3" (those). True when sel is first
+// ("p1") or such a selector of it.
+bool Ini_SelectorMatches(const std::string &sel, const std::string &first) {
+    if (sel == first) return true;
+    size_t d = first.find_first_of("0123456789");
+    if (d == 0 || d == std::string::npos) return false;
+    if (sel == first.substr(0, d) + "*") return true;
+    if (sel.find('|') == std::string::npos) return false;
+    for (size_t start = 0;;) {
+        size_t bar = sel.find('|', start);
+        if (sel.substr(start, bar == std::string::npos ? std::string::npos : bar - start) == first) return true;
+        if (bar == std::string::npos) return false;
+        start = bar + 1;
+    }
+}
+
+// Whether a key of the def applies to an element with that prefix ("p*.bg0.anim" to "p1.bg0.").
+bool Ini_KeyApplies(const std::string &key, const std::string &prefix) {
+    size_t kd = key.find('.'), pd = prefix.find('.');
+    if (kd == std::string::npos || pd == std::string::npos) return key.compare(0, prefix.size(), prefix) == 0;
+    return Ini_SelectorMatches(key.substr(0, kd), prefix.substr(0, pd)) &&
+           key.compare(kd, prefix.size() - pd, prefix, pd, std::string::npos) == 0;
+}
+
+// The key of the def that gives a key ("p1.pos") its value: itself, else one with a selector
+// ("p1|p3.pos", then "p*.pos"); "" when the section has none. Fight screens only.
+std::string Ini_DefKeyFor(const IniSection *s, const std::string &key) {
+    if (!s) return "";
+    if (s->Field(key.c_str())) return key;
+    size_t dot = key.find('.');
+    if (dot == std::string::npos) return "";
+    std::string group, wildcard;
+    for (const IniField &f : s->fields) {
+        size_t fd = f.key.find('.');
+        if (fd == std::string::npos || f.key.compare(fd, std::string::npos, key, dot, std::string::npos) != 0) continue;
+        std::string sel = f.key.substr(0, fd);
+        if (sel == key.substr(0, dot) || !Ini_SelectorMatches(sel, key.substr(0, dot))) continue;
+        (sel.back() == '*' ? wildcard : group) = f.key;
+    }
+    return !group.empty() ? group : wildcard;
+}

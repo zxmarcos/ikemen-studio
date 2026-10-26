@@ -91,6 +91,20 @@ static void TestEdits() {
     CHECK(!Ini_SetField(text, stale, "start", "0, 0"));
 }
 
+static void TestSelectors() {
+    CHECK(Ini_SelectorMatches("p1", "p1") && Ini_SelectorMatches("p*", "p1") && Ini_SelectorMatches("p2|p1", "p1"));
+    CHECK(!Ini_SelectorMatches("p*", "team1") && !Ini_SelectorMatches("p2|p3", "p1") && !Ini_SelectorMatches("p*", "pos"));
+    CHECK(Ini_SelectorMatches("team*", "team2") && !Ini_SelectorMatches("p1|p11", "p"));
+    CHECK(Ini_KeyApplies("p*.bg0.anim", "p1.bg0.") && Ini_KeyApplies("p1|p3.bg0.spr", "p3.bg0."));
+    CHECK(!Ini_KeyApplies("p*.bg1.anim", "p1.bg0.") && !Ini_KeyApplies("p2.bg0.anim", "p1.bg0."));
+    IniFile f;
+    Ini_Parse("[Lifebar]\np1.pos = 1,2\np*.bg0.offset = 0,0\np1|p3.front.offset = 1,1\np*.front.offset = 2,2\n", f);
+    const IniSection *s = &f.sections[0];
+    CHECK(Ini_DefKeyFor(s, "p1.pos") == "p1.pos" && Ini_DefKeyFor(s, "p2.pos") == "");
+    CHECK(Ini_DefKeyFor(s, "p2.bg0.offset") == "p*.bg0.offset");
+    CHECK(Ini_DefKeyFor(s, "p3.front.offset") == "p1|p3.front.offset" && Ini_DefKeyFor(s, "p2.front.offset") == "p*.front.offset");
+}
+
 static void TestKfm() {
     std::ifstream in("stages/kfm.def", std::ios::binary);
     if (!in) {
@@ -113,6 +127,7 @@ static void TestKfm() {
 int main() {
     TestParse();
     TestEdits();
+    TestSelectors();
     TestKfm();
     printf(g_failed ? "ini-test: %d failed\n" : "ini-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;

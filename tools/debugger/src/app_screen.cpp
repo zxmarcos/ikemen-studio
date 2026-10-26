@@ -139,11 +139,19 @@ static std::string ItemLabel(const IniFile *ini, const std::string &section, con
     return "[" + (s ? s->name : section) + "]" + p;
 }
 
+// The field that places an element alone: its offset (in a fight screen, maybe written with a
+// selector: p*.bg0.offset).
+static std::string OffsetKey(const IniSection *s, const std::string &prefix, bool motif) {
+    std::string key = prefix + "offset", found = motif ? "" : Ini_DefKeyFor(s, key);
+    return found.empty() ? key : found;
+}
+
 // The field that places an element and the others of its group: the "pos" of its prefix or of a
 // shorter one ("p1.bg0." looks for p1.bg0.pos, p1.pos, then pos in a fight screen), the first
-// the section has. Without any: in a fight screen, that of its first part when it names a player
-// or a team (p1.pos, team1.pos), else pos; in a motif (where pos alone can be something else, as
-// [Select Info]'s grid), the element's own offset.
+// the section has (in a fight screen, maybe written with a selector: p*.pos). Without any: in a
+// fight screen, that of its first part when it names a player or a team (p1.pos, team1.pos),
+// else pos; in a motif (where pos alone can be something else, as [Select Info]'s grid), the
+// element's own offset.
 static std::string GroupPosKey(const IniSection *s, const std::string &prefix, bool motif) {
     std::vector<std::string> tries;
     for (std::string p = prefix; p.size() >= 2;) {
@@ -157,9 +165,11 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
     if (!motif || prefix.empty() || (s && s->lower == "select info" && prefix.compare(0, 5, "cell.") == 0))
         tries.push_back("pos");
     if (s)
-        for (const std::string &k : tries)
-            if (s->Field(k.c_str())) return k;
-    if (motif) return prefix + "offset";
+        for (const std::string &k : tries) {
+            std::string found = motif ? (s->Field(k.c_str()) ? k : "") : Ini_DefKeyFor(s, k);
+            if (!found.empty()) return found;
+        }
+    if (motif) return OffsetKey(s, prefix, motif);
     size_t dot = prefix.find('.');
     std::string first = dot == std::string::npos ? "" : prefix.substr(0, dot);
     bool numbered = !first.empty() && isdigit((unsigned char)first.back());
@@ -244,8 +254,11 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
     auto inDrag = [&](const ScreenDef &d, const FrameFightItem &f) {
         if (drag.d != &d || f.section != dragSection) return false;
         if (dragAlone || dragKey.size() < 3 || dragKey.compare(dragKey.size() - 3, 3, "pos") != 0) return f.prefix == dragPrefix;
-        std::string group = dragKey.substr(0, dragKey.size() - 3); // "p1.pos" -> "p1."
-        return f.prefix.compare(0, group.size(), group) == 0;
+        std::string group = dragKey.substr(0, dragKey.size() - 3); // "p1.pos" -> "p1."; "p*.pos" -> "p*."
+        size_t gd = group.find('.'), pd = f.prefix.find('.');
+        if (gd == std::string::npos || pd == std::string::npos) return f.prefix.compare(0, group.size(), group) == 0;
+        return Ini_SelectorMatches(group.substr(0, gd), f.prefix.substr(0, pd)) &&
+               f.prefix.compare(pd, group.size() - gd, group, gd, std::string::npos) == 0;
     };
 
     // The element under the mouse: the last one drawn there (the one in front), the smallest
@@ -265,12 +278,14 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
             const FrameFightItem &f = d.items[hover.i];
             SourceFile *sf = d.Source();
             const IniFile *ini = sf ? &d.Ini(*sf) : nullptr;
-            std::string pos = f.bg ? "start" : GroupPosKey(ini ? FindSection(*ini, f.section) : nullptr, f.prefix, d.motif);
+            const IniSection *fs = ini ? FindSection(*ini, f.section) : nullptr;
+            std::string pos = f.bg ? "start" : GroupPosKey(fs, f.prefix, d.motif);
+            std::string offset = OffsetKey(fs, f.prefix, d.motif);
             if (f.bg)
                 ImGui::SetTooltip("%s  (%s, a BG)\nDrag: move it (its start)", ItemLabel(ini, f.section, f.prefix).c_str(), d.what);
             else
-                ImGui::SetTooltip("%s  (%s)\nDrag: move it with its group (%s); Alt+drag: it alone (%soffset)",
-                                  ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), f.prefix.c_str());
+                ImGui::SetTooltip("%s  (%s)\nDrag: move it with its group (%s); Alt+drag: it alone (%s)",
+                                  ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), offset.c_str());
             if (clicked) {
                 if (d.section != f.section || d.prefix != f.prefix) d.animAction = -1;
                 SelectElement(d, f.section, f.prefix, f.tag);
@@ -283,7 +298,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                 dragK = f.k;
                 dragAlone = ImGui::GetIO().KeyAlt;
                 dragSection = f.section, dragPrefix = f.prefix;
-                dragKey = dragAlone && !f.bg ? f.prefix + "offset" : pos;
+                dragKey = dragAlone && !f.bg ? offset : pos;
                 dragFrom = m;
                 moved = ImVec2(0, 0);
             }
@@ -505,11 +520,11 @@ static void ScreenWindow(ScreenDef &d) {
     if (IsBgSection(ini, s))
         changed = PositionDrag(d, sf, s, "start", "start", "Where the BG is (as a stage's BG).");
     if (!d.prefix.empty()) {
-        std::string pos = GroupPosKey(&s, d.prefix, d.motif);
-        if (pos != d.prefix + "offset")
+        std::string pos = GroupPosKey(&s, d.prefix, d.motif), offset = OffsetKey(&s, d.prefix, d.motif);
+        if (pos != offset)
             changed = PositionDrag(d, sf, s, pos, "group", "Where the element is, with the others of its group.");
         if (!changed)
-            changed = PositionDrag(d, sf, s, d.prefix + "offset", "offset", "Where the element is, from its group's place.");
+            changed = PositionDrag(d, sf, s, offset, "offset", "Where the element is, from its group's place.");
         ImGui::Checkbox("All the section's fields", &allFields);
     }
     if (!changed && sf.text == before &&
@@ -519,8 +534,11 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::TableSetupColumn("");
         bool filter = !d.prefix.empty() && !allFields;
         for (const IniField &f : s.fields) {
-            if (filter && f.key.compare(0, d.prefix.size(), d.prefix) != 0) continue;
-            if (!changed) changed = FieldRow(sf, s, f, filter ? d.prefix.size() : 0);
+            // The element's keys; in a fight screen, those with a selector for it too (p*.bg0.anim),
+            // shown whole
+            bool own = f.key.compare(0, d.prefix.size(), d.prefix) == 0;
+            if (filter && !own && (d.motif || !Ini_KeyApplies(f.key, d.prefix))) continue;
+            if (!changed) changed = FieldRow(sf, s, f, filter && own ? d.prefix.size() : 0);
         }
         // A new field (with the element's prefix to start with)
         static std::string newKey, newValue, keyFor;
