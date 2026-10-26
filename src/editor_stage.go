@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -28,6 +29,75 @@ type EditorStage struct {
 	ran    []int // the BGCtrls that ran on the stage's last step
 	ranAt  int32 // its stage time
 	ranFor *Stage
+	// The last stage model read, kept for the editor's reloads (a big glTF takes a while)
+	reloading bool
+	model     *Model
+	modelFile string
+	modelTime time.Time
+}
+
+// editorStageModel runs in loadStage for its model: while the editor reloads the stage, a model
+// file read before and not changed since is not read again.
+func editorStageModel(filename string) (*Model, error) {
+	e := &edStage
+	if !debuggerAttached() {
+		return loadglTFModel(filename)
+	}
+	var mtime time.Time
+	if st, err := os.Stat(filename); err == nil {
+		mtime = st.ModTime()
+	}
+	if e.reloading && e.model != nil && e.modelFile == filename && !mtime.IsZero() && mtime.Equal(e.modelTime) {
+		return e.model, nil
+	}
+	m, err := loadglTFModel(filename)
+	if err == nil {
+		e.model, e.modelFile, e.modelTime = m, filename, mtime
+	}
+	return m, err
+}
+
+// editorKeepStage, after a reload, has the new stage go on from where the old one was: its time,
+// its BGs' movement (what their velocity and sin moved them), visibility and animations, its
+// model's animations. Not when BGs were added or removed (which BG was which is not known).
+func editorKeepStage(o, n *Stage) {
+	n.stageTime = o.stageTime
+	n.bga = o.bga
+	if len(o.bg) == len(n.bg) {
+		for i, b := range n.bg {
+			ob := o.bg[i]
+			b.bga.pos, b.bga.sintime, b.bga.sinoffset, b.bga.offset = ob.bga.pos, ob.bga.sintime, ob.bga.sinoffset, ob.bga.offset
+			b.visible, b.enabled = ob.visible, ob.enabled
+			if b.anim != nil && ob.anim != nil && len(b.anim.frames) > 0 && len(ob.anim.frames) > 0 {
+				b.anim.SetAnimElem(ob.anim.curelem+1, ob.anim.curelemtime)
+			}
+		}
+	}
+}
+
+// editorModelPlayback saves where a model's animations are, and puts them back (Stage.reset
+// restarts them, and a kept model is the old stage's).
+func editorModelPlayback(m *Model) func(*Model) {
+	if m == nil {
+		return func(*Model) {}
+	}
+	type state struct {
+		time    float32
+		enabled bool
+		loop    int32
+	}
+	saved := make([]state, len(m.animations))
+	for i, a := range m.animations {
+		saved[i] = state{a.time, a.enabled, a.loop}
+	}
+	return func(n *Model) {
+		if n == nil || len(n.animations) != len(saved) {
+			return
+		}
+		for i, a := range n.animations {
+			a.time, a.enabled, a.loop = saved[i].time, saved[i].enabled, saved[i].loop
+		}
+	}
 }
 
 // editorBgCtrlRan runs in Stage.bgCtrlAction for each BGCtrl that runs.
@@ -45,11 +115,11 @@ var edStage EditorStage
 // The camera frames are drawn with: the game's (zoom effects included), or the editor's free
 // camera, which only changes what is drawn (the characters' screen bounds keep the game's).
 type EditorCamera struct {
-	free          bool
-	x, y, scl     float32 // the free camera: world x, world y, scale
-	drawX, drawY  float32 // as System.draw takes them (y premultiplied by the scale)
-	drawScl       float32
-	drawSet       bool
+	free         bool
+	x, y, scl    float32 // the free camera: world x, world y, scale
+	drawX, drawY float32 // as System.draw takes them (y premultiplied by the scale)
+	drawScl      float32
+	drawSet      bool
 }
 
 var edCam EditorCamera
@@ -250,9 +320,9 @@ func editorMoveStageBg(index int, dx, dy float32) error {
 }
 
 // editorReloadStage loads the stage's def again and puts it in place of the one in use;
-// the match goes on (the camera keeps its position, the stage its time). textFile, when not
-// empty, is read instead of the def, then deleted: unsaved text, written next to it (its files
-// are found from where it is).
+// the match goes on (the camera keeps its position, the stage goes on: editorKeepStage; its
+// SFF and model are not read again). textFile, when not empty, is read instead of the def, then
+// deleted: unsaved text, written next to it (its files are found from where it is).
 func editorReloadStage(textFile string) (err error) {
 	old := sys.stage
 	if old == nil {
@@ -269,14 +339,18 @@ func editorReloadStage(textFile string) (err error) {
 		defer os.Remove(textFile)
 	}
 	// Not as the main stage: that would load its roundXdef stages again
+	modelPlayback := editorModelPlayback(old.model)
+	edStage.reloading = true
+	defer func() { edStage.reloading = false }()
 	ns, err := loadStage(from, false)
 	if err != nil {
 		return err
 	}
 	ns.def = old.def
 	ns.mainstage = old.mainstage
-	ns.stageTime = old.stageTime
 	ns.reset()
+	editorKeepStage(old, ns)
+	modelPlayback(ns.model)
 	// The BGs' sprites are set when the stage steps; a paused game would draw none
 	for _, b := range ns.bg {
 		b.anim.UpdateSprite()

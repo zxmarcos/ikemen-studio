@@ -1486,7 +1486,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 			return nil, err
 		}
 		if err = sec.LoadFile("model", []string{def, "", "data/"}, "", func(filename string) error {
-			model, err := loadglTFModel(filename)
+			model, err := editorStageModel(filename)
 			if err != nil {
 				return err
 			}

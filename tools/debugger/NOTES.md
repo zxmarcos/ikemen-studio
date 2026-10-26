@@ -60,8 +60,12 @@ and dragged on the game; a free camera that only moves what is drawn
 (`debugCamera`), with "Fit the stage"; BGCtrls (which ran on the stage's
 last step, a line in `bgCtrlAction`; their times on a bar; their BGs
 outlined; `debugStageReset`). Every field is already live through the
-reload; a lighter path for BG fields (delta, velocity) only if reloading
-big stages gets slow.
+reload, which is light: a 2D stage reloads in under 1 ms (`loadSff`
+borrows the SFF in use through `findActiveSff`), a 3D stage's glTF model
+is kept while its file does not change (`editorStageModel`: stage3d went
+from ~510 ms to under 1 ms), and the stage goes on from where it was
+(`editorKeepStage`: `Stage.reset` used to set its time back to 0; BGs
+matched by index, so not when BGs were added or removed).
 
 Phase 3, screenpacks: begun with the fight screen (`fight.def`). Window
 Fight screen: its sections and fields (`src/ini.cpp`), its elements
