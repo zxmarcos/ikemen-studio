@@ -34,3 +34,5 @@ build environment and tests.
 - The screen is at 125% scale: test scripts must be DPI aware. Never capture
   the screen (SetForegroundWindow + CopyFromScreen once captured the user's
   browser); the debugger saves its own frames (see `scripts/test_ui.ps1`).
+- Tests that edit a character's or stage's files: back them up first and
+  restore them after (`chars` and `stages` are not in git).

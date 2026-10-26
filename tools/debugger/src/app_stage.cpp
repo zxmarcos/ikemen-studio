@@ -1,9 +1,11 @@
-// Stage: the stage's def file, its sections and fields edited here (Apply saves it and the game
-// loads the stage again, the match going on), and its BGs picked and dragged on the Game window.
+// Stage: the stage's def file, its sections and fields edited here (the game loads the stage
+// again from the text at each change, the match going on; Save writes the file), its BGs and
+// limits picked and dragged on the Game window, and a free camera.
 #include "app_internal.h"
 
 #include <cfloat>
 #include <cmath>
+#include <fstream>
 
 #include "imgui_stdlib.h"
 #include "ini.h"
@@ -12,6 +14,7 @@ namespace app {
 
 std::string g_stageDef;
 std::vector<FrameBg> g_frameBgs;
+StageView g_stageView;
 bool g_stagePick;
 int g_stageBg = -1;
 
@@ -57,15 +60,242 @@ void MoveBg(int index, int dx, int dy) {
     SendRaw(lua);
 }
 
-void ApplyStage(SourceFile &sf) {
-    if (sf.Dirty() && !SaveSource(sf)) return;
-    Exec("local ok, err = debugReloadStage() if not ok then error(err, 0) end return 'stage loaded again'");
+// The game loads the stage again from the text being edited (a file next to the def, which the
+// game deletes once read), or from the def on disk.
+void ReloadStage(SourceFile &sf, bool fromText) {
+    std::string arg;
+    if (fromText) {
+        std::string tmp = sf.path + ".ikdbg";
+        std::ofstream out(GamePath(tmp), std::ios::binary);
+        out << sf.text;
+        if (!out) {
+            Log(LogLine::Error, "Could not write " + GamePath(tmp));
+            return;
+        }
+        arg = LuaQuote(tmp);
+    }
+    Exec("local ok, err = debugReloadStage(" + arg + ") if not ok then error(err, 0) end");
+}
+
+// After an edit of the text: the game shows it at once.
+void StageEdited(SourceFile &sf) {
+    sf.version++;
+    ReloadStage(sf, true);
+}
+
+// The value of a number field, or otherwise.
+float StageNumber(const IniFile &ini, const char *section, const char *key, float otherwise) {
+    for (const IniSection &s : ini.sections)
+        if (s.lower == section) {
+            float v;
+            if (s.Floats(key, &v, 1)) return v;
+        }
+    return otherwise;
+}
+
+bool SetStageNumber(SourceFile &sf, const char *section, const char *key, float value) {
+    const IniFile &ini = StageIni(sf);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == section) return Ini_SetField(sf.text, s, key, Ini_Floats(&value, 1));
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// The stage's limits on the Game window: camera bounds, players' bounds, floor, starting
+// positions; their handles drag the def's fields
+// ---------------------------------------------------------------------------
+
+bool g_stageLimits;
+
+struct LimitHandle {
+    const char *label, *section, *keyX, *keyY; // keyX or keyY null: a line that moves the other way
+    ImVec2 world;
+    ImU32 color;
+};
+
+std::vector<LimitHandle> LimitHandles() {
+    const StageView &v = g_stageView;
+    std::vector<LimitHandle> h;
+    float top = v.lim[3] - v.lim[7], bottom = v.lim[4] + v.lim[8], mid = (top + bottom) / 2;
+    float centre = (v.lim[5] + v.lim[6]) / 2;
+    ImU32 cam = IM_COL32(255, 160, 40, 255), players = IM_COL32(255, 80, 80, 255), start = IM_COL32(80, 220, 255, 255);
+    h.push_back({"boundleft", "camera", "boundleft", nullptr, ImVec2(v.lim[5], mid), cam});
+    h.push_back({"boundright", "camera", "boundright", nullptr, ImVec2(v.lim[6], mid), cam});
+    h.push_back({"boundhigh", "camera", nullptr, "boundhigh", ImVec2(centre, top), cam});
+    h.push_back({"boundlow", "camera", nullptr, "boundlow", ImVec2(centre, bottom), cam});
+    h.push_back({"leftbound", "playerinfo", "leftbound", nullptr, ImVec2(v.lim[9], mid), players});
+    h.push_back({"rightbound", "playerinfo", "rightbound", nullptr, ImVec2(v.lim[10], mid), players});
+    static const char *startKeys[4][3] = {{"P1", "p1startx", "p1starty"}, {"P2", "p2startx", "p2starty"},
+                                          {"P3", "p3startx", "p3starty"}, {"P4", "p4startx", "p4starty"}};
+    for (size_t i = 0; i < v.starts.size() && i < 4; i++)
+        h.push_back({startKeys[i][0], "playerinfo", startKeys[i][1], startKeys[i][2], v.starts[i],
+                     i < 2 ? start : IM_COL32(80, 220, 255, 130)});
+    h.push_back({"cam", "camera", "startx", "starty", ImVec2(v.lim[11], v.lim[12]), IM_COL32(255, 255, 255, 255)});
+    return h;
+}
+
+// Draws the limits; with pick on, a handle can be dragged. True while one has the mouse.
+bool LimitsOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen) {
+    const StageView &v = g_stageView;
+    if (!v.ok || !g_stageLimits) return false;
+    static int drag = -1;
+    static ImVec2 dragFrom, dragWorld;
+    auto screen = [&](ImVec2 w) {
+        ImVec2 p = v.ToPicture(w.x, w.y);
+        return toScreen(p.x, p.y);
+    };
+    std::vector<LimitHandle> handles = LimitHandles();
+    float top = v.lim[3] - v.lim[7], bottom = v.lim[4] + v.lim[8];
+    ImVec2 lo = screen(ImVec2(v.lim[5], top)), hi = screen(ImVec2(v.lim[6], bottom));
+    ImVec2 m = ImGui::GetMousePos();
+    float thick = std::max(1.0f, ImGui::GetFontSize() / 13), reach = ImGui::GetFontSize() * 0.5f;
+    // World units per screen pixel
+    ImVec2 o = screen(ImVec2(0, 0)), u = screen(ImVec2(1, 1));
+    ImVec2 perPixel(1 / std::max(1e-4f, u.x - o.x), 1 / std::max(1e-4f, u.y - o.y));
+
+    // The handle under the mouse
+    int hover = -1;
+    if (g_stagePick && hovered && drag < 0) {
+        float best = reach;
+        for (int i = 0; i < (int)handles.size(); i++) {
+            ImVec2 p = screen(handles[i].world);
+            float d = !handles[i].keyY ? std::fabs(m.x - p.x) : !handles[i].keyX ? std::fabs(m.y - p.y)
+                                                                                : std::hypot(m.x - p.x, m.y - p.y);
+            // Lines reach as far as the stage does
+            bool along = !handles[i].keyY ? m.y >= lo.y && m.y <= hi.y : !handles[i].keyX ? m.x >= lo.x && m.x <= hi.x : true;
+            if (along && d < best) best = d, hover = i;
+        }
+        if (hover >= 0) {
+            ImGui::SetTooltip("%s  ([%s])\nDrag to change it; the game shows it at once.", handles[hover].label,
+                              handles[hover].section);
+            if (clicked) drag = hover, dragFrom = m, dragWorld = handles[hover].world;
+        }
+    }
+    if (drag >= 0 && drag < (int)handles.size()) {
+        LimitHandle &h = handles[drag];
+        ImVec2 d((m.x - dragFrom.x) * perPixel.x, (m.y - dragFrom.y) * perPixel.y);
+        if (!h.keyX) d.x = 0;
+        if (!h.keyY) d.y = 0;
+        h.world = ImVec2(dragWorld.x + d.x, dragWorld.y + d.y);
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            // In the def's units (the stage's localcoord)
+            SourceFile *sf = StageSource();
+            float l = v.lim[0] > 0 ? v.lim[0] : 1;
+            int dx = (int)std::lround(d.x / l), dy = (int)std::lround(d.y / l);
+            if (sf && (dx || dy)) {
+                const IniFile &ini = StageIni(*sf);
+                bool ok = true;
+                if (dx) ok = SetStageNumber(*sf, h.section, h.keyX, StageNumber(ini, h.section, h.keyX, 0) + dx);
+                if (dy && ok) ok = SetStageNumber(*sf, h.section, h.keyY, StageNumber(StageIni(*sf), h.section, h.keyY, 0) + dy);
+                if (ok) StageEdited(*sf);
+                else Log(LogLine::Error, std::string("The def has no [") + h.section + "] section.");
+            }
+            drag = -1;
+        }
+    }
+
+    // The stage as far as the camera goes, the floor, then the handles
+    draw->AddRect(lo, hi, IM_COL32(255, 160, 40, 160), 0, thick);
+    ImVec2 f0 = screen(ImVec2(v.lim[5], 0)), f1 = screen(ImVec2(v.lim[6], 0));
+    draw->AddLine(f0, f1, IM_COL32(80, 230, 100, 200), thick);
+    draw->AddText(ImVec2(f0.x + 4, f0.y + 2), IM_COL32(80, 230, 100, 230), "floor");
+    for (int i = 0; i < (int)handles.size(); i++) {
+        const LimitHandle &h = handles[i];
+        ImVec2 p = screen(h.world);
+        bool hot = i == hover || i == drag;
+        float t = hot ? thick * 2.5f : thick;
+        float tw = ImGui::CalcTextSize(h.label).x;
+        if (!h.keyY) {
+            // The label inside the stage: right of a line on the left half, left of one on the right half
+            draw->AddLine(ImVec2(p.x, lo.y), ImVec2(p.x, hi.y), h.color, t);
+            float x = p.x < (lo.x + hi.x) / 2 ? p.x + 4 : p.x - tw - 4;
+            draw->AddText(ImVec2(x, (h.keyX[0] == 'b' ? lo.y : p.y) + 2), h.color, h.label);
+        } else if (!h.keyX) {
+            draw->AddLine(ImVec2(lo.x, p.y), ImVec2(hi.x, p.y), h.color, t);
+            draw->AddText(ImVec2(p.x - tw / 2, p.y < (lo.y + hi.y) / 2 ? p.y + 2 : p.y - ImGui::GetFontSize() - 2),
+                          h.color, h.label);
+        } else {
+            draw->AddCircle(p, reach * 0.7f, h.color, 0, t);
+            draw->AddLine(ImVec2(p.x, p.y - reach), ImVec2(p.x, p.y + reach), h.color, thick);
+            draw->AddText(ImVec2(p.x - tw / 2, p.y - reach - ImGui::GetFontSize()), h.color, h.label);
+        }
+    }
+    return drag >= 0 || hover >= 0;
+}
+
+// ---------------------------------------------------------------------------
+// The free camera: only what is drawn moves (the game's camera goes on)
+// ---------------------------------------------------------------------------
+
+bool g_freeCam;
+float g_freeX, g_freeY, g_freeScale = 1; // the world point in the middle, at the ground line's height; scale
+
+void SendFreeCamera() {
+    char lua[128];
+    snprintf(lua, sizeof(lua), "debugCamera(true, %g, %g, %g)", g_freeX, g_freeY, g_freeScale);
+    SendRaw(lua);
+}
+
+void SetFreeCamera(bool on) {
+    const StageView &v = g_stageView;
+    if (on && !g_freeCam && v.ok && v.cam[2] > 0) {
+        g_freeX = v.cam[0], g_freeY = v.cam[1] / v.cam[2], g_freeScale = v.cam[2];
+    }
+    g_freeCam = on;
+    if (on) SendFreeCamera();
+    else SendRaw("debugCamera(false)");
+}
+
+// The whole stage (as far as the camera goes) on screen.
+void FitStage() {
+    const StageView &v = g_stageView;
+    if (!v.ok || v.cam[5] <= 0 || v.cam[6] <= 0) return;
+    float gw = v.cam[4], gh = g_frameScr.y / v.cam[6], gl = v.cam[3];
+    float top = v.lim[3] - v.lim[7], bottom = v.lim[4] + v.lim[8];
+    float w = std::max(1.0f, v.lim[6] - v.lim[5]), h = std::max(1.0f, bottom - top);
+    g_freeScale = std::max(0.05f, std::min(gw / w, gh / h) * 0.95f);
+    g_freeX = (v.lim[5] + v.lim[6]) / 2;
+    g_freeY = (top + bottom) / 2 - (gh / 2 - gl) / g_freeScale;
+    g_freeCam = true;
+    SendFreeCamera();
+}
+
+bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt) {
+    const StageView &v = g_stageView;
+    if (!g_freeCam || !v.ok || v.cam[5] <= 0 || v.cam[6] <= 0) return false;
+    ImGuiIO &io = ImGui::GetIO();
+    static bool panning;
+    bool changed = false;
+    if (hovered && io.MouseWheel != 0) {
+        // Keep the world point under the mouse where it is
+        ImVec2 p = pictureAt(io.MousePos);
+        float sx = p.x / v.cam[5] - v.cam[4] / 2, sy = p.y / v.cam[6] - v.cam[3];
+        float wx = sx / g_freeScale + g_freeX, wy = sy / g_freeScale + g_freeY;
+        g_freeScale = std::max(0.05f, std::min(8.0f, g_freeScale * powf(1.15f, io.MouseWheel)));
+        g_freeX = wx - sx / g_freeScale;
+        g_freeY = wy - sy / g_freeScale;
+        changed = true;
+    }
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) panning = true;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) panning = false;
+    if (panning && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) {
+        g_freeX -= io.MouseDelta.x * picturePerScreen.x / v.cam[5] / g_freeScale;
+        g_freeY -= io.MouseDelta.y * picturePerScreen.y / v.cam[6] / g_freeScale;
+        changed = true;
+    }
+    if (changed) SendFreeCamera();
+    return true;
 }
 
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   ImVec2 scale) {
     static int dragBg = -1;
     static ImVec2 rest;
+    // The limits' handles first
+    if (LimitsOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, toScreen)) {
+        hovered = clicked = false;
+        if (g_stagePick) return true;
+    }
     SourceFile *sf = StageSource();
     const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
     auto corners = [&](const FrameBg &b, ImVec2 &lo, ImVec2 &hi) {
@@ -147,19 +377,46 @@ void StageWindow() {
     std::vector<int> bgs = ini.StageBgs();
     float em = ImGui::GetFontSize();
 
-    bool apply = ImGui::Button(sf.Dirty() ? "Save and apply (Ctrl+S)" : "Apply (Ctrl+S)");
+    ImGui::BeginDisabled(!sf.Dirty());
+    bool save = ImGui::Button("Save (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
-        apply = true;
-    if (apply) ApplyStage(sf);
-    ImGui::SetItemTooltip("Saves the def, then the game loads the stage again; the match goes on.");
+        save = sf.Dirty();
+    if (save) SaveSource(sf);
+    ImGui::SetItemTooltip("Writes the def. The game already shows every change.");
     ImGui::SameLine();
-    ImGui::BeginDisabled(!sf.Dirty());
-    if (ImGui::Button("Revert")) ReadSource(sf);
+    if (ImGui::Button("Revert")) {
+        ReadSource(sf);
+        ReloadStage(sf, false);
+    }
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    // On the same line while there is room (the window is often narrow)
+    auto flow = [](const char *label, float extra) {
+        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + extra) ImGui::NewLine();
+    };
+    float box = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
+    flow("Reload", pad);
+    if (ImGui::Button("Reload")) ReloadStage(sf, true);
+    ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
+    flow("Pick on the Game window", box);
     ImGui::Checkbox("Pick on the Game window", &g_stagePick);
-    ImGui::SetItemTooltip("The mouse picks and drags BGs on the Game window instead of the players.");
+    ImGui::SetItemTooltip("The mouse picks and drags BGs, and the limits' handles, on the Game window instead of the players.");
+    flow("Limits", box);
+    ImGui::Checkbox("Limits", &g_stageLimits);
+    ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"
+                          "the starting positions. In pick mode their handles can be dragged.");
+    flow("Free camera", box);
+    bool free = g_freeCam;
+    if (ImGui::Checkbox("Free camera", &free)) SetFreeCamera(free);
+    ImGui::SetItemTooltip("Only what is drawn moves: the wheel zooms, the right button pans (on the Game window).\n"
+                          "The game's camera, and what the players can do, stay as they are.");
+    flow("Fit the stage", pad);
+    if (ImGui::Button("Fit the stage")) FitStage();
+    // The game restarted, or another tool turned it off
+    static int offFrames;
+    offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
+    if (offFrames > 60) g_freeCam = false;
     ImGui::TextDisabled("%s%s  %zu BGs, %zu drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), g_frameBgs.size());
 
     // The selected section: a BG picked on the game, or one clicked in the list
@@ -275,7 +532,7 @@ void StageWindow() {
             newKey.clear(), newValue.clear();
         }
         ImGui::EndTable();
-        if (changed) sf.version++;
+        if (changed) StageEdited(sf);
     }
     ImGui::EndGroup();
     ImGui::End();

@@ -53,8 +53,13 @@ Phase 2, stages: begun. Window Stage (the def's sections and fields,
 `src/ini.cpp`), BGs picked and dragged on the Game window
 (`editor_stage.go`: each BG's rectangle and scale with the frame,
 `debugStageBgMove`), the stage reloaded during a match (`debugReloadStage`).
-Next: a view of the whole stage with the camera's bounds, BGCtrls, the
-camera and player settings shown on the game, then screenpacks (phase 3).
+Then: every edit reloads the stage from the unsaved text (a file next to
+the def that the engine deletes once read; Save writes the def); the
+limits (camera bounds, players' bounds, floor, starting positions) drawn
+and dragged on the game; a free camera that only moves what is drawn
+(`debugCamera`), with "Fit the stage". Next: BGCtrls (which run now, stage
+time), BG fields live without a reload (delta, velocity), then screenpacks
+(phase 3).
 
 ## Where things are
 
@@ -309,8 +314,24 @@ Stages (`stage.go`, `editor_stage.go`):
 - Reloading: `loadStage(def, false)` (true would load the roundXdef stages
   again), then `sys.stage`, `sys.stageList`, `sys.cam.stageCamera`, and the
   stage copies in `roundBackup`/`matchBackup` (F4 and Reset round restore
-  `*sys.stage` from them) are replaced. Save state/Load state still bring
-  the old stage back. 3D model stages are not handled.
+  `*sys.stage` from them) are replaced, and `sys.cam.Reset()` takes the new
+  bounds. Save state/Load state still bring the old stage back. 3D model
+  stages are not handled.
+- A BG's sprite (`anim.spr`) is only set when the stage steps
+  (`Animation.Action`), and `Stage.draw` skips BGs without one: a stage
+  loaded while paused draws nothing until `anim.UpdateSprite()` runs.
+- Camera: `cam.action` gives (x, y, scale) for the game (characters'
+  screen bounds); what is drawn comes from `zoom.computeCamera` (zoom
+  effects) and `System.draw(x, y, scl)`, where `editorCamera` can replace
+  it. `cam.Pos[1]` is premultiplied by the scale. The world (a character's
+  `pos * localscl`) is at picture pixel `((X - x) * Scale + gameWidth/2) *
+  widthScale, (Y * Scale - y + GroundLevel()) * heightScale`; the editor's
+  geometry uses the camera of the frame drawn (it puts it in `sys.cam`
+  while `DebugClsn.Add` runs), so boxes stay right under zoom effects.
+- The stage's values are in its localcoord: world = value * `s.localscl`.
+  How far the camera goes: x from `cam.minLeft` to `cam.maxRight` (screen
+  edges at the zoomout), y from `boundH - above` to `boundLo + below` (above
+  and below the ground line on screen).
 
 Compiler (`compiler.go`):
 

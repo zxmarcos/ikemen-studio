@@ -283,12 +283,28 @@ struct FrameBg {
 };
 extern std::string g_stageDef;
 extern std::vector<FrameBg> g_frameBgs;
+// The camera the frame was drawn with and the stage's limits, in the world (a character's
+// pos * localscl); see editorStageGeometry in editor_stage.go
+struct StageView {
+    bool ok = false, free = false;
+    float cam[7] = {}; // x, y, scale, ground level, gameWidth, widthScale, heightScale
+    float lim[13] = {}; // localscl, boundL, boundR, boundH, boundLo, minLeft, maxRight, above, below,
+                        // leftbound, rightbound, camera startx, starty
+    std::vector<ImVec2> starts; // P1..P4
+    ImVec2 ToPicture(float x, float y) const {
+        return ImVec2(((x - cam[0]) * cam[2] + cam[4] / 2) * cam[5], (y * cam[2] - cam[1] + cam[3]) * cam[6]);
+    }
+};
+extern StageView g_stageView;
 extern bool g_stagePick; // the Game window picks and drags the stage's BGs, not the players
 extern int g_stageBg;    // the BG selected, -1 none
 // On the Game window: the BGs' outlines; in pick mode, hover, click and drag. True when it has
 // the mouse. scale: screen pixels per picture pixel.
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   ImVec2 scale);
+// With the free camera on, the Game window's wheel and right button move it; true then (the
+// window's own zoom and pan stay put). pictureAt: a screen point to the game picture's pixels.
+bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt);
 void StageWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console

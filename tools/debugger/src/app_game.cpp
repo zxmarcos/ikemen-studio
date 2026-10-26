@@ -170,6 +170,13 @@ void PollFrames() {
     }
     const Json &stage = j["stage"];
     g_stageDef = stage["def"].str();
+    StageView &sv = g_stageView;
+    sv.ok = !stage["cam"].isNull();
+    sv.free = stage["free"].truthy();
+    for (size_t n = 0; n < 7; n++) sv.cam[n] = (float)stage["cam"][n].num();
+    for (size_t n = 0; n < 13; n++) sv.lim[n] = (float)stage["lim"][n].num();
+    sv.starts.clear();
+    for (const auto &p : stage["start"].items) sv.starts.push_back(ImVec2((float)p[size_t(0)].num(), (float)p[1].num()));
     g_frameBgs.clear();
     for (const auto &b : stage["bg"].items)
         g_frameBgs.push_back({b[size_t(0)].i(),
@@ -454,9 +461,13 @@ void GameWindow() {
     bool hovered = ImGui::IsItemHovered();
     bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
 
-    // Wheel: zoom on the point under the mouse; right button: pan
+    // Wheel: zoom on the point under the mouse; right button: pan (the stage's free camera, when on)
     ImGuiIO &io = ImGui::GetIO();
-    if (hovered && io.MouseWheel != 0) {
+    bool freeCam = StageCameraInput(hovered, ImVec2(1 / (fx * s), 1 / (fy * s)), [&](ImVec2 q) {
+        return ImVec2(((q.x - p0.x) / s + view.x - g_frameVp.x) / fx, ((q.y - p0.y) / s + view.y - g_frameVp.y) / fy);
+    });
+    if (freeCam) {
+    } else if (hovered && io.MouseWheel != 0) {
         ImVec2 m = io.MousePos;
         ImVec2 at(view.x + (m.x - p0.x) / s, view.y + (m.y - p0.y) / s);
         zoom = std::max(1.0f, std::min(16.0f, zoom * powf(1.25f, io.MouseWheel)));
@@ -466,7 +477,7 @@ void GameWindow() {
         view.x = std::max(0.0f, std::min(view.x, g_texW - viewSize.x));
         view.y = std::max(0.0f, std::min(view.y, g_texH - viewSize.y));
     }
-    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) panning = true;
+    if (hovered && !freeCam && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) panning = true;
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) panning = false;
     if (panning) {
         g_followSel = false;
