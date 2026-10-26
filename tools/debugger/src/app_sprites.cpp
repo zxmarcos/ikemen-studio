@@ -12,6 +12,17 @@ namespace app {
 
 std::map<std::string, SpriteFile> g_spriteFiles; // by path
 
+static SpriteFile *g_spritesShown; // a file another window showed here
+static std::string g_spritesShownWhat;
+static int g_spritesShownN;
+
+void ShowInSprites(SpriteFile &sf, int index, const std::string &what) {
+    g_spritesShown = &sf;
+    g_spritesShownWhat = what;
+    if (index >= 0) sf.sel = index;
+    g_spritesShownN++;
+}
+
 std::string CharFile(int pn, const char *key) {
     auto it = g_charFiles.find(pn);
     if (it == g_charFiles.end()) return "";
@@ -131,6 +142,7 @@ void SaveSprites(SpriteFile &sf) {
     sf.doc.converted = false;
     Log(LogLine::Info, "Saved " + path);
     ScreenSpritesSaved(sf.path);
+    FontSpritesSaved(sf.path);
     for (const auto &kv : g_charFiles) {
         auto f = kv.second.find("sprite");
         if (f == kv.second.end() || f->second.empty() || NormPath(f->second[0]) != NormPath(sf.path)) continue;
@@ -174,15 +186,20 @@ void SpritesWindow() {
         ImGui::End();
         return;
     }
-    // Whose: the selected player's, or the SFF of the screen whose element was picked last
-    static bool onScreen = false;
-    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0;
-    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, onScreen = false;
+    // Whose: the selected player's, the SFF of the screen whose element was picked last, or the
+    // file another window showed here (a font's), whichever came last
+    enum { Player, Screen, Shown };
+    static int mode = Player;
+    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0, seenShown = 0;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, mode = Player;
     bool picked = g_screenPicked != seenPicked, scroll = false;
-    if (picked) seenPicked = g_screenPicked, onScreen = true;
+    if (picked) seenPicked = g_screenPicked, mode = Screen;
+    if (g_spritesShownN != seenShown) seenShown = g_spritesShownN, mode = Shown, scroll = true;
     const char *screen = nullptr;
     int shows = -1; // the sprite the element picked shows
-    SpriteFile *spf = onScreen ? SelectedScreenSprites(&screen, picked ? &shows : nullptr) : nullptr;
+    SpriteFile *spf = mode == Screen ? SelectedScreenSprites(&screen, picked ? &shows : nullptr)
+                    : mode == Shown ? g_spritesShown : nullptr;
+    if (mode == Shown) screen = g_spritesShownWhat.c_str();
     if (spf && shows >= 0) spf->sel = shows, scroll = true;
     if (!spf) {
         const Entity *e = FindEntity(g_selId);

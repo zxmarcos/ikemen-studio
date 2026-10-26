@@ -98,8 +98,11 @@ mod's `ikdbg.reloadRoster`); the select screen's cells picked on the Game
 window select them in Roster, and the other way (P1's cursor goes there):
 the mod draws the cells' items one by one, each motif animation marked with
 its cell (`debugAnimTag`: a source like its own, with a `tag`, which the
-copy `batchDraw` queues keeps). What is left of phase 3: fonts, the
-operators in fight screen keys (`p*.pos`), TrueType texts' rectangles.
+copy `batchDraw` queues keeps). Then fonts: window Fonts (`editor_font.go`
+records every font loaded; a `.def` font's `[Def]` edited live, its glyphs
+in the Sprites window, a text picked on the game selects its font). What is
+left of phase 3: the operators in fight screen keys (`p*.pos`), TrueType
+texts' rectangles, `.fnt` fonts.
 
 ## Where things are
 
@@ -473,6 +476,16 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   end, the characters chosen are in use: the mod wraps `start.f_selectMode`,
   `f_selectScreen` and `f_selectChallenger` (each runs its own loop) to know
   where the game is, and refuses a reload there.
+- Fonts (`font.go`): `loadFnt(file, height)` reads a `.fnt` (MUGEN 1.0: a
+  PCX and a char map in one file) or a `.def` (`[Def]`: type bitmap or
+  truetype, size, spacing, offset, colors, banktype, file); a bitmap font's
+  glyphs are its SFF's sprites (group 0, or every group with `banktype =
+  sprite`; the number is the character's code), drawn by their axis from
+  the pen, which moves by the sprite's width plus `spacing`; a space or a
+  missing character moves by `size`. Texts hold the `*Fnt` (`TextSprite.fnt`,
+  the fight screen's `fnt[]`), so reloading copies the new font into the old
+  one. A `.fnt` with several palettes queues `sys.mainThreadTask`s while
+  loading: not reloaded from a command (it runs on the main thread).
 - A BGDef just loaded has no velocity nor sin (`bga` is zero): the
   `backGround.reset()` that a screen starting runs (`BGDef.Reset`, through
   the scripts) gives them from the def. A reload therefore resets the new

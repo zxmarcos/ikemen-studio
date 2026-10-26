@@ -85,6 +85,8 @@ static bool IsBgSection(const IniFile &ini, const IniSection &s) {
 
 void ReadScreenGeometry(const Json &j) {
     g_selectDef = j["select"].str();
+    g_fontFiles.clear();
+    for (const auto &f : j["fonts"].items) g_fontFiles.push_back(f.str());
     for (ScreenDef *d : g_screens) {
         const Json &g = j[d->geometry];
         d->def = g["def"].str();
@@ -98,6 +100,7 @@ void ReadScreenGeometry(const Json &j) {
             item.action = f[9].isNull() ? -1 : f[9].i();
             item.elem = f[10].i();
             item.tag = f[11].i();
+            item.font = f[12].i();
             if (int bg = f[8].i(); bg > 0) {
                 // The bg-th section named after the BGDef ("titlebg"), as loadBGDef reads them
                 if (!sf && !(sf = d->Source())) continue;
@@ -274,6 +277,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                 // A select screen's cell: the Roster window shows it
                 bool cell = &d == &g_motif && f.section == "select info" && f.tag > 0;
                 if (cell) g_rosterPick = f.tag;
+                if (f.font > 0 && f.font <= (int)g_fontFiles.size()) g_fontPicked = g_fontFiles[f.font - 1]; // the Fonts window follows
                 ShowTab(cell ? "Roster" : d.window);
                 drag = f.k.x > 0 && f.k.y > 0 ? hover : Hit();
                 dragK = f.k;

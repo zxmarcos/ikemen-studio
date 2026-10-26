@@ -255,6 +255,8 @@ struct SpriteFile {
 
 SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal = ""); // read the first time
 SpriteFile *SpritesOf(int pn);
+// The Sprites window shows that file (at that sprite, -1 as it was); what: as "the font x.def"
+void ShowInSprites(SpriteFile &sf, int index, const std::string &what);
 GLuint SpriteTexture(SpriteFile &sf, int index, int pal = -1);
 ImTextureRef TexRef(GLuint tex);
 void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
@@ -331,6 +333,7 @@ struct FrameFightItem {
     int action = -1;     // the action of the def it shows ([Begin Action]), -1: none
     int elem = 0;        // and its element, 1-based
     int tag = 0;         // where the scripts drew it (a select screen's cell: 1 + its grid index), 0 none
+    int font = 0;        // a text's font: 1 + its index in g_fontFiles, 0 none
 };
 // The element selected in the Fight screen, Motif or Storyboard window, when it shows an action
 // of its def: for the Animation window, which edits the action in the def's text
@@ -362,6 +365,12 @@ extern std::string g_selectDef; // as the game names it (frame geometry), "" whe
 extern int g_rosterPick;        // a select screen's cell picked on the Game window: 1 + its grid index
 void OutlineSelectCell(int tag); // the Game window outlines that cell (1 + its grid index)
 void RosterWindow();
+
+// Fonts: the font files loaded (frame geometry), their defs and glyphs
+extern std::vector<std::string> g_fontFiles; // as the game names them; a text's font is 1 + an index
+extern std::string g_fontPicked;             // the font of the text picked last on the Game window
+void FontSpritesSaved(const std::string &path); // the fonts using that SFF are read again
+void FontsWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void SessionWindow();
