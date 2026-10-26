@@ -291,6 +291,13 @@ struct StageView {
     float lim[13] = {}; // localscl, boundL, boundR, boundH, boundLo, minLeft, maxRight, above, below,
                         // leftbound, rightbound, camera startx, starty
     std::vector<ImVec2> starts; // P1..P4
+    int time = 0, ranAt = 0;    // the stage's time; the stage time of its last step
+    struct Ctrl {
+        bool ran;               // on that step
+        int start, end, loop;   // time = start, end, looptime (as the engine has them)
+        std::vector<int> bgs;   // the BGs it acts on
+    };
+    std::vector<Ctrl> ctrls;    // the def's [BGCtrl ...] sections, in order
     ImVec2 ToPicture(float x, float y) const {
         return ImVec2(((x - cam[0]) * cam[2] + cam[4] / 2) * cam[5], (y * cam[2] - cam[1] + cam[3]) * cam[6]);
     }

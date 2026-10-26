@@ -1850,6 +1850,7 @@ func (s *Stage) bgCtrlAction() {
 		}
 
 		if active {
+			editorBgCtrlRan(s, i)
 			s.runBgCtrl(bgc)
 		}
 	}

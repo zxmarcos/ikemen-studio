@@ -22,9 +22,22 @@ type editorStageBg struct {
 }
 
 type EditorStage struct {
-	stage *Stage
-	cur   *backGround // the BG being drawn
-	drawn []editorStageBg
+	stage  *Stage
+	cur    *backGround // the BG being drawn
+	drawn  []editorStageBg
+	ran    []int // the BGCtrls that ran on the stage's last step
+	ranAt  int32 // its stage time
+	ranFor *Stage
+}
+
+// editorBgCtrlRan runs in Stage.bgCtrlAction for each BGCtrl that runs.
+func editorBgCtrlRan(s *Stage, index int) {
+	e := &edStage
+	if e.ranFor != s || e.ranAt != s.stageTime {
+		e.ranFor, e.ranAt = s, s.stageTime
+		e.ran = e.ran[:0]
+	}
+	e.ran = append(e.ran, index)
 }
 
 var edStage EditorStage
@@ -126,6 +139,9 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 //	    maxRight, above and below the ground on screen, players' leftbound, rightbound, camera
 //	    startx, starty],
 //	  "start": [[x, y], ...] P1, P2, P3, P4 starting positions in the world,
+//	  "time": the stage's time, "ranAt": the stage time of its last step,
+//	  "bgc": [[ran on that step, starttime, endtime, looptime, [BG indices]], ...] the BGCtrls
+//	    (the def's [BGCtrl ...] sections, in order),
 //	  "bg": [[index, x, y, w, h, kx, ky, layer, tiled], ...]}
 func editorStageGeometry(b []byte) []byte {
 	s := sys.stage
@@ -162,6 +178,43 @@ func editorStageGeometry(b []byte) []byte {
 			b = append(b, ',')
 		}
 		nums(float32(s.p[i].startx)*l, float32(s.p[i].starty)*l)
+	}
+	b = append(b, `],"time":`...)
+	b = strconv.AppendInt(b, int64(s.stageTime), 10)
+	b = append(b, `,"ranAt":`...)
+	b = strconv.AppendInt(b, int64(edStage.ranAt), 10)
+	b = append(b, `,"bgc":[`...)
+	for i := range s.bgc {
+		bgc := &s.bgc[i]
+		if i > 0 {
+			b = append(b, ',')
+		}
+		ran := false
+		if edStage.ranFor == s {
+			for _, r := range edStage.ran {
+				ran = ran || r == i
+			}
+		}
+		b = append(b, '[')
+		b = strconv.AppendBool(b, ran)
+		for _, v := range [...]int32{bgc.starttime, bgc.endtime, bgc.looptime} {
+			b = append(b, ',')
+			b = strconv.AppendInt(b, int64(v), 10)
+		}
+		b = append(b, ",["...)
+		n := 0
+		for _, target := range bgc.bg {
+			for j, bg := range s.bg {
+				if bg == target {
+					if n > 0 {
+						b = append(b, ',')
+					}
+					b = strconv.AppendInt(b, int64(j), 10)
+					n++
+				}
+			}
+		}
+		b = append(b, "]]"...)
 	}
 	b = append(b, `],"bg":[`...)
 	if s == edStage.stage {
@@ -299,6 +352,17 @@ func editorStageFunctions(l *lua.LState) {
 			textFile = strArg(l, 1)
 		}
 		return result(l, editorReloadStage(textFile))
+	})
+	luaRegister(l, "debugStageReset", func(l *lua.LState) int {
+		/*Start the stage over: its time back to 0, its BGs where they start (BGCtrls run again).
+		@function debugStageReset*/
+		if s := sys.stage; s != nil && debuggerAttached() {
+			s.reset()
+			for _, b := range s.bg {
+				b.anim.UpdateSprite()
+			}
+		}
+		return 0
 	})
 	luaRegister(l, "debugCamera", func(l *lua.LState) int {
 		/*The editor's free camera, which only changes what is drawn (the game's camera goes on).

@@ -24,8 +24,10 @@ struct IniSection {
 
 struct IniFile {
     std::vector<IniSection> sections;
-    // A stage's BGs, in the engine's order: sections whose name's first word is "bg"
-    std::vector<int> StageBgs() const; // indices into sections
+    // A stage's BGs, in the engine's order: sections whose name's first word is "bg" (indices
+    // into sections); its BGCtrls: first word "bgctrl" or "bgctrl3d"
+    std::vector<int> StageBgs() const;
+    std::vector<int> StageBgCtrls() const;
 };
 
 void Ini_Parse(const std::string &text, IniFile &out);

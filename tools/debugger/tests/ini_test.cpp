@@ -34,7 +34,11 @@ static const char *kDef =
     "[BGCtrlDef x]\n"
     "looptime = 10\n"
     "[bg floor]\n"
-    "type = parallax\n";
+    "type = parallax\n"
+    "[BGCtrl move]\n"
+    "type = posadd\n"
+    "[BG]\n"
+    "type = normal\n";
 
 static std::string Line(const std::string &text, int n) {
     std::istringstream in(text);
@@ -46,8 +50,8 @@ static std::string Line(const std::string &text, int n) {
 static void TestParse() {
     IniFile f;
     Ini_Parse(kDef, f);
-    CHECK(f.sections.size() == 5);
-    if (f.sections.size() != 5) return;
+    CHECK(f.sections.size() == 7);
+    if (f.sections.size() != 7) return;
     const IniSection &info = f.sections[0], &sky = f.sections[2];
     CHECK(info.name == "Info" && info.line == 2 && info.last == 3 && info.Field("name")->value == "\"Test\"");
     CHECK(sky.name == "BG Sky" && sky.lower == "bg sky" && sky.line == 8 && sky.last == 11);
@@ -56,7 +60,9 @@ static void TestParse() {
     CHECK(sky.Floats("delta", v, 2) && v[0] == 0.5f && v[1] == 1);
     CHECK(!sky.Floats("velocity", v, 2) && v[0] == 0);
     std::vector<int> bgs = f.StageBgs();
-    CHECK(bgs.size() == 2 && bgs[0] == 2 && bgs[1] == 4); // not BGdef, not BGCtrlDef
+    CHECK(bgs.size() == 3 && bgs[0] == 2 && bgs[1] == 4 && bgs[2] == 6); // not BGdef, not BGCtrlDef; [BG] is one
+    std::vector<int> ctrls = f.StageBgCtrls();
+    CHECK(ctrls.size() == 1 && ctrls[0] == 5);
 }
 
 static void TestEdits() {
@@ -78,6 +84,7 @@ static void TestEdits() {
     CHECK(Ini_SetField(text, f.sections[4], "layerno", "1"));
     Ini_Parse(text, f);
     CHECK(f.sections[4].Field("layerno") && f.sections[4].Field("layerno")->line == 17);
+    CHECK(f.sections[5].line == 18);
     // A section that moved is not edited
     IniSection stale = f.sections[2];
     stale.line = 3;

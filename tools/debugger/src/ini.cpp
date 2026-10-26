@@ -72,12 +72,21 @@ bool IniSection::Floats(const char *key, float *out, int count) const {
     return true;
 }
 
+// The first word of a section's name, as Ikemen's SectionName cuts it (at the first space).
+static std::string FirstWord(const std::string &lower) { return lower.substr(0, lower.find(' ')); }
+
 std::vector<int> IniFile::StageBgs() const {
     std::vector<int> out;
+    for (size_t i = 0; i < sections.size(); i++)
+        if (FirstWord(sections[i].lower) == "bg") out.push_back((int)i);
+    return out;
+}
+
+std::vector<int> IniFile::StageBgCtrls() const {
+    std::vector<int> out;
     for (size_t i = 0; i < sections.size(); i++) {
-        const std::string &n = sections[i].lower;
-        size_t space = n.find_first_of(" \t");
-        if (space != std::string::npos && n.compare(0, space, "bg") == 0) out.push_back((int)i);
+        std::string w = FirstWord(sections[i].lower);
+        if (w == "bgctrl" || w == "bgctrl3d") out.push_back((int)i);
     }
     return out;
 }

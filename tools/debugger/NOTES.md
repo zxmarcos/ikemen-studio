@@ -57,9 +57,10 @@ Then: every edit reloads the stage from the unsaved text (a file next to
 the def that the engine deletes once read; Save writes the def); the
 limits (camera bounds, players' bounds, floor, starting positions) drawn
 and dragged on the game; a free camera that only moves what is drawn
-(`debugCamera`), with "Fit the stage". Next: BGCtrls (which run now, stage
-time), BG fields live without a reload (delta, velocity), then screenpacks
-(phase 3).
+(`debugCamera`), with "Fit the stage"; BGCtrls (which ran on the stage's
+last step, a line in `bgCtrlAction`; their times on a bar; their BGs
+outlined; `debugStageReset`). Next: BG fields live without a reload
+(delta, velocity), then screenpacks (phase 3).
 
 ## Where things are
 
@@ -302,7 +303,12 @@ Triggers (`script_debugger.go`, `bytecode.go`):
 Stages (`stage.go`, `editor_stage.go`):
 
 - `s.bg` follows the def's sections whose name's first word is "bg", in
-  order (`[BGdef]`, `[BGCtrlDef x]` are not BGs). A positionlinked BG's
+  order (`[BGdef]`, `[BGCtrlDef x]` are not BGs; `[BG]` alone is one):
+  `SectionName` cuts at the first space and lowercases. `s.bgc` follows the
+  "bgctrl" and "bgctrl3d" sections; a BGCtrl without ctrlid acts on its
+  BGCtrlDef's BGs, or all of them. `bgCtrlAction` runs before `tick`
+  increments `stageTime`; a BGCtrl runs when `stageTime >= start` and,
+  with a looptime, `(stageTime - start) % looptime <= end - start`. A positionlinked BG's
   `start` is added to its link's at load; `debugStageBgMove` moves the BGs
   linked to the one moved, as a reload would.
 - `backGround.drawTransformed` ends in `Animation.Draw(x, y, xcs, ycs, ...)`

@@ -177,6 +177,14 @@ void PollFrames() {
     for (size_t n = 0; n < 13; n++) sv.lim[n] = (float)stage["lim"][n].num();
     sv.starts.clear();
     for (const auto &p : stage["start"].items) sv.starts.push_back(ImVec2((float)p[size_t(0)].num(), (float)p[1].num()));
+    sv.time = stage["time"].i();
+    sv.ranAt = stage["ranAt"].i();
+    sv.ctrls.clear();
+    for (const auto &c : stage["bgc"].items) {
+        StageView::Ctrl ctrl{c[size_t(0)].truthy(), c[1].i(), c[2].i(), c[3].i(), {}};
+        for (const auto &b : c[4].items) ctrl.bgs.push_back(b.i());
+        sv.ctrls.push_back(std::move(ctrl));
+    }
     g_frameBgs.clear();
     for (const auto &b : stage["bg"].items)
         g_frameBgs.push_back({b[size_t(0)].i(),

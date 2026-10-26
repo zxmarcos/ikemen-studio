@@ -17,6 +17,34 @@ std::vector<FrameBg> g_frameBgs;
 StageView g_stageView;
 bool g_stagePick;
 int g_stageBg = -1;
+std::vector<int> g_stageMarked; // BGs outlined on the game: those of the BGCtrl selected
+
+// The first word of a section's name, as Ikemen cuts it.
+std::string FirstWord(const IniSection &s) { return s.lower.substr(0, s.lower.find(' ')); }
+
+// A BGCtrl's time on a bar: when it runs (time = start, end, looptime) and where the stage is.
+void CtrlTimeline(const StageView::Ctrl &c, int time, const char *label) {
+    float w = ImGui::GetContentRegionAvail().x, h = ImGui::GetTextLineHeightWithSpacing();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(w, h));
+    bool hovered = ImGui::IsItemHovered();
+    int span = c.loop > 0 ? c.loop : std::max(std::max(c.end + 1, time + 1), 60);
+    int at = time;
+    if (c.loop > 0) at = time >= c.start ? (c.start + (time - c.start) % c.loop) % c.loop : time % c.loop;
+    auto x = [&](int t) { return p.x + w * std::min(std::max(t, 0), span) / span; };
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(p, ImVec2(p.x + w, p.y + h - 2), IM_COL32(40, 40, 46, 255));
+    if (c.start >= 0) {
+        int end = c.loop > 0 ? std::min(c.end, c.loop - 1) : c.end;
+        draw->AddRectFilled(ImVec2(x(c.start), p.y), ImVec2(std::max(x(end + 1), x(c.start) + 2), p.y + h - 2),
+                            c.ran ? IM_COL32(60, 170, 80, 255) : IM_COL32(70, 90, 130, 255));
+    }
+    draw->AddLine(ImVec2(x(at), p.y - 1), ImVec2(x(at), p.y + h - 1), IM_COL32(255, 220, 60, 255), 2);
+    draw->AddText(ImVec2(p.x + 4, p.y), IM_COL32_WHITE, label);
+    if (hovered)
+        ImGui::SetTooltip("time = %d, %d, %d (start, end, looptime)\n%s at stage time %d", c.start, c.end, c.loop,
+                          c.ran ? "Ran" : "Did not run", time);
+}
 
 // The def parsed, again when its text changes.
 const IniFile &StageIni(const SourceFile &sf) {
@@ -344,15 +372,19 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
         }
     }
 
-    // Outlines: the selected BG always, the others while picking
+    // Outlines: the selected BG and those of the selected BGCtrl always, the others while picking
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
     for (int i = 0; i < (int)g_frameBgs.size(); i++) {
         const FrameBg &b = g_frameBgs[i];
         bool sel = b.index == g_stageBg, hot = i == hover;
-        if (!sel && !hot && !g_stagePick) continue;
+        bool marked = std::find(g_stageMarked.begin(), g_stageMarked.end(), b.index) != g_stageMarked.end();
+        if (!sel && !hot && !marked && !g_stagePick) continue;
         ImVec2 lo, hi;
         corners(b, lo, hi);
-        ImU32 col = sel ? IM_COL32(255, 220, 60, 255) : hot ? IM_COL32(255, 255, 255, 230) : IM_COL32(200, 200, 255, 70);
+        ImU32 col = sel ? IM_COL32(255, 220, 60, 255) : hot ? IM_COL32(255, 255, 255, 230)
+                  : marked ? IM_COL32(80, 220, 255, 220) : IM_COL32(200, 200, 255, 70);
+        if (marked && !sel && ini && g_stageMarked.size() <= 3) // more would only pile up
+            draw->AddText(ImVec2(lo.x + 4, lo.y + 2), col, BgLabel(*ini, b.index).c_str());
         if (hot) draw->AddRectFilled(lo, hi, IM_COL32(255, 255, 255, 30));
         draw->AddRect(lo, hi, col, 0, sel || hot ? thick * 2 : thick);
         if (sel && ini) draw->AddText(ImVec2(lo.x + 4, lo.y + 2), col, BgLabel(*ini, b.index).c_str());
@@ -418,6 +450,18 @@ void StageWindow() {
     offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
     if (offFrames > 60) g_freeCam = false;
     ImGui::TextDisabled("%s%s  %zu BGs, %zu drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), g_frameBgs.size());
+    std::vector<int> ctrls = ini.StageBgCtrls();
+    const StageView &sv = g_stageView;
+    int running = 0;
+    for (const auto &c : sv.ctrls) running += c.ran;
+    ImGui::Text("stage time %d", sv.time);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu BGCtrls, %d running", ctrls.size(), running);
+    flow("Restart the stage", pad);
+    if (ImGui::SmallButton("Restart the stage")) SendRaw("debugStageReset()");
+    ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
+    if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
+        ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
 
     // The selected section: a BG picked on the game, or one clicked in the list
     static int selSection = -1;
@@ -433,21 +477,25 @@ void StageWindow() {
         for (int i = 0; i < (int)ini.sections.size(); i++) {
             const IniSection &s = ini.sections[i];
             if (s.lower.compare(0, 13, "begin action ") == 0) continue; // the stage's animations
-            int bg = -1;
+            int bg = -1, ctrl = -1;
             for (int n = 0; n < (int)bgs.size(); n++)
                 if (bgs[n] == i) bg = n;
+            for (int n = 0; n < (int)ctrls.size(); n++)
+                if (ctrls[n] == i) ctrl = n;
             bool drawn = false;
             for (const auto &f : g_frameBgs) drawn = drawn || f.index == bg;
-            std::string label = (bg >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
-            if (bg >= 0 && !drawn) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            bool ran = ctrl >= 0 && ctrl < (int)sv.ctrls.size() && sv.ctrls[ctrl].ran;
+            std::string label = (bg >= 0 || ctrl >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
+            bool dim = bg >= 0 && !drawn;
+            if (dim) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            if (ran) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.45f, 1));
             if (ImGui::Selectable(label.c_str(), selSection == i)) {
                 selSection = i;
                 g_stageBg = selBg = bg;
             }
-            if (bg >= 0 && !drawn) {
-                ImGui::PopStyleColor();
-                ImGui::SetItemTooltip("Not drawn in the last frame (off screen, invisible or disabled).");
-            }
+            if (dim || ran) ImGui::PopStyleColor();
+            if (dim) ImGui::SetItemTooltip("Not drawn in the last frame (off screen, invisible or disabled).");
+            if (ran) ImGui::SetItemTooltip("Ran on the stage's last step.");
         }
     }
     ImGui::EndChild();
@@ -470,6 +518,32 @@ void StageWindow() {
         g_codeHold = true;
     }
     std::string before = sf.text;
+    // A BGCtrl, or a BGCtrlDef and the BGCtrls after it: when they run, and their BGs on the game
+    g_stageMarked.clear();
+    std::string word = FirstWord(s);
+    if (word == "bgctrl" || word == "bgctrl3d" || word == "bgctrldef") {
+        for (int n = 0; n < (int)ctrls.size() && n < (int)sv.ctrls.size(); n++) {
+            bool mine = ctrls[n] == selSection;
+            if (word == "bgctrldef" && ctrls[n] > selSection) {
+                mine = true;
+                for (int k = selSection + 1; k < ctrls[n]; k++) mine = mine && FirstWord(ini.sections[k]) != "bgctrldef";
+            }
+            if (!mine) continue;
+            const IniSection &cs = ini.sections[ctrls[n]];
+            const IniField *type = cs.Field("type");
+            std::string label = (word == "bgctrldef" ? cs.name + "  " : "") + (type ? type->value : std::string("?"));
+            ImGui::PushID(n);
+            CtrlTimeline(sv.ctrls[n], sv.ranAt, label.c_str());
+            if (word == "bgctrldef" && ImGui::IsItemClicked()) selSection = ctrls[n];
+            ImGui::PopID();
+            for (int b : sv.ctrls[n].bgs) g_stageMarked.push_back(b);
+        }
+        if (word != "bgctrldef") {
+            std::string on;
+            for (int b : g_stageMarked) on += (on.empty() ? "" : ", ") + BgLabel(ini, b);
+            ImGui::TextWrapped("acts on %s", on.empty() ? "no BG" : on.c_str());
+        }
+    }
     if (selBg >= 0) {
         // start, dragged here or on the game: the game follows at once
         float start[2];
