@@ -2,7 +2,7 @@
 
 Handoff notes for whoever continues this work (people or Claude sessions).
 [README.md](README.md) describes the debugger for its users.
-Last updated 2026-10-25.
+Last updated 2026-10-26.
 
 ## Where it is going
 
@@ -59,8 +59,19 @@ limits (camera bounds, players' bounds, floor, starting positions) drawn
 and dragged on the game; a free camera that only moves what is drawn
 (`debugCamera`), with "Fit the stage"; BGCtrls (which ran on the stage's
 last step, a line in `bgCtrlAction`; their times on a bar; their BGs
-outlined; `debugStageReset`). Next: BG fields live without a reload
-(delta, velocity), then screenpacks (phase 3).
+outlined; `debugStageReset`). Every field is already live through the
+reload; a lighter path for BG fields (delta, velocity) only if reloading
+big stages gets slow.
+
+Phase 3, screenpacks: begun with the fight screen (`fight.def`). Window
+Fight screen: its sections and fields (`src/ini.cpp`), its elements
+(`editor_fight.go`: each `Layout` drawn, with the section and prefix it was
+read from) picked on the Game window and dragged (the group's `pos`, or the
+element's `offset` with Alt), each edit reloading the fight screen from the
+text in about 20 ms, the round going on. Next: `system.def` (title, select,
+versus screens: `motif.go`, which does not use `Layout`), storyboards, the
+fight screen's animations (its `[Begin Action]` sections) in the Animation
+window.
 
 ## Where things are
 
@@ -83,6 +94,7 @@ src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
 src/editor_reload.go     reloading a character during a match (debugReloadChar)
 src/editor_input.go      engine side: players' input buffers and commands under way, for the geometry
 src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a BG, reloading the stage
+src/editor_fight.go      engine side: where the fight screen's elements were drawn, reloading the fight screen
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -95,6 +107,7 @@ tools/debugger/
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_stage.cpp      Stage window, and the BGs on the Game window
+  src/app_fight.cpp      Fight screen window, and its elements on the Game window
   src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -103,7 +116,7 @@ tools/debugger/
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits
-  src/ini.cpp/.h         def files (stages): sections and fields with their lines; text edits
+  src/ini.cpp/.h         def files (stages, fight screens): sections and fields with their lines; text edits
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air_test, sff_test, snd_test, cmd_test, ini_test .cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
@@ -164,6 +177,9 @@ helper "Bag"):
   `tests/ini_test.cpp`, def parsing and edits, stages/kfm.def's 7 BGs).
 - Stage tests: `test_ui.ps1 -Fresh -IniExtra "Stage=kfm"` (later lines of the
   ini win). Back up the def first and restore it after a test that saves.
+  The same for `data/fight.def` (`data` is not in git either). The Fight
+  screen window is the last tab of the right dock (`click:1515,11` with the
+  default layout); Game's "Fight screen" checkbox is at `click:940,155`.
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -338,6 +354,32 @@ Stages (`stage.go`, `editor_stage.go`):
   How far the camera goes: x from `cam.minLeft` to `cam.maxRight` (screen
   edges at the zoomout), y from `boundH - above` to `boundLo + below` (above
   and below the ground line on screen).
+
+Fight screen (`fightscreen.go`, `common.go`, `editor_fight.go`):
+
+- `loadFightScreen` reads each section (`SectionName`: "[Simul Lifebar]" is
+  name "simul " plus subname "Lifebar") into elements; every drawable one
+  holds a `Layout` (read by `Layout.Read(pre, is)`, e.g. pre "p1.bg0.") and
+  draws through `Layout.DrawAnim`, `DrawText` or `DrawFaceSprite`, which end
+  in `RenderSprite` (sprites, sprite fonts' glyphs, portraits; TrueType text
+  does not, so it has no rectangle yet). `Layout` is copied by value
+  everywhere, hence the source index kept in the struct (`Layout.editor`).
+  Sections missing from the def are appended empty ("[tag lifebar]"...) and
+  their layouts point at the single/simul ones.
+- Positions: an element's pos (`p1.pos`, `pos`...) plus its `offset`, in
+  the fight screen's localcoord; one unit is `scale * widthScale` picture
+  pixels across, `scale * heightScale` down (`scl` of the draw calls).
+  Player-numbered keys can be written with operators (`p*.pos`, `p1|p3.pos`,
+  `resolveLifebarPrefixOperators`); the editor only finds the plain keys.
+- Reloading: `loadFightScreen(textFile)` then the runtime parts are carried
+  over (as `FightScreen.reload` does, plus the round's display timers and
+  fades, win icons, lifebar values, portraits); `reset()` rebuilds the
+  layouts in use and the team order. Reading `fight.snd` (6 MB), `fight.sff`
+  and 9 fonts takes ~220 ms; borrowing them (`findActiveSff`,
+  `findActiveSnd`, `loadFnt`) leaves ~20 ms. Animations get no sprite until
+  they step: after a reload, every `Animation` of the new fight screen is
+  found by reflection and `UpdateSprite` runs (a paused game draws them).
+- Save state/Load state bring the old fight screen back (`FightScreen.Clone`).
 
 Compiler (`compiler.go`):
 

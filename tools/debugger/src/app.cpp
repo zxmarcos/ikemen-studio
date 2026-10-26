@@ -457,6 +457,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Sprites", right);
     ImGui::DockBuilderDockWindow("Sounds", right);
     ImGui::DockBuilderDockWindow("Stage", right);
+    ImGui::DockBuilderDockWindow("Fight screen", right);
     ImGui::DockBuilderDockWindow("Code", bottom);
     ImGui::DockBuilderDockWindow("Commands", bottom);
     ImGui::DockBuilderDockWindow("Frame data", bottom);
@@ -560,6 +561,7 @@ void App_Frame() {
     SoundsWindow();
     CommandsWindow();
     StageWindow();
+    FightWindow();
     SessionWindow();
     ControlWindow();
     PlayersWindow();
