@@ -681,3 +681,12 @@ cells) keep their colours; grid borders and labels drawn on a window use the
 theme's text colour. The code editor has a dark and a light palette
 (`Editor_SetLight`).
 
+The Console runs state controllers too (`editor_console.go`,
+`debugRunController`): the text goes under a statedef of its own
+(-2000000000), with a `[State]` header and `trigger1 = 1` added to CNS when
+missing, and is compiled by `stateCompileCNS` or `stateCompileZSS` of a new
+compiler set for the player (its constants, command list and ZSS
+functions); it runs once with `c.minus = -2`, untraced, and a ChangeState
+in it is taken at once (`stateChange2`; the new state's code runs on the
+next tick). Error lines are the text's.
+

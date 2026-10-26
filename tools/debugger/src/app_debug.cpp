@@ -1,6 +1,7 @@
 // The debugger's windows: Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Watch,
 // Console.
 #include "app_internal.h"
+#include "cns.h"
 
 #include <cfloat>
 #include <cstdarg>
@@ -877,17 +878,105 @@ void WatchWindow() {
     ImGui::End();
 }
 
+namespace {
+
+// Controllers typed in the Console, as CNS and as ZSS
+struct ConsoleExample {
+    const char *name, *cns, *zss;
+};
+const ConsoleExample kConsoleExamples[] = {
+    {"ChangeState", "type = ChangeState\nvalue = 0\nctrl = 1", "ChangeState{value: 0; ctrl: 1}"},
+    {"VelSet", "type = VelSet\nx = 4\ny = -6", "VelSet{x: 4; y: -6}"},
+    {"PosSet", "type = PosSet\nx = 0\ny = 0", "PosSet{x: 0; y: 0}"},
+    {"VarSet", "type = VarSet\nv = 0\nvalue = 1", "VarSet{v: 0; value: 1}"},
+    {"LifeAdd", "type = LifeAdd\nvalue = -100", "LifeAdd{value: -100}"},
+    {"PowerAdd", "type = PowerAdd\nvalue = 1000", "PowerAdd{value: 1000}"},
+    {"PalFX", "type = PalFX\ntime = 30\nadd = 120, 0, 0\nsinadd = 80, 0, 0, 10",
+     "PalFX{time: 30; add: 120, 0, 0; sinadd: 80, 0, 0, 10}"},
+    {"Explod", "type = Explod\nanim = F2\npos = 0, -70\npostype = p1\nsprpriority = 3",
+     "Explod{anim: F2; pos: 0, -70; postype: p1; sprpriority: 3}"},
+    {"EnvShake", "type = EnvShake\ntime = 20\nampl = -8\nfreq = 120", "EnvShake{time: 20; ampl: -8; freq: 120}"},
+    {"HitDef",
+     "type = HitDef\nattr = S, NA\ndamage = 30\nanimtype = Light\nguardflag = MA\nhitflag = MAF\npausetime = 8, "
+     "8\nsparkno = 0\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4",
+     "HitDef{attr: S, NA; damage: 30; animtype: Light; guardflag: MA; hitflag: MAF; pausetime: 8, 8; sparkno: 0;\n"
+     "  ground.type: High; ground.slidetime: 10; ground.hittime: 12; ground.velocity: -4}"},
+};
+
+// Is the character's first state file ZSS (false when not known yet)
+bool CharIsZss(int pn) {
+    auto it = g_charFiles.find(pn);
+    if (it == g_charFiles.end()) return false;
+    auto st = it->second.find("st");
+    return st != it->second.end() && !st->second.empty() && Cns_IsZss(st->second[0]);
+}
+
+// The Console's controllers: the text, run on the selected player with Ctrl+Enter. True when run.
+bool ControllerInput(float em) {
+    static std::string text;
+    static bool zss = false;
+    static int zssPn = -1; // the player zss was last set for: a new one sets it from its files
+    const Entity *e = FindEntity(g_selId);
+    if (e && e->pn != zssPn && g_charFiles.count(e->pn)) {
+        zss = CharIsZss(e->pn);
+        zssPn = e->pn;
+    }
+    if (e) ImGui::Text("On %s%s (%d) %s", e->helper ? "a helper of P" : "P", std::to_string(e->pn).c_str(), e->id,
+                       e->name.c_str());
+    else ImGui::TextDisabled("Pick a player (Players) to run them on.");
+    ImGui::SameLine();
+    ImGui::Checkbox("ZSS", &zss);
+    ImGui::SetItemTooltip("The text is ZSS statements (set from the character's first state file).");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 9);
+    if (ImGui::BeginCombo("##examples", "Examples")) {
+        for (const auto &x : kConsoleExamples)
+            if (ImGui::Selectable(x.name)) text = zss ? x.zss : x.cns;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    bool run = false;
+    ImGui::BeginDisabled(!e || !Connected() || text.empty());
+    run = ImGui::Button("Run (Ctrl+Enter)");
+    ImGui::EndDisabled();
+    HelpMarker("State controllers compiled with the character's compiler and run once on the selected player, "
+               "as a negative state runs: a ChangeState is taken at once. CNS: a [State] header and "
+               "\"trigger1 = 1\" are added when missing; several [State] blocks run in order. ZSS: statements, "
+               "with if, let and the character's functions.");
+    bool enter = ImGui::InputTextMultiline("##ctrl", &text, ImVec2(-FLT_MIN, -FLT_MIN),
+                                           ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AllowTabInput);
+    if (enter) ImGui::SetKeyboardFocusHere(-1); // Ctrl+Enter leaves the text: back to it
+    if ((run || enter) && e && Connected() && !text.empty()) {
+        Log(LogLine::Info, std::string(zss ? "> (ZSS) " : "> (CNS) ") + text);
+        ExecOn(e->id, "local ok, err = debugRunController(" + LuaQuote(text) + (zss ? ", true" : ", false") +
+                          "); if not ok then error(err, 0) end; return 'ran; now in state ' .. stateNo()");
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
 void ConsoleWindow() {
     if (!BeginTool("Console")) return;
     static bool showEngine = true;
+    static int mode = 0; // Lua, controllers
     static std::string input;
     static std::vector<std::string> history;
     static int historyPos = -1;
+    static bool toBottom = false; // something was run: the log goes to its end
+    float em = ImGui::GetFontSize();
 
     ImGui::Checkbox("Engine log", &showEngine);
     ImGui::SameLine();
     if (ImGui::SmallButton("Clear")) g_log.clear();
-    float footer = ImGui::GetFrameHeightWithSpacing();
+    ImGui::SameLine(0, em * 1.5f);
+    ImGui::RadioButton("Lua", &mode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Controllers", &mode, 1);
+    ImGui::SetItemTooltip("CNS or ZSS state controllers, run on the selected player.");
+    float footer = mode == 0 ? ImGui::GetFrameHeightWithSpacing()
+                             : ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeight() * 6;
     if (ImGui::BeginChild("log", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
         for (const auto &l : g_log) {
             if (l.kind == LogLine::Engine && !showEngine) continue;
@@ -898,11 +987,16 @@ void ConsoleWindow() {
                                                        : ImGui::GetStyleColorVec4(ImGuiCol_Text);
             ImGui::TextColored(color, "%s", l.text.c_str());
         }
-        if (g_logScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetFontSize() * 4)
+        if (toBottom || (g_logScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetFontSize() * 4))
             ImGui::SetScrollHereY(1.0f);
-        g_logScroll = false;
+        g_logScroll = toBottom = false;
     }
     ImGui::EndChild();
+    if (mode == 1) {
+        toBottom = ControllerInput(em);
+        ImGui::End();
+        return;
+    }
 
     auto callback = [](ImGuiInputTextCallbackData *data) -> int {
         if (data->EventFlag != ImGuiInputTextFlags_CallbackHistory || history.empty()) return 0;
@@ -921,6 +1015,7 @@ void ConsoleWindow() {
         if (!input.empty()) {
             Log(LogLine::Info, "> " + input);
             Exec(input);
+            toBottom = true;
             history.push_back(input);
             historyPos = -1;
             input.clear();
