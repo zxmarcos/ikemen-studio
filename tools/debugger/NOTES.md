@@ -42,8 +42,12 @@ sprite in Animation); sounds (done: window Sounds, `src/snd.cpp`,
 `debugReloadSounds`; played by the app with PlaySound); commands (done:
 window Commands; `editor_input.go` sends each player's input buffer and the
 commands under way with the frame geometry; `src/cmd.cpp` parses and edits
-the [Command] sections, applied with the Code window's reload). Next: live
-trigger values in Code, then stages (phase 2).
+the [Command] sections, applied with the Code window's reload); live
+trigger values in Code (done: `OC_debugrec` appended to each trigger under
+`-ikdbg` records its value where the engine evaluates it, for the one
+character `debugTriggerWatch` names; no second evaluation, so triggers with
+side effects (`:=`) are safe), "ran N ticks ago", breakpoints on entering a
+state. Next: stages (phase 2).
 
 ## Where things are
 
@@ -262,6 +266,21 @@ Input and commands (`input.go`):
 - A ";" in a `command =` value starts a comment (kfm's SmashKFUpper has a
   second motion after one that is never read).
 
+Triggers (`script_debugger.go`, `bytecode.go`):
+
+- CNS: each `triggerall`/`triggerN` line is compiled alone (`fullExpression`)
+  then joined with jumps, so `OC_debugrec <source>` appended to each piece
+  records exactly the lines evaluated (short-circuits leave the rest
+  unrecorded). Constant triggers (`trigger1 = 1`) are folded away and get
+  no source. ZSS: the `if` expression of `subBlock`; its line is the one of
+  the `{` (`c.i` after `readSentence`).
+- `gameTime()` (`matchTime`) moves in `globalTick`, after the characters:
+  the values are stamped with `gameTime()` when the frame is shared, which
+  is the tick the mod reports for that frame. Snapshots (stdout) and frames
+  (shared memory) can be a tick apart, so the app keeps values per tick.
+- Sources of type "trigger" outnumber controllers (ryu_pots: 11321 sources
+  in all); the mod still sends them all within the first seconds.
+
 Compiler (`compiler.go`):
 
 - CNS: the `[State]` header line is `c.i + 1` (0-based index); for a
@@ -284,8 +303,7 @@ Limits today:
 - Not in netplay or rollback matches (no stdin bridge there).
 - Frames are shared with the OpenGL renderers only (not Vulkan).
 
-Cheap next steps (mod and app only): breakpoints on entering a state; an
-"only if" condition on controller breakpoints; a Watch list of Lua
+Cheap next steps (mod and app only): an "only if" condition on controller breakpoints; a Watch list of Lua
 expressions; a Hits log with `getHitVar` (damage, hit time, fall); move
 frame data (startup/active/recovery/advantage) computed from the snapshot
 history; explods and projectiles lists via `explodVar`/`projVar`.

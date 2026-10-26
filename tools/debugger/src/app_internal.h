@@ -57,10 +57,11 @@ struct FrameRow {
     std::vector<int> ran; // source indices of the controllers that ran on this tick
 };
 
-// Where a state controller or statedef comes from (patched Ikemen only).
+// Where a state controller, statedef or trigger comes from (patched Ikemen only).
 struct Source {
-    std::string file, type;
+    std::string file, type; // the controller's type, "statedef" or "trigger" (a CNS trigger line, a ZSS if)
     int line = 0, state = 0;
+    bool Controller() const { return type != "statedef" && type != "trigger"; }
 };
 
 // A breakpoint on the controller(s) at a line of a file.
@@ -205,6 +206,12 @@ void Launch();
 // ---------------------------------------------------------------------------
 
 // Game
+// Trigger values of one entity (debugTriggerWatch), by tick, as the frames bring them (the
+// snapshots, by another way, may be a tick behind or ahead): sorted (source index, value) pairs,
+// value 0 false, 1 true, 2 undefined
+extern int g_trigId; // -1: none
+extern std::map<int, std::vector<std::pair<int, int>>> g_trigTicks;
+int TriggerValue(int tick, int src); // -1: not evaluated (or not known) on that tick
 void PollFrames();
 void GameWindow();
 

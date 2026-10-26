@@ -717,6 +717,7 @@ struct CodeEditor {
     /* Editor_SetDecorations: marks left of the line numbers, line backgrounds */
     std::function<int(int)> mark_of;
     std::function<ImU32(int)> background_of;
+    std::function<std::string(int, ImU32 *)> note_of;
     int mark_clicked = 0;
 
     size_t hover_word = kNone;  /* the word under the mouse, and for how long */
@@ -2048,6 +2049,21 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
         }
         Highlight(d + lb, le - lb, ed->colors);
         DrawLine(dl, m, d + lb, d + le, ed->colors.data(), ImVec2(origin.x, y), text_min.x, area.Max.x);
+        if (ed->note_of) {
+            ImU32 note_col = 0;
+            std::string note = ed->note_of(l + 1, &note_col);
+            if (!note.empty()) {
+                /* after the text, or over its end at the right edge (on a background) when it is too long */
+                float w = ImGui::CalcTextSize(note.c_str()).x;
+                float x = origin.x + TextX(m, d + lb, d + le, d + le) + m.space * 2.0f;
+                float right = area.Max.x - ImGui::GetStyle().ScrollbarSize - m.space - w;
+                if (x > right && right > text_min.x) {
+                    x = right;
+                    dl->AddRectFilled(ImVec2(x - m.space, y), ImVec2(x + w + m.space, y + m.line_h), IM_COL32(28, 28, 32, 235));
+                }
+                dl->AddText(ImVec2(x, y + floorf((m.line_h - m.size) * 0.5f)), note_col, note.c_str());
+            }
+        }
     }
 
     /* the cursor */
@@ -2212,6 +2228,11 @@ void Editor_SetDecorations(CodeEditor *ed, std::function<int(int)> mark_of, std:
 {
     ed->mark_of = std::move(mark_of);
     ed->background_of = std::move(background_of);
+}
+
+void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> note_of)
+{
+    ed->note_of = std::move(note_of);
 }
 
 int Editor_MarkClicked(const CodeEditor *ed)

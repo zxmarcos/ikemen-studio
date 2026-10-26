@@ -63,8 +63,8 @@ Windows:
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
-| Code | An editor of the character's files (syntax colours, completion and documentation of triggers and controllers, undo). **Save and apply** (Ctrl+S) saves the changed files and the game loads and compiles the characters again without restarting the match (engine side); when that fails, the game keeps the previous version and the line of the error turns red. Engine side, also: the controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick); in the file, lines that ran are green, a dot marks each controller, clicking the dot sets a breakpoint. Follows the selected entity's state, but not while you type |
-| Breakpoints | A Lua condition over Ikemen's triggers, for anyone, one player, or one player and its helpers; the game pauses on the tick the condition becomes true. Engine side: breakpoints on state controllers, the game pauses after a tick in which one ran. Both are saved with the settings |
+| Code | An editor of the character's files (syntax colours, completion and documentation of triggers and controllers, undo). **Save and apply** (Ctrl+S) saves the changed files and the game loads and compiles the characters again without restarting the match (engine side); when that fails, the game keeps the previous version and the line of the error turns red. Engine side, also: the controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick); in the file, lines that ran are green, a dot marks each controller, clicking the dot sets a breakpoint. After each trigger line (CNS `trigger`/`triggerall`, ZSS `if`) its value on the tick shown: true, false, undefined, or nothing when it was not evaluated (a trigger after one that held, a state that did not run); after a controller that did not run, how many ticks ago it last did. The dot of a statedef sets a breakpoint on entering that state. Follows the selected entity's state, but not while you type |
+| Breakpoints | A Lua condition over Ikemen's triggers, for anyone, one player, or one player and its helpers; the game pauses on the tick the condition becomes true (what is already true when it is set waits until it turns false and true again). Entering a state is the condition `stateNo() == n`, set from the Code window. Engine side: breakpoints on state controllers, the game pauses after a tick in which one ran. Both are saved with the settings |
 | Console | Any Lua, run in the game (`player(2); return stateNo(), var(3)`). Ikemen's own log is shown too |
 
 Settings, breakpoints and the window layout are saved in
@@ -77,7 +77,9 @@ Settings, breakpoints and the window layout are saved in
 - `compiler.go` records where each state controller and statedef comes from
   (CNS and ZSS) and wraps the controller (`CharCompiler.traced`), only under
   `-ikdbg`;
-- `bytecode.go` keeps the statedef's source in `StateBytecode.src`;
+- `bytecode.go` keeps the statedef's source in `StateBytecode.src`, and runs
+  `OC_debugrec`, which the compiler appends to each trigger under `-ikdbg`
+  so that its value is recorded where it is evaluated;
 - `script.go` registers the new Lua functions.
 
 `editor_frame.go` shares each frame drawn with the debugger, with the boxes of
@@ -89,7 +91,7 @@ and the commands under way to that geometry.
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`, `debugReloadSprites(pn)` and `debugReloadSounds(pn)` (the SFF or SND read again, for every player using it).
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`, `debugReloadSprites(pn)` and `debugReloadSounds(pn)` (the SFF or SND read again, for every player using it), `debugTriggerWatch(id)` (record that character's trigger values; they go out with the frames).
 
 ## How it works
 

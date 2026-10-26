@@ -140,19 +140,68 @@ void OnReload(const Json &j) {
     if (!applied.empty()) Log(LogLine::Result, "Applied to " + applied + ".");
 }
 
-// Lines of each file that hold a state controller (rebuilt when sources arrive).
-const std::map<int, std::vector<int>> &ControllerLines(const std::string &file) {
-    static std::map<std::string, std::map<int, std::vector<int>>> byFile;
+enum SourceKind { kControllers, kTriggers, kStatedefs };
+
+// The sources at each line of a file, of one kind (rebuilt when sources arrive).
+const std::map<int, std::vector<int>> &SourceLines(const std::string &file, SourceKind kind) {
+    static std::map<std::string, std::map<int, std::vector<int>>> byFile[3];
     static size_t built;
     if (built != g_sources.size()) {
-        byFile.clear();
-        for (size_t i = 1; i < g_sources.size(); i++)
-            if (g_sources[i].type != "statedef") byFile[NormPath(g_sources[i].file)][g_sources[i].line].push_back((int)i);
+        for (auto &m : byFile) m.clear();
+        for (size_t i = 1; i < g_sources.size(); i++) {
+            const Source &s = g_sources[i];
+            SourceKind k = s.type == "statedef" ? kStatedefs : s.type == "trigger" ? kTriggers : kControllers;
+            byFile[k][NormPath(s.file)][s.line].push_back((int)i);
+        }
         built = g_sources.size();
     }
     static const std::map<int, std::vector<int>> none;
-    auto it = byFile.find(NormPath(file));
-    return it == byFile.end() ? none : it->second;
+    auto it = byFile[kind].find(NormPath(file));
+    return it == byFile[kind].end() ? none : it->second;
+}
+
+// The tick each controller line of a file last ran at, up to tick upTo, in an entity's history.
+const std::map<int, int> &LastRan(int id, const std::string &normFile, int upTo) {
+    static std::map<int, int> last;
+    static std::string forFile;
+    static int forId = -1, forTick = -1;
+    static size_t forSources;
+    if (id == forId && upTo == forTick && normFile == forFile && g_sources.size() == forSources) return last;
+    forId = id, forTick = upTo, forFile = normFile, forSources = g_sources.size();
+    last.clear();
+    auto hist = g_history.find(id);
+    if (hist == g_history.end()) return last;
+    for (const FrameRow &r : hist->second) {
+        if (r.t > upTo) break;
+        for (int src : r.ran)
+            if (src > 0 && src < (int)g_sources.size() && NormPath(g_sources[src].file) == normFile)
+                last[g_sources[src].line] = r.t;
+    }
+    return last;
+}
+
+std::string StateBreakCond(int state) { return "stateNo() == " + std::to_string(state); }
+
+Breakpoint *FindStateBreak(int state) {
+    std::string cond = StateBreakCond(state);
+    for (auto &b : g_breakpoints)
+        if (b.cond == cond) return &b;
+    return nullptr;
+}
+
+// A condition breakpoint on entering a state (of player pn and its helpers; 0: anyone), or off again.
+void ToggleStateBreak(int state, int pn) {
+    for (size_t n = 0; n < g_breakpoints.size(); n++)
+        if (g_breakpoints[n].cond == StateBreakCond(state)) {
+            if (Connected()) SendRaw("ikdbg.brkDel(" + std::to_string(g_breakpoints[n].bid) + ")");
+            g_breakpoints.erase(g_breakpoints.begin() + n);
+            return;
+        }
+    Breakpoint b{g_nextBid++, pn > 0 ? -pn : 0, StateBreakCond(state)};
+    g_breakpoints.push_back(b);
+    if (Connected()) SendBreakpoint(b);
+    Log(LogLine::Info, "Breakpoint on entering state " + std::to_string(state) +
+                           (pn > 0 ? " (P" + std::to_string(pn) + " and its helpers)" : ""));
 }
 
 void JumpTo(int src) {
@@ -163,6 +212,12 @@ void JumpTo(int src) {
 
 void CodeWindow() {
     WatchSources();
+    // The game records the trigger values of the selected entity
+    static std::pair<unsigned long, int> trigWatch;
+    if (Connected() && g_canTrace && trigWatch != std::make_pair((unsigned long)g_bridge.Pid(), g_selId)) {
+        trigWatch = {(unsigned long)g_bridge.Pid(), g_selId};
+        SendRaw("if debugTriggerWatch then debugTriggerWatch(" + std::to_string(g_selId) + ") end");
+    }
     if (!ImGui::Begin("Code")) {
         ImGui::End();
         return;
@@ -310,23 +365,64 @@ void CodeWindow() {
         dbg::Editor_GotoLine(sf.ed, g_codeScrollTo, false, false);
         g_codeScrollTo = 0;
     }
-    const auto &ctrlLines = ControllerLines(sf.path);
+    const auto &ctrlLines = SourceLines(sf.path, kControllers);
+    const auto &trigLines = SourceLines(sf.path, kTriggers);
+    const auto &defLines = SourceLines(sf.path, kStatedefs);
     std::string file = sf.path;
     int codeLine = g_codeLine;
+    // The state number of a statedef line (-1: none, or a negative state, which is not entered)
+    auto stateAt = [&](int line) {
+        auto it = defLines.find(line);
+        if (it == defLines.end()) return -1;
+        return g_sources[it->second[0]].state;
+    };
     dbg::Editor_SetDecorations(
         sf.ed,
         [&](int line) {
             if (CtrlBreak *bp = FindCtrlBreak(file, line)) return bp->enabled ? 2 : 3;
-            return ctrlLines.count(line) ? 1 : 0;
+            if (ctrlLines.count(line)) return 1;
+            int state = stateAt(line);
+            if (state < 0) return 0;
+            Breakpoint *bp = FindStateBreak(state);
+            return bp ? (bp->enabled ? 2 : 3) : 1;
         },
         [&](int line) -> ImU32 {
             if (line == codeLine) return IM_COL32(200, 170, 40, 70);
             return ranLines.count(line) ? IM_COL32(40, 130, 60, 110) : 0;
         });
+    // After each line: a trigger's value on the tick shown, and when a controller that did not run
+    // on that tick last ran
+    bool trigShown = row && g_trigId == g_selId;
+    const std::map<int, int> *lastRan = row ? &LastRan(g_selId, NormPath(file), row->t) : nullptr;
+    int rowTick = row ? row->t : 0;
+    dbg::Editor_SetNotes(sf.ed, [&](int line, ImU32 *color) -> std::string {
+        if (trigShown) {
+            auto it = trigLines.find(line);
+            if (it != trigLines.end())
+                for (int src : it->second) {
+                    int v = TriggerValue(rowTick, src);
+                    if (v < 0) continue;
+                    *color = v == 1 ? IM_COL32(90, 220, 110, 255) : v == 0 ? IM_COL32(240, 100, 100, 255)
+                                                                           : IM_COL32(160, 160, 160, 255);
+                    return v == 1 ? "true" : v == 0 ? "false" : "undefined";
+                }
+        }
+        if (lastRan && ctrlLines.count(line) && !ranLines.count(line)) {
+            auto it = lastRan->find(line);
+            if (it != lastRan->end()) {
+                *color = IM_COL32(140, 140, 150, 255);
+                int ago = rowTick - it->second;
+                return "ran " + std::to_string(ago) + (ago == 1 ? " tick ago" : " ticks ago");
+            }
+        }
+        return "";
+    });
     if (sf.missing) ImGui::TextDisabled("Could not read %s", sf.path.c_str());
     dbg::Editor_Draw(sf.ed, "file", sf.text, sf.version);
-    if (int line = dbg::Editor_MarkClicked(sf.ed))
+    if (int line = dbg::Editor_MarkClicked(sf.ed)) {
         if (ctrlLines.count(line)) ToggleCtrlBreak(file, line);
+        else if (stateAt(line) >= 0) ToggleStateBreak(stateAt(line), e ? e->pn : 0);
+    }
     ImGui::End();
 }
 

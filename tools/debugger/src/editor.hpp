@@ -39,6 +39,8 @@ bool Editor_IsFocused(const CodeEditor *ed);
  */
 void Editor_SetDecorations(CodeEditor *ed, std::function<int(int)> mark_of, std::function<ImU32(int)> background_of);
 int  Editor_MarkClicked(const CodeEditor *ed);
+/* A note after the end of each line in view (1-based): its text ("" for none), and *color. */
+void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> note_of);
 
 } // namespace dbg
 

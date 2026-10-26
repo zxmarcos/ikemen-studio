@@ -27,7 +27,7 @@ if getCommandLineValue('-ikdbg') == nil then
 end
 
 ikdbg = {
-	version = '0.3',
+	version = '0.4',
 	caps = {
 		trace = debugTraceEnable ~= nil and debugTraceEnable(true),
 		set = setVar ~= nil,
@@ -205,7 +205,9 @@ function ikdbg.brkSet(bid, pn, cond, enabled)
 		return
 	end
 	local old = ikdbg.breakpoints[bid]
-	ikdbg.breakpoints[bid] = {pn = pn, cond = cond, fn = fn, enabled = enabled ~= false, hits = old and old.hits or 0}
+	-- primed after its first check: what is already true then does not stop the game
+	ikdbg.breakpoints[bid] = {pn = pn, cond = cond, fn = fn, enabled = enabled ~= false, hits = old and old.hits or 0,
+		primed = false}
 end
 
 function ikdbg.brkDel(bid)
@@ -271,16 +273,20 @@ end
 --; Frame hook
 --;-----------------------------------------------------------
 -- A breakpoint stops the game when its condition becomes true for an entity
--- (not on every tick it stays true, or Continue would stop again at once).
+-- (not on every tick it stays true, or Continue would stop again at once), and
+-- not for what was already true when it was set (a state breakpoint set while
+-- in that state waits for the state to be entered again).
 local function checkBreakpoints(ents)
 	local hit = nil
 	for bid, b in pairs(ikdbg.breakpoints) do
 		b.last = b.last or {}
+		local primed = b.primed
+		b.primed = true
 		for _, e in ipairs(ents) do
 			if b.enabled and (b.pn == 0 or (e.pn == b.pn and not e.h) or (b.pn < 0 and e.pn == -b.pn)) then
 				local ok, r = ikdbg.with(e.id, b.fn)
 				local now = ok and r ~= nil and r ~= false and r ~= 0
-				if now and not b.last[e.id] and hit == nil then
+				if now and primed and not b.last[e.id] and hit == nil then
 					b.hits = b.hits + 1
 					hit = {bid = bid, t = gameTime(), id = e.id, pn = e.pn, st = e.st, cond = b.cond}
 				end

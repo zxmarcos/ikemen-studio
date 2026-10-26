@@ -127,7 +127,7 @@ std::string NormPath(const std::string &path) {
 }
 
 bool SourceAt(const Source &s, const std::string &normFile, int line) {
-    return s.line == line && s.type != "statedef" && NormPath(s.file) == normFile;
+    return s.line == line && s.Controller() && NormPath(s.file) == normFile;
 }
 
 // Tells the game which source indices a controller breakpoint covers.

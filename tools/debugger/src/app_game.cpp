@@ -2,11 +2,15 @@
 #include "app_internal.h"
 
 #include <cfloat>
+#include <climits>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 
 namespace app {
+
+int g_trigId = -1;
+std::map<int, std::vector<std::pair<int, int>>> g_trigTicks;
 
 void ReadBoxes(const Json &j, std::vector<ImVec4> &out) {
     for (size_t n = 0; n + 3 < j.size(); n += 4)
@@ -164,6 +168,27 @@ void PollFrames() {
             f.cmds.push_back({c[size_t(0)].str(), c[1].i(), c[2].i(), c[3].i(), c[4].i(), c[5].i(), c[6].i()});
         g_frameEnts.push_back(std::move(f));
     }
+    const Json &tg = j["tg"];
+    int id = tg.isNull() ? -1 : tg["id"].i();
+    if (id != g_trigId) g_trigTicks.clear();
+    g_trigId = id;
+    const auto &vals = tg["v"].items;
+    if (id >= 0 && !vals.empty()) {
+        auto &tick = g_trigTicks[tg["t"].i()];
+        tick.clear();
+        for (size_t n = 0; n + 1 < vals.size(); n += 2) tick.push_back({vals[n].i(), vals[n + 1].i()});
+        // By source; one evaluated twice in a tick (loops) keeps its values in order, the last one counts
+        std::stable_sort(tick.begin(), tick.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        while (g_trigTicks.size() > kHistory) g_trigTicks.erase(g_trigTicks.begin());
+    }
+}
+
+int TriggerValue(int tick, int src) {
+    auto it = g_trigTicks.find(tick);
+    if (it == g_trigTicks.end()) return -1;
+    auto v = std::upper_bound(it->second.begin(), it->second.end(), src,
+                              [](int s, const std::pair<int, int> &p) { return s < p.first; });
+    return v == it->second.begin() || (v - 1)->first != src ? -1 : (v - 1)->second;
 }
 
 // The selected player's boxes on the Game window, with handles: drag an edge, a corner or the
