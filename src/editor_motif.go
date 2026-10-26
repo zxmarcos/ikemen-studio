@@ -147,6 +147,7 @@ func editorDefSource(file int8, path string) int32 {
 	}
 	return editorSourceIndex(editorFightSource{file, strings.ReplaceAll(section, "_", " "), prefix, 0})
 }
+
 // editorPristine remembers an object as the def made it, the first time it is seen.
 func editorPristine(p, value interface{}) {
 	m := &edMotif
@@ -351,6 +352,7 @@ func editorMotifFunctions(l *lua.LState) {
 		@function debugReloadMotif
 		@tparam[opt] string textFile Read this file instead, then delete it (unsaved text, in the def's folder).
 		@tparam[opt] boolean keep Keep the SFF, SND and fonts in use (after an edit of the text only).
+		@tparam[opt] boolean sprites Read the SFF again all the same (after an edit of the SFF).
 		@treturn boolean ok
 		@treturn string error*/
 		var err error
@@ -361,7 +363,9 @@ func editorMotifFunctions(l *lua.LState) {
 			if !nilArg(l, 1) {
 				textFile = strArg(l, 1)
 			}
+			edFight.newSff = !nilArg(l, 3) && boolArg(l, 3)
 			err = editorReloadMotif(l, textFile, !nilArg(l, 2) && boolArg(l, 2))
+			edFight.newSff = false
 		}
 		if err != nil {
 			l.Push(lua.LFalse)

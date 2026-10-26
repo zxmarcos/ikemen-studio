@@ -47,6 +47,7 @@ type EditorFight struct {
 	cur     int // 1 + the index in drawn of the Layout being drawn, 0 for none
 	drawn   []editorFightDrawn
 	keep    bool            // reloading after an edit of the text: the files in use are borrowed
+	newSff  bool            // reloading after an edit of the SFF: it is read again, keep or not
 	fonts   map[string]*Fnt // the fonts fight screens and motifs loaded, by file name and height
 	inFont  bool
 }
@@ -84,6 +85,9 @@ var edFight EditorFight
 // reloads the fight screen or the motif after an edit of its text, their SFF and SND are not
 // read again.
 func editorKeptSff(filename string) *Sff {
+	if edFight.newSff {
+		return nil
+	}
 	if s := sys.fightScreen.sff; edFight.keep && s != nil && s.filename == filename {
 		return s
 	}
@@ -208,7 +212,8 @@ func editorRenderSprite(rp *RenderParams) {
 // editorScreenGeometry adds the fight screen and the motif to the frame geometry and starts the
 // next frame's list:
 //
-//	"fight": {"def", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem], ...]}: in drawing order,
+//	"fight": {"def", "sff", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem], ...]}: its SFF's
+//	  file, and in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
 //	  rectangle in the game picture's pixels and the pixels per unit of the def's positions, 0 (bg),
 //	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1;
@@ -217,7 +222,7 @@ func editorRenderSprite(rp *RenderParams) {
 //	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
-	block := func(name, def string, file int8) {
+	block := func(name, def string, sff *Sff, file int8) {
 		if def == "" {
 			return
 		}
@@ -225,6 +230,10 @@ func editorScreenGeometry(b []byte) []byte {
 		b = append(b, name...)
 		b = append(b, `":{"def":`...)
 		b = editorJSONString(b, def)
+		if sff != nil {
+			b = append(b, `,"sff":`...)
+			b = editorJSONString(b, sff.filename)
+		}
 		b = append(b, `,"items":[`...)
 		n := 0
 		for _, d := range edFight.drawn {
@@ -252,15 +261,16 @@ func editorScreenGeometry(b []byte) []byte {
 		}
 		b = append(b, "]}"...)
 	}
-	block("fight", sys.fightScreen.def, editorFileFight)
-	block("motif", sys.motif.Def, editorFileMotif)
+	block("fight", sys.fightScreen.def, sys.fightScreen.sff, editorFileFight)
+	block("motif", sys.motif.Def, sys.motif.Sff, editorFileMotif)
 	if sys.storyboard.active {
-		block("storyboard", sys.storyboard.Def, editorFileStoryboard)
+		block("storyboard", sys.storyboard.Def, sys.storyboard.Sff, editorFileStoryboard)
 	}
 	edFight.drawn = edFight.drawn[:0]
 	edFight.cur = 0
 	return b
 }
+
 // editorReloadFight loads the fight screen's def again and puts it in place of the one in use;
 // the match goes on, the round where it was. textFile, when not empty, is read instead of the
 // def, then deleted: unsaved text, written next to it (its files are found from where it is).
@@ -431,6 +441,7 @@ func editorFightFunctions(l *lua.LState) {
 		@function debugReloadFight
 		@tparam[opt] string textFile Read this file instead, then delete it (unsaved text, in the def's folder).
 		@tparam[opt] boolean keep Keep the SFF, SND and fonts in use (after an edit of the text only).
+		@tparam[opt] boolean sprites Read the SFF again all the same (after an edit of the SFF).
 		@treturn boolean ok
 		@treturn string error*/
 		var err error
@@ -441,7 +452,9 @@ func editorFightFunctions(l *lua.LState) {
 			if !nilArg(l, 1) {
 				textFile = strArg(l, 1)
 			}
+			edFight.newSff = !nilArg(l, 3) && boolArg(l, 3)
 			err = editorReloadFight(textFile, !nilArg(l, 2) && boolArg(l, 2))
+			edFight.newSff = false
 		}
 		if err != nil {
 			l.Push(lua.LFalse)
