@@ -168,6 +168,13 @@ void PollFrames() {
             f.cmds.push_back({c[size_t(0)].str(), c[1].i(), c[2].i(), c[3].i(), c[4].i(), c[5].i(), c[6].i()});
         g_frameEnts.push_back(std::move(f));
     }
+    const Json &stage = j["stage"];
+    g_stageDef = stage["def"].str();
+    g_frameBgs.clear();
+    for (const auto &b : stage["bg"].items)
+        g_frameBgs.push_back({b[size_t(0)].i(),
+                              ImVec4((float)b[1].num(), (float)b[2].num(), (float)b[3].num(), (float)b[4].num()),
+                              ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy()});
     const Json &tg = j["tg"];
     int id = tg.isNull() ? -1 : tg["id"].i();
     if (id != g_trigId) g_trigTicks.clear();
@@ -392,6 +399,9 @@ void GameWindow() {
     ImGui::SameLine();
     ImGui::Checkbox("Follow it", &g_followSel);
     ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
+    ImGui::SameLine();
+    ImGui::Checkbox("Stage", &g_stagePick);
+    ImGui::SetItemTooltip("The mouse picks and drags the stage's BGs instead of the players (window Stage).");
     if (g_frameTex) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
@@ -481,6 +491,11 @@ void GameWindow() {
     bool boxesShown = false;
     bool boxMouse = BoxEditOverlay(draw, hovered, toScreen, toPicture, boxesShown);
     draw->ChannelsSetCurrent(0);
+    // The stage's BGs: in pick mode they take the mouse instead of the players
+    if (StageOverlay(draw, hovered && !boxMouse, clicked, toScreen, ImVec2(kx, ky))) {
+        hovered = false;
+        clicked = false;
+    }
 
     // Dragging a player or helper moves it (debugMoveBy takes pixels of the game picture)
     static int dragId = -1;

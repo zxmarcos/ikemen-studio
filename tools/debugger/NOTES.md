@@ -47,7 +47,14 @@ trigger values in Code (done: `OC_debugrec` appended to each trigger under
 `-ikdbg` records its value where the engine evaluates it, for the one
 character `debugTriggerWatch` names; no second evaluation, so triggers with
 side effects (`:=`) are safe), "ran N ticks ago", breakpoints on entering a
-state. Next: stages (phase 2).
+state.
+
+Phase 2, stages: begun. Window Stage (the def's sections and fields,
+`src/ini.cpp`), BGs picked and dragged on the Game window
+(`editor_stage.go`: each BG's rectangle and scale with the frame,
+`debugStageBgMove`), the stage reloaded during a match (`debugReloadStage`).
+Next: a view of the whole stage with the camera's bounds, BGCtrls, the
+camera and player settings shown on the game, then screenpacks (phase 3).
 
 ## Where things are
 
@@ -69,6 +76,7 @@ src/editor_frame.go      engine side: frames, geometry and input events in share
 src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
 src/editor_reload.go     reloading a character during a match (debugReloadChar)
 src/editor_input.go      engine side: players' input buffers and commands under way, for the geometry
+src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a BG, reloading the stage
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -80,6 +88,7 @@ tools/debugger/
   src/app_sounds.cpp     Sounds window (SND)
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
+  src/app_stage.cpp      Stage window, and the BGs on the Game window
   src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -88,8 +97,9 @@ tools/debugger/
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits
+  src/ini.cpp/.h         def files (stages): sections and fields with their lines; text edits
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
-  tests/                 air_test, sff_test, snd_test, cmd_test .cpp (scripts/build.ps1 test)
+  tests/                 air_test, sff_test, snd_test, cmd_test, ini_test .cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -144,7 +154,10 @@ helper "Bag"):
   sprite of kfm.sff (v2) and ryusprite.sff (v1) decoded, written as v2 and
   read back with the same pixels, a sprite through PNG and back;
   `tests/snd_test.cpp`, kfm.snd read and written back to the same bytes;
-  `tests/cmd_test.cpp`, CMD parsing and edits, kfm.cmd's 37 commands).
+  `tests/cmd_test.cpp`, CMD parsing and edits, kfm.cmd's 37 commands;
+  `tests/ini_test.cpp`, def parsing and edits, stages/kfm.def's 7 BGs).
+- Stage tests: `test_ui.ps1 -Fresh -IniExtra "Stage=kfm"` (later lines of the
+  ini win). Back up the def first and restore it after a test that saves.
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -280,6 +293,24 @@ Triggers (`script_debugger.go`, `bytecode.go`):
   (shared memory) can be a tick apart, so the app keeps values per tick.
 - Sources of type "trigger" outnumber controllers (ryu_pots: 11321 sources
   in all); the mod still sends them all within the first seconds.
+
+Stages (`stage.go`, `editor_stage.go`):
+
+- `s.bg` follows the def's sections whose name's first word is "bg", in
+  order (`[BGdef]`, `[BGCtrlDef x]` are not BGs). A positionlinked BG's
+  `start` is added to its link's at load; `debugStageBgMove` moves the BGs
+  linked to the one moved, as a reload would.
+- `backGround.drawTransformed` ends in `Animation.Draw(x, y, xcs, ycs, ...)`
+  then `RenderSprite`: the sprite's quad is where `initRenderSpriteQuad` puts
+  it (`x = ±rp.x + rcx`, top `= -(±rp.y - rcy)`, in the game picture's
+  pixels) and one unit of `start` is `xcs * bgscl * widthScale` pixels
+  (`ycs`, `heightScale` for y; `bgscl` 0.5 for hires stages). Tiled BGs: the
+  rectangle is the base sprite; rotated ones: the unrotated quad.
+- Reloading: `loadStage(def, false)` (true would load the roundXdef stages
+  again), then `sys.stage`, `sys.stageList`, `sys.cam.stageCamera`, and the
+  stage copies in `roundBackup`/`matchBackup` (F4 and Reset round restore
+  `*sys.stage` from them) are replaced. Save state/Load state still bring
+  the old stage back. 3D model stages are not handled.
 
 Compiler (`compiler.go`):
 

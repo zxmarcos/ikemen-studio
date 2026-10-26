@@ -6,6 +6,7 @@
 //   app_sounds.cpp   Sounds: the SND file
 //   app_code.cpp     Code: the source files, Apply
 //   app_cmd.cpp      Commands: input, the commands under way, the CMD file
+//   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -271,6 +272,24 @@ void CodeWindow();
 
 // Commands
 void CommandsWindow();
+
+// Stage: the stage's def file and where its BGs were drawn in the last frame (editor_stage.go)
+struct FrameBg {
+    int index;   // in the stage's BGs (the def's [BG ...] sections, in order)
+    ImVec4 rect; // x, y, w, h in the game picture's pixels: the sprite once, untiled
+    ImVec2 k;    // picture pixels per unit of its start
+    int layer;
+    bool tiled;
+};
+extern std::string g_stageDef;
+extern std::vector<FrameBg> g_frameBgs;
+extern bool g_stagePick; // the Game window picks and drags the stage's BGs, not the players
+extern int g_stageBg;    // the BG selected, -1 none
+// On the Game window: the BGs' outlines; in pick mode, hover, click and drag. True when it has
+// the mouse. scale: screen pixels per picture pixel.
+bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
+                  ImVec2 scale);
+void StageWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void SessionWindow();

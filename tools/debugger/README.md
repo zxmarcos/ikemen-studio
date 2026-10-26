@@ -60,6 +60,7 @@ Windows:
 | Sprites (engine side) | The selected player's SFF file (v1 or v2): the sprites, filtered by group; a preview (wheel: zoom, drag: move the axis) with any of the palettes; renumber, axis, replace with a PNG, save as a PNG, delete; add PNG files (to the character's palette 1,1, or with palettes of their own). **Save** writes SFF v2 (the first time the old file is kept as `.bak`) and the game reads it again at once. The Animation window picks an element's sprite among thumbnails and can show the previous element's sprite faint on the game |
 | Sounds (engine side) | The selected player's SND file: every sound with its length and format, played here (Play, Stop); renumber, replace with a WAV file, save as a WAV file, delete, add WAV files. **Save** writes the file (the first time the old one is kept as `.bak`) and the game reads it again at once |
 | Commands (engine side) | The selected player's input as the game reads it: the keys held now (hover one: for how many frames) and before, with how many frames each lasted. The [Command] sections of its CMD file: the steps done of each command under way, green while `command = "name"` is true (fading for a second after), how many times each was completed. The selected command's name, keys, time, buffer.time and steptime are edited here (empty: the default); duplicate, delete, add, show in Code. **Apply** (Ctrl+S) saves and the game compiles the characters again, as in Code |
+| Stage (engine side) | The stage's def file: its sections, and the fields of the one selected, edited here (change, remove, add). **Apply** (Ctrl+S) saves the file and the game loads the stage again without restarting the match (Reset round keeps the new one). With **Stage** checked on the Game window (or "Pick on the Game window" here), the mouse picks the stage's BGs instead of the players: hover shows which, a click selects its section, a drag moves it (its `start`, whole units, the game follows at once and the text changes; BGs positionlinked to it follow). The selected BG stays outlined |
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
@@ -86,12 +87,14 @@ Settings, breakpoints and the window layout are saved in
 the players and helpers in it, and takes keys and Lua commands back (shared memory
 `Local\IkemenFrame<pid>`, its layout is at the top of the file); `system.go`
 calls it once per frame. `editor_input.go` adds each player's input buffer
-and the commands under way to that geometry.
+and the commands under way to that geometry; `editor_stage.go` adds where
+each BG of the stage was drawn (one line in `Stage.draw` and one in
+`Animation.Draw` tell it), moves BGs and reloads the stage.
 
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`, `debugReloadSprites(pn)` and `debugReloadSounds(pn)` (the SFF or SND read again, for every player using it), `debugTriggerWatch(id)` (record that character's trigger values; they go out with the frames).
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`, `debugReloadSprites(pn)` and `debugReloadSounds(pn)` (the SFF or SND read again, for every player using it), `debugTriggerWatch(id)` (record that character's trigger values; they go out with the frames), `debugStageBgMove(index, dx, dy)` and `debugReloadStage()`.
 
 ## How it works
 
