@@ -111,8 +111,36 @@ func editorRebindAnims(pn int) {
 }
 
 // editorCharFiles reads the [Files] section of a character's def: key -> the
-// files as the engine finds them (st, st0.. under "st" in order).
+// files as the engine finds them (st, st0.. under "st" in order; a state file
+// not found as named is the ".zss" one, as stateCompile does), and the common
+// files every character gets (config.ini [Common]: "common.states", "common.air",
+// "common.cmd").
 func editorCharFiles(def string) map[string][]string {
+	files := editorDefFiles(def)
+	for key, list := range map[string]map[string][]string{"common.states": sys.cfg.Common.States,
+		"common.air": sys.cfg.Common.Air, "common.cmd": sys.cfg.Common.Cmd} {
+		for _, k := range SortedKeys(list) {
+			for _, v := range list[k] {
+				files[key] = append(files[key], editorFindFile(v, []string{def, sys.motif.Def, sys.fightScreen.def, "", "data/"}, key == "common.states"))
+			}
+		}
+	}
+	return files
+}
+
+// editorFindFile finds a file as the engine does; a state file not found is looked for with
+// ".zss" added (common1.cns is data/common1.cns.zss).
+func editorFindFile(v string, dirs []string, state bool) string {
+	p := SearchFile(v, dirs, "")
+	if state && FileExist(p) == "" {
+		if z := SearchFile(v+".zss", dirs, ""); FileExist(z) != "" {
+			return z
+		}
+	}
+	return p
+}
+
+func editorDefFiles(def string) map[string][]string {
 	files := map[string][]string{"def": {def}}
 	str, err := LoadText(def)
 	if err != nil {
@@ -136,7 +164,11 @@ func editorCharFiles(def string) map[string][]string {
 			if regexp.MustCompile(`^st[0-9]*$`).MatchString(k) {
 				key = "st"
 			}
-			files[key] = append(files[key], SearchFile(v, []string{def, "", "data/"}, ""))
+			dirs := []string{def, "", "data/"}
+			if key == "stcommon" {
+				dirs = []string{def, "", sys.motif.Def, "data/"}
+			}
+			files[key] = append(files[key], editorFindFile(v, dirs, key == "st" || key == "cmd" || key == "stcommon"))
 		}
 		break
 	}
