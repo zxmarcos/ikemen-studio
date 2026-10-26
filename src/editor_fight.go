@@ -397,8 +397,29 @@ func editorEachAnimation(v reflect.Value, seen map[editorSeen]bool, f func(*Anim
 	}
 }
 
+// editorKeepBgDef: a BGDef loaded again goes on from where the old one was. Its BGs are reset
+// as a screen starting does (velocity, sin from the def; a BGDef just loaded has none), then
+// take the old ones' time, how far they have moved and whether BGCtrls hid them, BG by BG in
+// order.
+func editorKeepBgDef(o, n *BGDef) {
+	n.time, n.lastTick = o.time, o.lastTick
+	n.bga.pos, n.bga.sintime, n.bga.sinoffset, n.bga.offset = o.bga.pos, o.bga.sintime, o.bga.sinoffset, o.bga.offset
+	for i, b := range n.bg {
+		if b == nil {
+			continue
+		}
+		b.reset()
+		if i < len(o.bg) && o.bg[i] != nil {
+			ob := o.bg[i]
+			b.bga.pos, b.bga.sintime, b.bga.sinoffset, b.bga.offset = ob.bga.pos, ob.bga.sintime, ob.bga.sinoffset, ob.bga.offset
+			b.visible, b.enabled = ob.visible, ob.enabled
+		}
+	}
+}
+
 // editorKeepPlayback walks an old and a new copy of the same structure together: each new
-// animation goes on from the element and time of the old one (a reload does not restart them).
+// animation goes on from the element and time of the old one, each BGDef from its time (a
+// reload does not restart them).
 func editorKeepPlayback(ov, nv reflect.Value, seen map[editorSeen]bool) {
 	if !ov.IsValid() || !nv.IsValid() || ov.Type() != nv.Type() {
 		return
@@ -416,6 +437,9 @@ func editorKeepPlayback(ov, nv reflect.Value, seen map[editorSeen]bool) {
 				n.SetAnimElem(o.curelem+1, o.curelemtime)
 			}
 			return
+		}
+		if nv.Type() == reflect.TypeOf((*BGDef)(nil)) {
+			editorKeepBgDef((*BGDef)(unsafe.Pointer(ov.Pointer())), (*BGDef)(unsafe.Pointer(nv.Pointer())))
 		}
 		editorKeepPlayback(ov.Elem(), nv.Elem(), seen)
 	case reflect.Struct:

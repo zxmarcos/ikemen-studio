@@ -87,8 +87,11 @@ frame geometry names each screen's SFF, the sprite picker and the Sprites
 window open it (at the sprite the element picked shows: its action's
 element, its `spr`, a BG's `spriteno`), and saving it reloads the screen
 with the SFF read again (the reload functions' `sprites` argument; SND and
-fonts still borrowed). Next: the motif's animations kept playing across a
-reload.
+fonts still borrowed). The motif's animations and BGs, too, go on across a
+reload (`editorKeepPlayback` before the merge; BGDefs: `editorKeepBgDef`).
+Phase 3's first round is done; what is left of it: fonts, the roster
+(`select.def`), the operators in fight screen keys (`p*.pos`), TrueType
+texts' rectangles.
 
 ## Where things are
 
@@ -442,12 +445,18 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   `AnimData`/`TextSpriteData`, at `layerall.pos + offset`); the scripts do
   not hold its objects, so a reload replaces it whole and copies the time,
   scene, typed text and BG times. `-storyboard path` plays one and exits
-  before the mods are loaded (no bridge).- A screen's BGs are a `BGDef` (`bgdef.go`): `loadBGDef(sff, model, def,
+  before the mods are loaded (no bridge).
+- A screen's BGs are a `BGDef` (`bgdef.go`): `loadBGDef(sff, model, def,
   bgname)` reads the def's sections whose first word is the bgname
   ("titlebg" for `[TitleBGdef]`), in order, as a stage reads its BGs; the
   BGDef does not keep that name (the editor takes it from the motif's field,
   `titlebgdef`). One unit of `start` is `scale * localscl * widthScale`
   picture pixels when drawn at scale 1 (menus).
+- A BGDef just loaded has no velocity nor sin (`bga` is zero): the
+  `backGround.reset()` that a screen starting runs (`BGDef.Reset`, through
+  the scripts) gives them from the def. A reload therefore resets the new
+  BGs, then gives them the old ones' moved distance (`bga.pos`), sin time
+  and visibility.
 
 Compiler (`compiler.go`):
 

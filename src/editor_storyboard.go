@@ -63,9 +63,6 @@ func editorReloadStoryboard(textFile string, keep bool) (err error) {
 		if oscene == nil {
 			continue
 		}
-		if scene.Bg.BGDef != nil && oscene.Bg.BGDef != nil {
-			scene.Bg.BGDef.time = oscene.Bg.BGDef.time
-		}
 		// Text already typed stays typed
 		for lk, lp := range scene.Layer {
 			if ol := oscene.Layer[lk]; ol != nil && lp.TextSpriteData != nil && ol.typedLen > 0 {

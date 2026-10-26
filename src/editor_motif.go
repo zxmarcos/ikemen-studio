@@ -322,6 +322,8 @@ func editorReloadMotif(l *lua.LState, textFile string, keep bool) (err error) {
 	// What goes on (screens, menus, fades) stays as it was
 	nm.ch, nm.co, nm.de, nm.di, nm.vi, nm.wi, nm.hi, nm.me = old.ch, old.co, old.de, old.di, old.vi, old.wi, old.hi, old.me
 	nm.fadeIn, nm.fadeOut, nm.fadePolicy = old.fadeIn, old.fadeOut, old.fadePolicy
+	// Animations and BGs go on from where they were (before the old objects take the new values)
+	editorKeepPlayback(reflect.ValueOf(&old), reflect.ValueOf(nm), map[editorSeen]bool{})
 	editorMotifKeep(reflect.ValueOf(&old).Elem(), reflect.ValueOf(nm).Elem())
 	if nt != nil {
 		nt.RawSetString("def", lua.LString(old.Def))
