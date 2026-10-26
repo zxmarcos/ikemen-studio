@@ -32,6 +32,12 @@ target_include_directories(lodepng PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_par
 add_executable(ikemen-debugger WIN32
   src/main.cpp
   src/app.cpp
+  src/app_game.cpp
+  src/app_anim.cpp
+  src/app_sprites.cpp
+  src/app_sounds.cpp
+  src/app_code.cpp
+  src/app_debug.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp

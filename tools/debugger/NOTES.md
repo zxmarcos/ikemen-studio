@@ -63,7 +63,14 @@ src/editor_reload.go     reloading a character during a match (debugReloadChar)
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
-  src/app.cpp            the debugger: settings, protocol handling, every window
+  src/app.cpp            the debugger: state, commands, protocol handling, layout, settings
+  src/app_internal.h     what the app_*.cpp files share (state, each file's functions)
+  src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
+  src/app_anim.cpp       Animation window (AIR)
+  src/app_sprites.cpp    Sprites window (SFF), file dialogs
+  src/app_sounds.cpp     Sounds window (SND)
+  src/app_code.cpp       Code window: source files, Apply
+  src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
   src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
