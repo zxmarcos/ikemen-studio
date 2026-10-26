@@ -20,6 +20,7 @@ type editorFightSource struct {
 	motif   bool   // from the motif's def (system.def, editor_motif.go), else the fight screen's
 	section string // lowercase, as "simul lifebar"
 	prefix  string // lowercase, as "p1.bg0."
+	bg      int32  // a BG of a BGDef: 1 + its index among the sections named after section ("titlebg")
 }
 
 type editorFightDrawn struct {
@@ -129,7 +130,7 @@ func editorLayoutSource(pre string) int32 {
 	if e.section == "" {
 		return 0
 	}
-	return editorSourceIndex(editorFightSource{false, e.section, strings.ToLower(pre)})
+	return editorSourceIndex(editorFightSource{false, e.section, strings.ToLower(pre), 0})
 }
 
 // editorLayoutDraw runs before a Layout draws (scl: as the Layout scales the def's positions),
@@ -194,7 +195,8 @@ func editorRenderSprite(rp *RenderParams) {
 //	"fight": {"def", "items": [[section, prefix, x, y, w, h, kx, ky], ...]}: in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
 //	  rectangle in the game picture's pixels and the pixels per unit of the def's positions;
-//	"motif": {"def", "items": [...]}: the same for the motif's animations and texts.
+//	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
+//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index] (kx, ky: per unit of its start).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
 	block := func(name, def string, motif bool) {
@@ -223,6 +225,10 @@ func editorScreenGeometry(b []byte) []byte {
 			for _, v := range [...]float32{d.rect[0], d.rect[1], d.rect[2], d.rect[3], d.k[0], d.k[1]} {
 				b = append(b, ',')
 				b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
+			}
+			if src.bg > 0 {
+				b = append(b, ',')
+				b = strconv.AppendInt(b, int64(src.bg), 10)
 			}
 			b = append(b, ']')
 		}

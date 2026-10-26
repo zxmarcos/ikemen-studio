@@ -21,6 +21,7 @@ type EditorMotif struct {
 	// Each *Anim and *TextSprite as the def made it (the struct's value): what the scripts
 	// changed in them since is kept when the motif is reloaded (unless the def changed it too)
 	pristine map[interface{}]interface{}
+	bgdefs   map[*BGDef]string // the motif's BGDefs, by the name of their BGs' sections ("titlebg")
 	keep    bool // reloading after an edit of the text: the files in use are borrowed
 	loading bool // in loadMotif, for the editor: its fonts are kept
 }
@@ -40,6 +41,7 @@ func editorMotifIndex() {
 		return
 	}
 	m.forSff, m.dirty = sys.motif.Sff, false
+	m.bgdefs = make(map[*BGDef]string)
 	var walk func(v reflect.Value, path string)
 	walk = func(v reflect.Value, path string) {
 		switch v.Kind() {
@@ -60,7 +62,10 @@ func editorMotifIndex() {
 				}
 				editorPristine(p, *p)
 				return
-			case *Sff, *Snd, *Fnt, *BGDef, *Model:
+			case *BGDef:
+				m.bgdefs[p] = strings.TrimSuffix(path[strings.LastIndexByte(path, '.')+1:], "def")
+				return
+			case *Sff, *Snd, *Fnt, *Model:
 				return
 			}
 			if v.Elem().Kind() == reflect.Struct && v.Type().Elem().PkgPath() == editorMotifPkg {
@@ -116,7 +121,7 @@ func editorMotifSource(path string) int32 {
 	if dot := strings.IndexByte(path, '.'); dot >= 0 {
 		section, prefix = path[:dot], path[dot+1:]+"."
 	}
-	return editorSourceIndex(editorFightSource{true, strings.ReplaceAll(section, "_", " "), prefix})
+	return editorSourceIndex(editorFightSource{true, strings.ReplaceAll(section, "_", " "), prefix, 0})
 }
 
 // editorPristine remembers an object as the def made it, the first time it is seen.
@@ -146,6 +151,23 @@ func editorMergeObject(ov, pristine, nv reflect.Value) {
 		o, p, n := editorField(ov, i), editorField(pv, i), editorField(nv, i)
 		if reflect.DeepEqual(o.Interface(), p.Interface()) || !reflect.DeepEqual(n.Interface(), p.Interface()) {
 			o.Set(n)
+		}
+	}
+}
+
+// editorBgDefDraw runs before BGDef.draw draws a BG, editorLayoutDrawn after: a BG of the
+// motif's is recorded with its elements, as the n-th section named after its BGDef.
+func editorBgDefDraw(s *BGDef, b *backGround) {
+	edFight.cur = 0
+	name, ok := edMotif.bgdefs[s]
+	if !ok || edFrame.mem == nil {
+		return
+	}
+	for i, bg := range s.bg {
+		if bg == b {
+			src := editorSourceIndex(editorFightSource{true, name, "", int32(i + 1)})
+			editorDrawBegin(src, s.scale[0]*s.localscl*sys.widthScale, s.scale[1]*s.localscl*sys.heightScale)
+			return
 		}
 	}
 }

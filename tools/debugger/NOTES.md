@@ -71,8 +71,9 @@ element's `offset` with Alt), each edit reloading the fight screen from the
 text in about 20 ms, the round going on. Then the motif (`system.def`): window
 Motif, the same editing, its texts and animations picked in menus and
 screens (`editor_motif.go`), reloaded in place (~400 ms, so a drag writes
-when let go). Next: the motif's and screens' BGs (`[TitleBGdef]`...:
-`BGDef`, as a stage's), the select screen's cells and portraits, storyboards,
+when let go); its screens' BGs (`[TitleBGdef]` and its `[TitleBG ...]`, a
+`BGDef`: one line around each BG in `BGDef.draw`) picked and dragged by
+their `start`. Next: the select screen's cells and portraits, storyboards,
 the fight screen's animations (its `[Begin Action]` sections) in the
 Animation window.
 
@@ -409,6 +410,12 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   ~350 ms of its own (inheritance between sections, every key set by
   reflection); reading the SFF and fonts again ~1.5 s more (borrowed).
 - In a match the motif draws little (pause menu, dialogue, win screens).
+- A screen's BGs are a `BGDef` (`bgdef.go`): `loadBGDef(sff, model, def,
+  bgname)` reads the def's sections whose first word is the bgname
+  ("titlebg" for `[TitleBGdef]`), in order, as a stage reads its BGs; the
+  BGDef does not keep that name (the editor takes it from the motif's field,
+  `titlebgdef`). One unit of `start` is `scale * localscl * widthScale`
+  picture pixels when drawn at scale 1 (menus).
 
 Compiler (`compiler.go`):
 

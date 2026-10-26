@@ -4,8 +4,8 @@ This is the user's clone of Ikemen GO. The local branch `debugger-bridge` adds
 an external debugger: the engine side in `src/script_debugger.go` and
 `src/editor_*.go` (plus one or two lines each in `compiler.go`, `bytecode.go`,
 `script.go`, `system.go`, `stage.go`, `anim.go`, `common.go`, `render.go`,
-`fightscreen.go`, `image.go`, `sound.go`, `font.go`) and the debugger program in
-`tools/debugger`. Read `tools/debugger/NOTES.md` first: state of the work,
+`fightscreen.go`, `image.go`, `sound.go`, `font.go`, `bgdef.go`) and the
+debugger program in `tools/debugger`. Read `tools/debugger/NOTES.md` first: state of the work,
 build environment and tests.
 
 ## Rules

@@ -49,15 +49,44 @@ static ScreenDef g_fight{"Fight screen", "fight screen", "debugReloadFight", fal
 static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", true, false, 0.5};
 bool g_screenPick;
 
+// The first word of a section's name, as Ikemen cuts it.
+static std::string FirstWordOf(const IniSection &s) { return s.lower.substr(0, s.lower.find(' ')); }
+
+// A BG section: its first word names a BGDef the def has ("titlebg" with [TitleBGdef]).
+static bool IsBgSection(const IniFile &ini, const IniSection &s) {
+    std::string w = FirstWordOf(s);
+    if (w == s.lower) return false;
+    for (const IniSection &o : ini.sections)
+        if (o.lower == w + "def") return true;
+    return false;
+}
+
 void ReadScreenGeometry(const Json &j) {
     for (ScreenDef *d : {&g_fight, &g_motif}) {
         const Json &g = j[d->motif ? "motif" : "fight"];
         d->def = g["def"].str();
         d->items.clear();
-        for (const auto &f : g["items"].items)
-            d->items.push_back({f[size_t(0)].str(), f[1].str(),
+        SourceFile *sf = nullptr;
+        for (const auto &f : g["items"].items) {
+            FrameFightItem item{f[size_t(0)].str(), f[1].str(),
                                 ImVec4((float)f[2].num(), (float)f[3].num(), (float)f[4].num(), (float)f[5].num()),
-                                ImVec2((float)f[6].num(), (float)f[7].num())});
+                                ImVec2((float)f[6].num(), (float)f[7].num())};
+            if (int bg = f[8].i(); bg > 0) {
+                // The bg-th section named after the BGDef ("titlebg"), as loadBGDef reads them
+                if (!sf && !(sf = d->Source())) continue;
+                const IniFile &ini = d->Ini(*sf);
+                std::string name = item.section;
+                item.section.clear();
+                for (const IniSection &s : ini.sections)
+                    if (FirstWordOf(s) == name && s.lower != name && --bg == 0) {
+                        item.section = s.lower;
+                        break;
+                    }
+                if (item.section.empty()) continue;
+                item.bg = true;
+            }
+            d->items.push_back(std::move(item));
+        }
     }
 }
 
@@ -201,9 +230,12 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
             const FrameFightItem &f = d.items[hover.i];
             SourceFile *sf = d.Source();
             const IniFile *ini = sf ? &d.Ini(*sf) : nullptr;
-            std::string pos = GroupPosKey(ini ? FindSection(*ini, f.section) : nullptr, f.prefix, d.motif);
-            ImGui::SetTooltip("%s  (%s)\nDrag: move it with its group (%s); Alt+drag: it alone (%soffset)",
-                              ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), f.prefix.c_str());
+            std::string pos = f.bg ? "start" : GroupPosKey(ini ? FindSection(*ini, f.section) : nullptr, f.prefix, d.motif);
+            if (f.bg)
+                ImGui::SetTooltip("%s  (%s, a BG)\nDrag: move it (its start)", ItemLabel(ini, f.section, f.prefix).c_str(), d.what);
+            else
+                ImGui::SetTooltip("%s  (%s)\nDrag: move it with its group (%s); Alt+drag: it alone (%soffset)",
+                                  ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), f.prefix.c_str());
             if (clicked) {
                 d.section = f.section, d.prefix = f.prefix;
                 ShowTab(d.window);
@@ -211,7 +243,7 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                 dragK = f.k;
                 dragAlone = ImGui::GetIO().KeyAlt;
                 dragSection = f.section, dragPrefix = f.prefix;
-                dragKey = dragAlone ? f.prefix + "offset" : pos;
+                dragKey = dragAlone && !f.bg ? f.prefix + "offset" : pos;
                 dragFrom = m;
                 moved = ImVec2(0, 0);
             }
@@ -399,7 +431,7 @@ static void ScreenWindow(ScreenDef &d) {
     // The elements of this section drawn in the last frame
     std::vector<std::string> prefixes;
     for (const auto &f : d.items)
-        if (f.section == s.lower && std::find(prefixes.begin(), prefixes.end(), f.prefix) == prefixes.end())
+        if (f.section == s.lower && !f.bg && std::find(prefixes.begin(), prefixes.end(), f.prefix) == prefixes.end())
             prefixes.push_back(f.prefix);
     std::sort(prefixes.begin(), prefixes.end());
     if (!d.prefix.empty() && std::find(prefixes.begin(), prefixes.end(), d.prefix) == prefixes.end())
@@ -411,9 +443,11 @@ static void ScreenWindow(ScreenDef &d) {
         if (ImGui::Selectable(label.c_str(), p == d.prefix, 0, ImVec2(ImGui::CalcTextSize(label.c_str(), nullptr, true).x, 0)))
             d.prefix = p == d.prefix ? "" : p;
     }
-    if (prefixes.empty()) ImGui::TextDisabled("None of its elements is on screen now.");
+    bool bgShown = false;
+    for (const auto &f : d.items) bgShown = bgShown || (f.section == s.lower && f.bg);
+    if (prefixes.empty() && !bgShown) ImGui::TextDisabled("None of its elements is on screen now.");
     for (const auto &f : d.items)
-        if (f.section == s.lower && f.prefix == d.prefix && !d.prefix.empty()) {
+        if (f.section == s.lower && f.prefix == d.prefix && (!d.prefix.empty() || f.bg)) {
             ImGui::TextDisabled("at %.0f, %.0f  %.0fx%.0f px (the game's picture), %.3g px per unit", f.rect.x, f.rect.y,
                                 f.rect.z, f.rect.w, f.k.y);
             break;
@@ -422,6 +456,8 @@ static void ScreenWindow(ScreenDef &d) {
     std::string before = sf.text;
     bool changed = false;
     static bool allFields;
+    if (IsBgSection(ini, s))
+        changed = PositionDrag(d, sf, s, "start", "start", "Where the BG is (as a stage's BG).");
     if (!d.prefix.empty()) {
         std::string pos = GroupPosKey(&s, d.prefix, d.motif);
         if (pos != d.prefix + "offset")

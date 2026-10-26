@@ -322,6 +322,7 @@ struct FrameFightItem {
     std::string prefix;  // of the def's keys it was read from, lower case, as "p1.bg0."
     ImVec4 rect;         // x, y, w, h in the game picture's pixels
     ImVec2 k;            // picture pixels per unit of the def's positions
+    bool bg = false;     // a BG of a BGDef (its section found in the def; it moves by its start)
 };
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players
