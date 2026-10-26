@@ -41,6 +41,7 @@ add_executable(ikemen-debugger WIN32
   src/app_cmd.cpp
   src/app_stage.cpp
   src/app_screen.cpp
+  src/app_roster.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp
@@ -48,7 +49,8 @@ add_executable(ikemen-debugger WIN32
   src/sff.cpp
   src/snd.cpp
   src/cmd.cpp
-  src/ini.cpp)
+  src/ini.cpp
+  src/roster.cpp)
 target_compile_definitions(ikemen-debugger PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX UNICODE _UNICODE)
 if(MSVC)
   target_compile_options(ikemen-debugger PRIVATE /W3 /utf-8 /EHsc)
@@ -82,3 +84,5 @@ add_executable(cmd-test tests/cmd_test.cpp src/cmd.cpp)
 target_include_directories(cmd-test PRIVATE src)
 add_executable(ini-test tests/ini_test.cpp src/ini.cpp)
 target_include_directories(ini-test PRIVATE src)
+add_executable(roster-test tests/roster_test.cpp src/roster.cpp)
+target_include_directories(roster-test PRIVATE src)

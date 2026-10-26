@@ -264,6 +264,38 @@ function ikdbg.sounds(pn)
 	if not ok then send('@IKRES', {ok = false, r = 'sounds of P' .. pn .. ': ' .. tostring(err)}) end
 end
 
+-- Adds select.def's characters and stages again (needs the debugger patch: debugSelectReset,
+-- main.f_loadSelectDef, start.f_makeGrid), from unsaved text (a file the debugger wrote,
+-- deleted once read) or from the file. In menus and on a select screen: not between a select
+-- screen and the end of its game mode (the characters chosen are in use).
+function ikdbg.reloadRoster(textFile)
+	local ok, err = false, 'the roster changes in menus or on a select screen, not in a game mode under way'
+	if not ikdbg.inMode or (ikdbg.inSelect and not ikdbg.inChallenger) then
+		ok, err = debugSelectReset()
+	end
+	if ok then
+		main.t_stageDef = {['random'] = 0}
+		main.t_charDef = {}
+		main.t_selChars = {}
+		main.t_selStages = {}
+		main.t_unlockLua.chars, main.t_unlockLua.stages = {}, {}
+		local file, nextRefresh = motif.files.select, main.nextRefresh
+		motif.files.select = textFile or file
+		main.nextRefresh = math.huge -- no loading screen frames in the middle of this one
+		ok, err = pcall(function()
+			main.f_loadSelectDef()
+			start.f_makeGrid()
+			if ikdbg.inSelect then -- what was chosen goes (the cells changed)
+				start.f_selectReset(false, true)
+				start.needUpdateDrawList = true
+			end
+		end)
+		motif.files.select, main.nextRefresh = file, nextRefresh
+	end
+	if textFile then os.remove(textFile) end
+	if not ok then error(err, 0) end
+end
+
 -- A breakpoint on a state controller: the game stops after a tick in which it ran.
 function ikdbg.ctrlBrkSet(src, on)
 	ikdbg.ctrlBreak[src] = on or nil
@@ -405,6 +437,25 @@ if debugAnimSource and start and start.f_animGet then
 			pcall(debugAnimSource, a, params.AnimData)
 		end
 		return a
+	end
+end
+
+-- Where the game is, for ikdbg.reloadRoster: in a game mode (from its select screen to its
+-- end), on a select screen, choosing a challenger. Each of these functions runs its own loop.
+if start then
+	local function restore(flag, was, ...)
+		ikdbg[flag] = was
+		return ...
+	end
+	for name, flag in pairs({f_selectMode = 'inMode', f_selectScreen = 'inSelect', f_selectChallenger = 'inChallenger'}) do
+		local f = start[name]
+		if f then
+			start[name] = function(...)
+				local was = ikdbg[flag]
+				ikdbg[flag] = true
+				return restore(flag, was, f(...))
+			end
+		end
 	end
 end
 

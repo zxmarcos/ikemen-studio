@@ -89,9 +89,14 @@ element, its `spr`, a BG's `spriteno`), and saving it reloads the screen
 with the SFF read again (the reload functions' `sprites` argument; SND and
 fonts still borrowed). The motif's animations and BGs, too, go on across a
 reload (`editorKeepPlayback` before the merge; BGDefs: `editorKeepBgDef`).
-Phase 3's first round is done; what is left of it: fonts, the roster
-(`select.def`), the operators in fight screen keys (`p*.pos`), TrueType
-texts' rectangles.
+Then the roster (`select.def`): window Roster, the grid with the
+characters' portraits, cells moved, inserted, deleted, their parameters,
+the extra stages; each change has the game add the roster again
+(`editor_select.go` empties the engine's lists; the scripts' parsing and
+grid became `main.f_loadSelectDef` and `start.f_makeGrid`, run again by the
+mod's `ikdbg.reloadRoster`). What is left of phase 3: fonts, the operators
+in fight screen keys (`p*.pos`), TrueType texts' rectangles, the select
+screen's cells picked on the Game window to the Roster window.
 
 ## Where things are
 
@@ -452,6 +457,19 @@ Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
   BGDef does not keep that name (the editor takes it from the motif's field,
   `titlebgdef`). One unit of `start` is `scale * localscl * widthScale`
   picture pixels when drawn at scale 1 (menus).
+- The roster (`main.lua`, `start.lua`, `system.go`): `select.def` is read
+  once at start by the scripts (`main.f_loadSelectDef`, a top-level block
+  until this work wrapped it, without reindenting), which add each
+  character and stage to the engine (`addChar`, `addStage`: `sys.sel`'s
+  `charlist`, `stagelist`) and to their tables (`main.t_selChars`,
+  `t_selGrid`, `t_charDef`, `t_selStages`, the orders, slots, unlocks);
+  `start.f_makeGrid` places them in the grid. A preload worker (goroutine)
+  loads portraits into `charlist[ref]` by index: `debugSelectReset` waits
+  until it loads none. The select screen keeps a draw list
+  (`start.needUpdateDrawList`). From a select screen to its game mode's
+  end, the characters chosen are in use: the mod wraps `start.f_selectMode`,
+  `f_selectScreen` and `f_selectChallenger` (each runs its own loop) to know
+  where the game is, and refuses a reload there.
 - A BGDef just loaded has no velocity nor sin (`bga` is zero): the
   `backGround.reset()` that a screen starting runs (`BGDef.Reset`, through
   the scripts) gives them from the def. A reload therefore resets the new

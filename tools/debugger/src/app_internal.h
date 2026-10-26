@@ -8,6 +8,7 @@
 //   app_cmd.cpp      Commands: input, the commands under way, the CMD file
 //   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
 //   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
+//   app_roster.cpp   Roster: select.def's characters in the select screen's grid, its stages
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -24,6 +25,7 @@
 #include "air.h"
 #include "sff.h"
 #include "snd.h"
+#include "ini.h"
 #include "editor.hpp"
 #include <GL/gl.h>
 #include "imgui.h"
@@ -352,6 +354,11 @@ extern bool g_screenPick; // the Game window picks and drags their elements, not
 bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                    ImVec2 scale);
 void ScreenWindows(); // Fight screen, Motif
+const IniSection *MotifSection(const char *lower); // a section of the motif's def, nullptr if none
+
+// Roster: the motif's select.def
+extern std::string g_selectDef; // as the game names it (frame geometry), "" when not known
+void RosterWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void SessionWindow();

@@ -466,6 +466,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Fight screen", bottom);
     ImGui::DockBuilderDockWindow("Motif", bottom);
     ImGui::DockBuilderDockWindow("Storyboard", bottom);
+    ImGui::DockBuilderDockWindow("Roster", bottom);
     ImGui::DockBuilderFinish(dock);
 }
 
@@ -565,6 +566,7 @@ void App_Frame() {
     CommandsWindow();
     StageWindow();
     ScreenWindows();
+    RosterWindow();
     SessionWindow();
     ControlWindow();
     PlayersWindow();

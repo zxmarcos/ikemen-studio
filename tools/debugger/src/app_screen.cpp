@@ -83,6 +83,7 @@ static bool IsBgSection(const IniFile &ini, const IniSection &s) {
 }
 
 void ReadScreenGeometry(const Json &j) {
+    g_selectDef = j["select"].str();
     for (ScreenDef *d : g_screens) {
         const Json &g = j[d->geometry];
         d->def = g["def"].str();
@@ -562,6 +563,11 @@ bool SelectedScreenAnim(ScreenAnim &out) {
     out.apply = [d, sf] { Edited(*d, *sf); };
     out.sprites = d->Sprites();
     return true;
+}
+
+const IniSection *MotifSection(const char *lower) {
+    SourceFile *sf = g_motif.Source();
+    return sf ? FindSection(g_motif.Ini(*sf), lower) : nullptr;
 }
 
 SpriteFile *SelectedScreenSprites(const char **what, int *sprite) {
