@@ -134,6 +134,9 @@ src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a
 src/editor_fight.go      engine side: where the fight screen's elements were drawn, reloading the fight screen
 src/editor_motif.go      engine side: the same for the motif (system.def), reloaded in place
 src/editor_storyboard.go engine side: the same for the storyboard playing
+src/editor_select.go     engine side: select.def's characters and stages emptied to be added again
+src/editor_font.go       engine side: every font loaded, a font's file read again in place
+src/editor_objects.go    engine side: a character's explods and projectiles (debugObjects)
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -529,10 +532,12 @@ Done since (mod and app only): a Watch window (`ikdbg.exprSet`: each
 expression read with the snapshot, `w`); hits taken in Trace (a `got`
 event when `getHitVar('frame')` is true: the engine sets it in hit
 detection and clears it in the next tick's `actionFinish`, so the loop hook
-sees it on the hit's tick; `ghv.damage` is still the pending damage then).
+sees it on the hit's tick; `ghv.damage` is still the pending damage then);
+the watched entity's explods and projectiles in Inspector
+(`editor_objects.go`, `debugObjects`: all of them in one call; an Explod
+without an ID gets 0, so `numExplod` counts it too).
 
 Cheap next steps (mod and app only): an "only if" condition on controller
 breakpoints; move frame data (startup/active/recovery/advantage) computed
-from the snapshot history; explods and projectiles lists via
-`explodVar`/`projVar`.
+from the snapshot history.
 

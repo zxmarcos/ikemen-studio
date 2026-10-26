@@ -50,6 +50,16 @@ struct Entity {
     int hitpause = 0, moveHit = 0, moveContact = 0, moveGuarded = 0;
     int stateSrc = 0; // source index of the current statedef (patched Ikemen only)
     std::vector<double> vars, fvars;
+    // Its explods and projectiles (the watched entity, patched Ikemen only)
+    struct Object {
+        int id, anim, elem, time, removetime;
+        double x, y;
+        int bindtime, layer, sprpriority, facing; // explods
+        double vx, vy;                            // projectiles
+        int hits, misstime, priority;
+    };
+    bool hasObjects = false;
+    std::vector<Object> explods, projs;
 };
 
 struct FrameRow {

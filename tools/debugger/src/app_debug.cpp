@@ -341,6 +341,56 @@ void InspectorWindow() {
     }
     ImGui::TextDisabled(g_canSet ? "Yellow: changed on the last tick. Double-click a value to change it."
                                  : "Values that changed on the last tick are yellow.");
+
+    // Its explods and projectiles
+    auto objects = [](const char *id, const std::vector<Entity::Object> &list, bool explods) {
+        if (list.empty()) {
+            ImGui::TextDisabled("none");
+            return;
+        }
+        ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        if (!ImGui::BeginTable(id, 7, flags)) return;
+        for (const char *h : {"ID", "Anim", "Time", "Remove", "Pos", explods ? "Bind" : "Vel", explods ? "Layer" : "Hits"})
+            ImGui::TableSetupColumn(h);
+        ImGui::TableHeadersRow();
+        for (const auto &o : list) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", o.id);
+            ImGui::TableNextColumn();
+            ImGui::Text("%d (%d)", o.anim, o.elem);
+            ImGui::SetItemTooltip("Action %d, element %d", o.anim, o.elem);
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", o.time);
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", o.removetime);
+            ImGui::TableNextColumn();
+            ImGui::Text("%.1f, %.1f", o.x, o.y);
+            ImGui::TableNextColumn();
+            if (explods)
+                ImGui::Text("%d", o.bindtime);
+            else
+                ImGui::Text("%.2f, %.2f", o.vx, o.vy);
+            ImGui::TableNextColumn();
+            if (explods) {
+                ImGui::Text("%d", o.layer);
+                ImGui::SetItemTooltip("Layer %d, sprpriority %d, facing %d", o.layer, o.sprpriority, o.facing);
+            } else {
+                ImGui::Text("%d", o.hits);
+                ImGui::SetItemTooltip("Hits left %d, miss time %d, priority %d", o.hits, o.misstime, o.priority);
+            }
+        }
+        ImGui::EndTable();
+    };
+    char head[48];
+    snprintf(head, sizeof(head), "Explods (%zu)###explods", e->explods.size());
+    if (!e->hasObjects)
+        ImGui::TextDisabled(g_canTrace ? "" : "Explods and projectiles: needs an Ikemen GO with the debugger patch.");
+    else {
+        if (ImGui::CollapsingHeader(head, ImGuiTreeNodeFlags_DefaultOpen)) objects("explods", e->explods, true);
+        snprintf(head, sizeof(head), "Projectiles (%zu)###projs", e->projs.size());
+        if (ImGui::CollapsingHeader(head, ImGuiTreeNodeFlags_DefaultOpen)) objects("projs", e->projs, false);
+    }
     ImGui::End();
 }
 

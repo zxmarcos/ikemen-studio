@@ -158,6 +158,11 @@ local function readEntity()
 		for n = 0, 59 do v[n + 1] = var(n) end
 		for n = 0, 39 do fv[n + 1] = fvar(n) end
 		e.vars, e.fvars = v, fv
+		if debugObjects then
+			local ex, pr = debugObjects()
+			ex._array, pr._array = true, true
+			e.explods, e.projs = ex, pr
+		end
 	end
 	return e
 end

@@ -294,6 +294,16 @@ void ReadEntity(const Json &j, Entity &e) {
     e.stateSrc = j["ss"].i();
     for (const auto &v : j["vars"].items) e.vars.push_back(v.num());
     for (const auto &v : j["fvars"].items) e.fvars.push_back(v.num());
+    e.hasObjects = j["explods"].type == Json::Array;
+    auto objects = [](const Json &list, std::vector<Entity::Object> &out) {
+        for (const auto &o : list.items)
+            out.push_back({o["id"].i(), o["anim"].i(), o["elem"].i(), o["time"].i(), o["removetime"].i(),
+                           o["x"].num(), o["y"].num(), o["bindtime"].i(), o["layer"].i(), o["sprpriority"].i(),
+                           o["facing"].i(1), o["vx"].num(), o["vy"].num(), o["hits"].i(), o["misstime"].i(),
+                           o["priority"].i()});
+    };
+    objects(j["explods"], e.explods);
+    objects(j["projs"], e.projs);
 }
 
 void OnSnapshot(const Json &j) {
