@@ -33,6 +33,7 @@ struct ScreenDef {
     std::string parsedText;
     IniFile ini;
     bool parsed = false;
+    int animAction = -1; // the action the element selected showed when last on screen
 
     SourceFile *Source() { return def.empty() ? nullptr : &LoadSource(def); }
     // The def parsed, again when its text changes.
@@ -50,6 +51,20 @@ static ScreenDef g_fight{"Fight screen", "fight screen", "debugReloadFight", "fi
 static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", "motif", true, false, 0.5};
 static ScreenDef g_story{"Storyboard", "storyboard", "debugReloadStoryboard", "storyboard", true, true, 0.1};
 static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the ones drawn in front first
+static ScreenDef *g_lastScreen; // the one whose element was selected last
+int g_screenAnimPicked;
+
+// An element selected (picked on the game or in its window).
+static void SelectElement(ScreenDef &d, const std::string &section, const std::string &prefix) {
+    d.section = section, d.prefix = prefix;
+    g_lastScreen = &d;
+    for (const auto &f : d.items)
+        if (f.section == section && f.prefix == prefix && f.action >= 0) {
+            g_screenAnimPicked++;
+            break;
+        }
+}
+
 bool g_screenPick;
 
 // The first word of a section's name, as Ikemen cuts it.
@@ -74,6 +89,8 @@ void ReadScreenGeometry(const Json &j) {
             FrameFightItem item{f[size_t(0)].str(), f[1].str(),
                                 ImVec4((float)f[2].num(), (float)f[3].num(), (float)f[4].num(), (float)f[5].num()),
                                 ImVec2((float)f[6].num(), (float)f[7].num())};
+            item.action = f[9].isNull() ? -1 : f[9].i();
+            item.elem = f[10].i();
             if (int bg = f[8].i(); bg > 0) {
                 // The bg-th section named after the BGDef ("titlebg"), as loadBGDef reads them
                 if (!sf && !(sf = d->Source())) continue;
@@ -243,7 +260,8 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
                 ImGui::SetTooltip("%s  (%s)\nDrag: move it with its group (%s); Alt+drag: it alone (%soffset)",
                                   ItemLabel(ini, f.section, f.prefix).c_str(), d.what, pos.c_str(), f.prefix.c_str());
             if (clicked) {
-                d.section = f.section, d.prefix = f.prefix;
+                if (d.section != f.section || d.prefix != f.prefix) d.animAction = -1;
+                SelectElement(d, f.section, f.prefix);
                 ShowTab(d.window);
                 drag = f.k.x > 0 && f.k.y > 0 ? hover : Hit();
                 dragK = f.k;
@@ -411,8 +429,8 @@ static void ScreenWindow(ScreenDef &d) {
             std::string label = s.name + (drawn ? "  (" + std::to_string(drawn) + ")" : "") + "##" + std::to_string(i);
             if (!drawn) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             if (ImGui::Selectable(label.c_str(), d.section == s.lower)) {
-                if (d.section != s.lower) d.prefix.clear();
-                d.section = s.lower;
+                if (d.section != s.lower) d.animAction = -1;
+                SelectElement(d, s.lower, d.section != s.lower ? "" : d.prefix);
             }
             if (!drawn) ImGui::PopStyleColor();
         }
@@ -449,8 +467,10 @@ static void ScreenWindow(ScreenDef &d) {
         const std::string &p = prefixes[i];
         std::string label = (p.empty() ? std::string("(no prefix)") : p.substr(0, p.size() - 1)) + "##e" + std::to_string(i);
         flow(label.c_str(), pad * 2);
-        if (ImGui::Selectable(label.c_str(), p == d.prefix, 0, ImVec2(ImGui::CalcTextSize(label.c_str(), nullptr, true).x, 0)))
-            d.prefix = p == d.prefix ? "" : p;
+        if (ImGui::Selectable(label.c_str(), p == d.prefix, 0, ImVec2(ImGui::CalcTextSize(label.c_str(), nullptr, true).x, 0))) {
+            d.animAction = -1;
+            SelectElement(d, d.section, p == d.prefix ? "" : p);
+        }
     }
     bool bgShown = false;
     for (const auto &f : d.items) bgShown = bgShown || (f.section == s.lower && f.bg);
@@ -514,6 +534,27 @@ void ScreenWindows() {
     ScreenWindow(g_fight);
     ScreenWindow(g_motif);
     ScreenWindow(g_story);
+}
+
+bool SelectedScreenAnim(ScreenAnim &out) {
+    ScreenDef *d = g_lastScreen;
+    SourceFile *sf = d ? d->Source() : nullptr;
+    if (!sf || d->section.empty()) return false;
+    out = ScreenAnim();
+    out.sf = sf;
+    for (const auto &f : d->items)
+        if (f.section == d->section && f.prefix == d->prefix && f.action >= 0) {
+            d->animAction = f.action;
+            out.elem = f.elem;
+            break;
+        }
+    if (d->animAction < 0) return false;
+    out.action = d->animAction;
+    const IniSection *s = FindSection(d->Ini(*sf), d->section);
+    std::string p = d->prefix.empty() ? "" : " " + d->prefix.substr(0, d->prefix.size() - 1);
+    out.label = "[" + (s ? s->name : d->section) + "]" + p + "  (" + d->what + ")";
+    out.apply = [d, sf] { Edited(*d, *sf); };
+    return true;
 }
 
 } // namespace app

@@ -36,6 +36,8 @@ type editorFightDrawn struct {
 	rect [4]float32 // x, y, w, h in the game picture's pixels: all the quads drawn, clipped by their window
 	k    [2]float32 // pixels per unit of the def's positions
 	n    int        // quads drawn
+	// The action of the def it shows (Begin Action) and its element (1-based), -1: none (a sprite, a text)
+	action, elem int32
 }
 
 type EditorFight struct {
@@ -72,7 +74,7 @@ func editorDrawBegin(src int32, kx, ky float32) {
 	if src == 0 || edFrame.mem == nil || len(e.drawn) >= 4096 {
 		return
 	}
-	e.drawn = append(e.drawn, editorFightDrawn{src: src, k: [2]float32{kx, ky}})
+	e.drawn = append(e.drawn, editorFightDrawn{src: src, k: [2]float32{kx, ky}, action: -1, elem: -1})
 	e.cur = len(e.drawn)
 }
 
@@ -206,11 +208,12 @@ func editorRenderSprite(rp *RenderParams) {
 // editorScreenGeometry adds the fight screen and the motif to the frame geometry and starts the
 // next frame's list:
 //
-//	"fight": {"def", "items": [[section, prefix, x, y, w, h, kx, ky], ...]}: in drawing order,
+//	"fight": {"def", "items": [[section, prefix, x, y, w, h, kx, ky, bg, action, elem], ...]}: in drawing order,
 //	  each Layout drawn (section and prefix of the def's keys it was read from, lowercase), its
-//	  rectangle in the game picture's pixels and the pixels per unit of the def's positions;
+//	  rectangle in the game picture's pixels and the pixels per unit of the def's positions, 0 (bg),
+//	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1;
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
-//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index] (kx, ky: per unit of its start);
+//	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem] (kx, ky: per unit of its start);
 //	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
@@ -241,9 +244,9 @@ func editorScreenGeometry(b []byte) []byte {
 				b = append(b, ',')
 				b = strconv.AppendFloat(b, float64(v), 'f', 3, 32)
 			}
-			if src.bg > 0 {
+			for _, v := range [...]int32{src.bg, d.action, d.elem} {
 				b = append(b, ',')
-				b = strconv.AppendInt(b, int64(src.bg), 10)
+				b = strconv.AppendInt(b, int64(v), 10)
 			}
 			b = append(b, ']')
 		}
@@ -329,6 +332,8 @@ func editorReloadFight(textFile string, keep bool) (err error) {
 	nr.outroStarted, nr.outroFrameAcc = or.outroStarted, or.outroFrameAcc
 	// An animation's sprite is set when it steps: a paused game would draw none
 	editorEachAnimation(reflect.ValueOf(nf), map[editorSeen]bool{}, (*Animation).UpdateSprite)
+	// and go on from where they were
+	editorKeepPlayback(reflect.ValueOf(old), reflect.ValueOf(nf), map[editorSeen]bool{})
 	sys.fightScreen = *nf
 	return nil
 }
@@ -379,6 +384,44 @@ func editorEachAnimation(v reflect.Value, seen map[editorSeen]bool, f func(*Anim
 		}
 	case reflect.Interface:
 		editorEachAnimation(v.Elem(), seen, f)
+	}
+}
+
+// editorKeepPlayback walks an old and a new copy of the same structure together: each new
+// animation goes on from the element and time of the old one (a reload does not restart them).
+func editorKeepPlayback(ov, nv reflect.Value, seen map[editorSeen]bool) {
+	if !ov.IsValid() || !nv.IsValid() || ov.Type() != nv.Type() {
+		return
+	}
+	switch nv.Kind() {
+	case reflect.Ptr:
+		if ov.IsNil() || nv.IsNil() || editorNotWalked[nv.Type()] || seen[editorSeen{nv.Type(), nv.Pointer()}] ||
+			(nv.Type().Elem().PkgPath() != "" && nv.Type().Elem().PkgPath() != editorMotifPkg) {
+			return
+		}
+		seen[editorSeen{nv.Type(), nv.Pointer()}] = true
+		if nv.Type() == reflect.TypeOf((*Animation)(nil)) {
+			o, n := (*Animation)(unsafe.Pointer(ov.Pointer())), (*Animation)(unsafe.Pointer(nv.Pointer()))
+			if len(o.frames) > 0 && len(n.frames) > 0 {
+				n.SetAnimElem(o.curelem+1, o.curelemtime)
+			}
+			return
+		}
+		editorKeepPlayback(ov.Elem(), nv.Elem(), seen)
+	case reflect.Struct:
+		for i := 0; i < nv.NumField(); i++ {
+			editorKeepPlayback(ov.Field(i), nv.Field(i), seen)
+		}
+	case reflect.Array, reflect.Slice:
+		for i := 0; i < nv.Len() && i < ov.Len(); i++ {
+			editorKeepPlayback(ov.Index(i), nv.Index(i), seen)
+		}
+	case reflect.Map:
+		for it := nv.MapRange(); it.Next(); {
+			editorKeepPlayback(ov.MapIndex(it.Key()), it.Value(), seen)
+		}
+	case reflect.Interface:
+		editorKeepPlayback(ov.Elem(), nv.Elem(), seen)
 	}
 }
 

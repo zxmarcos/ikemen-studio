@@ -77,9 +77,14 @@ their `start`; the select screen (cells, names, cursors; portraits: the
 mod wraps `start.f_animGet` and `debugAnimSource` gives the new animation
 the source of the property's `AnimData`). Then storyboards: window
 Storyboard, the one playing (`editor_storyboard.go`), reloaded at the same
-scene and time in a few ms. Next:
-the fight screen's animations (its `[Begin Action]` sections) in the
-Animation window.
+scene and time in a few ms. Then the screens' animations (`[Begin Action]` in
+their defs) in the Animation window: each element drawn says the action and
+element it shows (`Animation.actionNumber`, set for actions compiled from a
+text; `editorSpriteDrawn` records it), and a reload lets every animation go
+on from the element it was at (`editorKeepPlayback`: old and new structures
+walked together; fight screen and storyboard). Next: the screens' sprites
+(the sprite picker, the Sprites window on a screen's SFF), the motif's
+animations kept playing across a reload.
 
 ## Where things are
 

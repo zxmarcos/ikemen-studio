@@ -85,8 +85,13 @@ func editorStageBgDraw(s *Stage, b *backGround) {
 }
 
 // editorSpriteDrawn runs in Animation.Draw before the sprite is rendered: for the BG being
-// drawn, it records where the sprite went (as initRenderSpriteQuad places it) and the scale.
+// drawn, it records where the sprite went (as initRenderSpriteQuad places it) and the scale;
+// for a screen's element, the action and element shown.
 func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflection bool) {
+	// A screen's element showing an action of its def (editor_fight.go)
+	if e := &edFight; e.cur > 0 && a.filename != "" {
+		e.drawn[e.cur-1].action, e.drawn[e.cur-1].elem = a.actionNumber, a.curelem+1
+	}
 	b := edStage.cur
 	if b == nil || reflection || a != b.anim || edStage.stage == nil {
 		return

@@ -323,7 +323,20 @@ struct FrameFightItem {
     ImVec4 rect;         // x, y, w, h in the game picture's pixels
     ImVec2 k;            // picture pixels per unit of the def's positions
     bool bg = false;     // a BG of a BGDef (its section found in the def; it moves by its start)
+    int action = -1;     // the action of the def it shows ([Begin Action]), -1: none
+    int elem = 0;        // and its element, 1-based
 };
+// The element selected in the Fight screen, Motif or Storyboard window, when it shows an action
+// of its def: for the Animation window, which edits the action in the def's text
+struct ScreenAnim {
+    SourceFile *sf = nullptr;
+    std::string label;           // as "[Lifebar] p1.front50 (fight screen)"
+    int action = -1, elem = 0;   // shown now (elem 0: not on screen)
+    std::function<void()> apply; // after an edit of sf's text: the game shows it
+};
+bool SelectedScreenAnim(ScreenAnim &out);
+extern int g_screenAnimPicked; // bumped when such an element is picked
+
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players
 // On the Game window, as StageOverlay

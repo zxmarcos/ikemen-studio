@@ -83,6 +83,7 @@ func editorReloadStoryboard(textFile string, keep bool) (err error) {
 	}
 	// Animations get their sprite when they step: a paused storyboard would draw none
 	editorEachAnimation(reflect.ValueOf(ns), map[editorSeen]bool{}, (*Animation).UpdateSprite)
+	editorKeepPlayback(reflect.ValueOf(old), reflect.ValueOf(ns), map[editorSeen]bool{})
 	*old = *ns
 	edStoryboard.index.dirty = true
 	return nil
