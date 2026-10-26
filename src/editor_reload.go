@@ -180,7 +180,74 @@ func editorReloadAnims(pn int, text string) error {
 	return nil
 }
 
+// editorReloadSprites reads a player's SFF again (an editor changed it) and
+// gives it, with its palettes and animations, to every player using it. The
+// animations are compiled from the AIR file on disk.
+func editorReloadSprites(pn int) error {
+	if pn < 0 || pn >= len(sys.chars) || len(sys.chars[pn]) == 0 || sys.chars[pn][0] == nil {
+		return fmt.Errorf("no player %v", pn+1)
+	}
+	old := sys.cgi[pn].sff
+	if old == nil || old.filename == "" {
+		return fmt.Errorf("player %v has no SFF file", pn+1)
+	}
+	// loadSff borrows a loaded SFF of the same name: hide the old one meanwhile
+	filename := old.filename
+	old.filename = ""
+	sff, err := loadSff(filename, SffTypeChar, false, false)
+	old.filename = filename
+	if err != nil {
+		return err
+	}
+	for i := range sys.cgi {
+		gi := &sys.cgi[i]
+		if gi.sff != old || i >= len(sys.chars) || len(sys.chars[i]) == 0 || sys.chars[i][0] == nil {
+			continue
+		}
+		gi.sff = sff
+		// As Char.load and the loader do: the SFF's palettes, then the ACT files
+		gi.palettedata = newPaldata()
+		gi.palettedata.palList = PaletteList{
+			palettes:   append([][]uint32{}, sff.palList.palettes...),
+			paletteMap: append([]int{}, sff.palList.paletteMap...),
+			PalTable:   make(map[[2]uint16]int),
+			numcols:    make(map[[2]uint16]int),
+			PalTex:     append([]Texture{}, sff.palList.PalTex...),
+		}
+		for key, value := range sff.palList.PalTable {
+			gi.palettedata.palList.PalTable[key] = value
+		}
+		for key, value := range sff.palList.numcols {
+			gi.palettedata.palList.numcols[key] = value
+		}
+		sys.chars[i][0].loadPalettes()
+		if err := editorReloadAnims(i, ""); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func editorReloadFunctions(l *lua.LState) {
+	luaRegister(l, "debugReloadSprites", func(l *lua.LState) int {
+		/*Read a player's SFF again and give it to every player using it (with palettes and animations).
+		@function debugReloadSprites
+		@tparam int32 pn Player number (1 for P1).
+		@treturn boolean ok
+		@treturn string error*/
+		if !debuggerAttached() {
+			l.Push(lua.LFalse)
+			l.Push(lua.LString("needs -ikdbg"))
+			return 2
+		}
+		if err := editorReloadSprites(int(numArg(l, 1)) - 1); err != nil {
+			l.Push(lua.LFalse)
+			l.Push(lua.LString(err.Error()))
+			return 2
+		}
+		l.Push(lua.LTrue)
+		return 1
+	})
 	luaRegister(l, "debugCharFiles", func(l *lua.LState) int {
 		/*A player's files, as the engine finds them.
 		@function debugCharFiles
