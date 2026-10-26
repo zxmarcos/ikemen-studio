@@ -68,10 +68,13 @@ Fight screen: its sections and fields (`src/ini.cpp`), its elements
 (`editor_fight.go`: each `Layout` drawn, with the section and prefix it was
 read from) picked on the Game window and dragged (the group's `pos`, or the
 element's `offset` with Alt), each edit reloading the fight screen from the
-text in about 20 ms, the round going on. Next: `system.def` (title, select,
-versus screens: `motif.go`, which does not use `Layout`), storyboards, the
-fight screen's animations (its `[Begin Action]` sections) in the Animation
-window.
+text in about 20 ms, the round going on. Then the motif (`system.def`): window
+Motif, the same editing, its texts and animations picked in menus and
+screens (`editor_motif.go`), reloaded in place (~400 ms, so a drag writes
+when let go). Next: the motif's and screens' BGs (`[TitleBGdef]`...:
+`BGDef`, as a stage's), the select screen's cells and portraits, storyboards,
+the fight screen's animations (its `[Begin Action]` sections) in the
+Animation window.
 
 ## Where things are
 
@@ -95,6 +98,7 @@ src/editor_reload.go     reloading a character during a match (debugReloadChar)
 src/editor_input.go      engine side: players' input buffers and commands under way, for the geometry
 src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a BG, reloading the stage
 src/editor_fight.go      engine side: where the fight screen's elements were drawn, reloading the fight screen
+src/editor_motif.go      engine side: the same for the motif (system.def), reloaded in place
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -107,7 +111,7 @@ tools/debugger/
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_stage.cpp      Stage window, and the BGs on the Game window
-  src/app_fight.cpp      Fight screen window, and its elements on the Game window
+  src/app_screen.cpp     Fight screen and Motif windows, and their elements on the Game window
   src/app_debug.cpp      Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -116,7 +120,7 @@ tools/debugger/
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits
-  src/ini.cpp/.h         def files (stages, fight screens): sections and fields with their lines; text edits
+  src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air_test, sff_test, snd_test, cmd_test, ini_test .cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
@@ -179,7 +183,10 @@ helper "Bag"):
   ini win). Back up the def first and restore it after a test that saves.
   The same for `data/fight.def` (`data` is not in git either). The Fight
   screen window is the last tab of the right dock (`click:1515,11` with the
-  default layout); Game's "Fight screen" checkbox is at `click:940,155`.
+  default layout; now in the bottom dock, with Motif); Game's "Screenpack"
+  checkbox is at `click:940,155`. Motif tests: `-P1 "" -P2 ""` starts in
+  the menus (a demo match first: `click:740,350|key:RETURN` shows the title
+  menu); the motif in use is `data/ikemen1/system.def` (`save/config.ini`).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -380,6 +387,28 @@ Fight screen (`fightscreen.go`, `common.go`, `editor_fight.go`):
   they step: after a reload, every `Animation` of the new fight screen is
   found by reflection and `UpdateSprite` runs (a paused game draws them).
 - Save state/Load state bring the old fight screen back (`FightScreen.Clone`).
+
+Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
+
+- `loadMotif` reads system.def into the `Motif` struct by its fields' `ini`
+  tags (`title_info` is [Title Info], `menu.item` a prefix of its keys),
+  then `PopulateDataPointers` walks it by reflection and creates the
+  `AnimData *Anim`, `TextSpriteData *TextSprite`, `RectData`, `PalFX`, `Fade`
+  of each property. Its map case drops the parent's path, hence the editor's
+  own walk. The Lua function `loadMotif` turns the struct into the global
+  `motif` table (userdata for those pointers); the scripts draw them every
+  frame (`textImgDraw`, `animDraw`, which queue a copy: `ts.Copy()`, `*a`, so
+  the source is a field the copy keeps) and read the table's values every
+  frame (`m.pos`, `m.item.spacing`...), but set some things once when a
+  screen starts (`textImgSetWindow` on the menu items, main.lua:3096).
+- Reloading in place: the scripts' `loadMotif` is called again, the old
+  objects take the new values (field by field: what the scripts changed and
+  the new def did not stays) and replace the new ones in `sys.motif`, the new
+  table is merged into the old (tables and userdata kept), and the runtime
+  parts (`ch`, `co`, `me`..., fades) are the old ones. `loadMotif` costs
+  ~350 ms of its own (inheritance between sections, every key set by
+  reflection); reading the SFF and fonts again ~1.5 s more (borrowed).
+- In a match the motif draws little (pause menu, dialogue, win screens).
 
 Compiler (`compiler.go`):
 

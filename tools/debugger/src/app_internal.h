@@ -7,7 +7,7 @@
 //   app_code.cpp     Code: the source files, Apply
 //   app_cmd.cpp      Commands: input, the commands under way, the CMD file
 //   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
-//   app_fight.cpp    Fight screen: the fight screen's def, its elements picked and dragged on the Game window
+//   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -315,20 +315,20 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt);
 void StageWindow();
 
-// Fight screen: its def and where each of its elements was drawn in the last frame (editor_fight.go)
+// Fight screen and Motif: where each element of their defs (fight.def, system.def) was drawn in
+// the last frame (editor_fight.go, editor_motif.go)
 struct FrameFightItem {
     std::string section; // lower case, as "simul lifebar"
     std::string prefix;  // of the def's keys it was read from, lower case, as "p1.bg0."
     ImVec4 rect;         // x, y, w, h in the game picture's pixels
     ImVec2 k;            // picture pixels per unit of the def's positions
 };
-extern std::string g_fightDef;
-extern std::vector<FrameFightItem> g_fightItems;
-extern bool g_fightPick; // the Game window picks and drags the fight screen's elements, not the players
+void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
+extern bool g_screenPick; // the Game window picks and drags their elements, not the players
 // On the Game window, as StageOverlay
-bool FightOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
-                  ImVec2 scale);
-void FightWindow();
+bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
+                   ImVec2 scale);
+void ScreenWindows(); // Fight screen, Motif
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void SessionWindow();

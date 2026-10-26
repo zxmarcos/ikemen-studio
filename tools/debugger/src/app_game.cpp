@@ -190,13 +190,7 @@ void PollFrames() {
         g_frameBgs.push_back({b[size_t(0)].i(),
                               ImVec4((float)b[1].num(), (float)b[2].num(), (float)b[3].num(), (float)b[4].num()),
                               ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy()});
-    const Json &fight = j["fight"];
-    g_fightDef = fight["def"].str();
-    g_fightItems.clear();
-    for (const auto &f : fight["items"].items)
-        g_fightItems.push_back({f[size_t(0)].str(), f[1].str(),
-                                ImVec4((float)f[2].num(), (float)f[3].num(), (float)f[4].num(), (float)f[5].num()),
-                                ImVec2((float)f[6].num(), (float)f[7].num())});
+    ReadScreenGeometry(j);
     const Json &tg = j["tg"];
     int id = tg.isNull() ? -1 : tg["id"].i();
     if (id != g_trigId) g_trigTicks.clear();
@@ -422,11 +416,11 @@ void GameWindow() {
     ImGui::Checkbox("Follow it", &g_followSel);
     ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
     ImGui::SameLine();
-    if (ImGui::Checkbox("Stage", &g_stagePick) && g_stagePick) g_fightPick = false;
+    if (ImGui::Checkbox("Stage", &g_stagePick) && g_stagePick) g_screenPick = false;
     ImGui::SetItemTooltip("The mouse picks and drags the stage's BGs instead of the players (window Stage).");
     ImGui::SameLine();
-    if (ImGui::Checkbox("Fight screen", &g_fightPick) && g_fightPick) g_stagePick = false;
-    ImGui::SetItemTooltip("The mouse picks and drags the fight screen's elements (lifebars, time...) instead of the players\n(window Fight screen).");
+    if (ImGui::Checkbox("Screenpack", &g_screenPick) && g_screenPick) g_stagePick = false;
+    ImGui::SetItemTooltip("The mouse picks and drags the fight screen's elements (lifebars, time...) and the motif's\n(menus, select screen...) instead of the players (windows Fight screen, Motif).");
     if (g_frameTex) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
@@ -520,8 +514,8 @@ void GameWindow() {
     bool boxesShown = false;
     bool boxMouse = BoxEditOverlay(draw, hovered, toScreen, toPicture, boxesShown);
     draw->ChannelsSetCurrent(0);
-    // The fight screen's elements, in front of the stage; in pick mode they take the mouse
-    if (FightOverlay(draw, hovered && !boxMouse, clicked, toScreen, ImVec2(kx, ky))) {
+    // The fight screen's and the motif's elements, in front of the stage; in pick mode they take the mouse
+    if (ScreenOverlay(draw, hovered && !boxMouse, clicked, toScreen, ImVec2(kx, ky))) {
         hovered = false;
         clicked = false;
     }

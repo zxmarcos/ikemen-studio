@@ -432,7 +432,7 @@ void StageWindow() {
     if (ImGui::Button("Reload")) ReloadStage(sf, true);
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
     flow("Pick on the Game window", box);
-    if (ImGui::Checkbox("Pick on the Game window", &g_stagePick) && g_stagePick) g_fightPick = false;
+    if (ImGui::Checkbox("Pick on the Game window", &g_stagePick) && g_stagePick) g_screenPick = false;
     ImGui::SetItemTooltip("The mouse picks and drags BGs, and the limits' handles, on the Game window instead of the players.");
     flow("Limits", box);
     ImGui::Checkbox("Limits", &g_stageLimits);
