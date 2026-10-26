@@ -403,9 +403,7 @@ static bool PositionDrag(ScreenDef &d, SourceFile &sf, const IniSection &s, cons
 
 static void ScreenWindow(ScreenDef &d) {
     Pump(d);
-    // A window the saved layout does not know joins Code's dock
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
-        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
+    DockWithScreens();
     if (!ImGui::Begin(d.window)) {
         ImGui::End();
         return;

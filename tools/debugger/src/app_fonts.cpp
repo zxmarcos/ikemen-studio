@@ -204,6 +204,7 @@ void FontsWindow() {
         FontReload(g_fontPending, &bytes);
         g_fontPending.clear();
     }
+    DockWithScreens();
     if (!ImGui::Begin("Fonts")) {
         ImGui::End();
         return;

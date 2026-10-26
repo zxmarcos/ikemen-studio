@@ -52,7 +52,7 @@ Windows:
 
 | Window | What it does |
 |---|---|
-| Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state |
+| Session | Path of the game, characters, stage, AI per side, extra arguments; Launch/Restart/Stop; connection state; reset the window layout (the screenpack windows, Fight screen to Fonts, share the bottom with the debugging ones, side by side) |
 | Game (engine side) | The game itself: its frames, with the collision boxes and axes over them; hover a player or helper to see it, click to select it, drag it to move it. The mouse wheel zooms (the game's pixels, kept sharp), the right button pans, "Follow it" keeps the selected one in view. While the window has focus, the keyboard goes to the game (but F5, F10, F11). The game's own window is hidden unless Session says otherwise |
 | Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
 | Players | Every player and helper: state, previous state, animation, element, time, types, ctrl, position, velocity, life, power |

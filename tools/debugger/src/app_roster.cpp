@@ -300,8 +300,7 @@ static bool PickName(const char *id, bool stages, std::string &picked) {
 void RosterWindow() {
     if (g_rosterPending && ImGui::GetTime() - g_rosterSent > 0.3 && !g_selectDef.empty())
         RosterReload(LoadSource(g_selectDef), true);
-    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
-        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
+    DockWithScreens();
     if (!ImGui::Begin("Roster")) {
         ImGui::End();
         return;

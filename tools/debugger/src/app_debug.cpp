@@ -33,6 +33,7 @@ void SessionWindow() {
                "in Extra.");
     ImGui::Checkbox("Show the game's own window", &s.gameWindow);
     HelpMarker("With the patched Ikemen GO the game is shown in the Game window and its own window is hidden.");
+    if (ImGui::SmallButton("Reset window layout")) g_firstRun = true; // App_Frame builds the default one
 
     bool running = g_bridge.Running();
     if (ImGui::Button(running ? "Restart" : "Launch")) Launch();

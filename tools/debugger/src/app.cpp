@@ -442,11 +442,16 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderRemoveNode(dock);
     ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dock, ImGui::GetMainViewport()->WorkSize);
-    ImGuiID left, rest, right, center, top, bottom, control, players, leftTop, leftBottom;
+    ImGuiID left, rest, right, center, top, bottom, screens, control, players, leftTop, leftBottom;
     ImGui::DockBuilderSplitNode(dock, ImGuiDir_Left, 0.19f, &left, &rest);
-    ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.3f, &right, &center);
+    ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.32f, &right, &center);
     ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.36f, &bottom, &top);
-    ImGui::DockBuilderSplitNode(top, ImGuiDir_Up, 0.16f, &control, &players);
+    ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.5f, &screens, &bottom);
+    // Control: its tab and three rows
+    const ImGuiStyle &st = ImGui::GetStyle();
+    float controlH = ImGui::GetFrameHeight() * 4 + st.ItemSpacing.y * 2 + st.WindowPadding.y * 2;
+    ImGui::DockBuilderSplitNode(top, ImGuiDir_Up, controlH / (ImGui::GetMainViewport()->WorkSize.y * 0.64f), &control,
+                                &players);
     ImGui::DockBuilderSplitNode(left, ImGuiDir_Up, 0.45f, &leftTop, &leftBottom);
     ImGui::DockBuilderDockWindow("Session", leftTop);
     ImGui::DockBuilderDockWindow("Players", leftBottom);
@@ -463,12 +468,19 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Frame data", bottom);
     ImGui::DockBuilderDockWindow("Trace", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
-    ImGui::DockBuilderDockWindow("Fight screen", bottom);
-    ImGui::DockBuilderDockWindow("Motif", bottom);
-    ImGui::DockBuilderDockWindow("Storyboard", bottom);
-    ImGui::DockBuilderDockWindow("Roster", bottom);
-    ImGui::DockBuilderDockWindow("Fonts", bottom);
+    for (const char *w : kScreenWindows) ImGui::DockBuilderDockWindow(w, screens);
     ImGui::DockBuilderFinish(dock);
+}
+
+// A screenpack window the saved layout does not know joins the others, or Code's dock.
+void DockWithScreens() {
+    for (const char *name : kScreenWindows)
+        if (ImGuiWindow *w = ImGui::FindWindowByName(name); w && w->DockId) {
+            ImGui::SetNextWindowDockID(w->DockId, ImGuiCond_FirstUseEver);
+            return;
+        }
+    if (ImGuiWindow *code = ImGui::FindWindowByName("Code"); code && code->DockId)
+        ImGui::SetNextWindowDockID(code->DockId, ImGuiCond_FirstUseEver);
 }
 
 // Settings live in the ImGui ini, in an [IkemenDebugger][Settings] section.

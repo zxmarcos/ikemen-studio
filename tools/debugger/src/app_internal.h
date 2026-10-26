@@ -193,6 +193,9 @@ std::string NormPath(const std::string &path);
 std::string ExeDir();
 std::string ReadWholeFile(const std::string &path);
 void HelpMarker(const char *text);
+// The screenpack windows, docked together apart from the debugging ones
+inline constexpr const char *kScreenWindows[] = {"Fight screen", "Motif", "Storyboard", "Roster", "Fonts"};
+void DockWithScreens();
 
 // Commands
 bool Connected();

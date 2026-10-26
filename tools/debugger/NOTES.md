@@ -217,9 +217,10 @@ helper "Bag"):
 - Stage tests: `test_ui.ps1 -Fresh -IniExtra "Stage=kfm"` (later lines of the
   ini win). Back up the def first and restore it after a test that saves.
   The same for `data/fight.def` (`data` is not in git either). The Fight
-  screen window is the last tab of the right dock (`click:1515,11` with the
-  default layout; now in the bottom dock, with Motif); Game's "Screenpack"
-  checkbox is at `click:940,155`. Motif tests: `-P1 "" -P2 ""` starts in
+  screen window is the first tab of the bottom right dock, with Motif,
+  Storyboard, Roster and Fonts (default layout: `click:810,621`; Session's
+  "Reset window layout", `click:100,203`, rebuilds it); Game's "Screenpack"
+  checkbox is at `click:900,162`. Motif tests: `-P1 "" -P2 ""` starts in
   the menus (a demo match first: `click:740,350|key:RETURN` shows the title
   menu); the motif in use is `data/ikemen1/system.def` (`save/config.ini`).
   When the demo has not started yet that key picks Arcade instead: for a
