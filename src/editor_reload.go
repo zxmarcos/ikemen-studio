@@ -228,7 +228,47 @@ func editorReloadSprites(pn int) error {
 	return nil
 }
 
+// editorReloadSounds reads a player's SND again (an editor changed it) and gives
+// it to every player using it.
+func editorReloadSounds(pn int) error {
+	if pn < 0 || pn >= len(sys.cgi) || sys.cgi[pn].snd == nil || sys.cgi[pn].snd.filename == "" {
+		return fmt.Errorf("player %v has no SND file", pn+1)
+	}
+	old := sys.cgi[pn].snd
+	// LoadSnd would borrow the loaded one
+	snd, err := LoadSndFiltered(old.filename, func(gn [2]int32) bool { return gn[0] >= 0 && gn[1] >= 0 }, 0)
+	if err != nil {
+		return err
+	}
+	snd.filename = old.filename
+	for i := range sys.cgi {
+		if sys.cgi[i].snd == old {
+			sys.cgi[i].snd = snd
+		}
+	}
+	return nil
+}
+
 func editorReloadFunctions(l *lua.LState) {
+	luaRegister(l, "debugReloadSounds", func(l *lua.LState) int {
+		/*Read a player's SND again and give it to every player using it.
+		@function debugReloadSounds
+		@tparam int32 pn Player number (1 for P1).
+		@treturn boolean ok
+		@treturn string error*/
+		if !debuggerAttached() {
+			l.Push(lua.LFalse)
+			l.Push(lua.LString("needs -ikdbg"))
+			return 2
+		}
+		if err := editorReloadSounds(int(numArg(l, 1)) - 1); err != nil {
+			l.Push(lua.LFalse)
+			l.Push(lua.LString(err.Error()))
+			return 2
+		}
+		l.Push(lua.LTrue)
+		return 1
+	})
 	luaRegister(l, "debugReloadSprites", func(l *lua.LState) int {
 		/*Read a player's SFF again and give it to every player using it (with palettes and animations).
 		@function debugReloadSprites
