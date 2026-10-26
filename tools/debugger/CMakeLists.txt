@@ -25,13 +25,18 @@ target_include_directories(imgui PUBLIC "${_imgui}" "${_imgui}/backends" "${_img
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_link_libraries(imgui PUBLIC opengl32)
 
+# lodepng (commit e584a849), zlib licence: third_party/lodepng/LICENSE
+add_library(lodepng STATIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/lodepng.cpp")
+target_include_directories(lodepng PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng")
+
 add_executable(ikemen-debugger WIN32
   src/main.cpp
   src/app.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp
-  src/air.cpp)
+  src/air.cpp
+  src/sff.cpp)
 target_compile_definitions(ikemen-debugger PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX UNICODE _UNICODE)
 if(MSVC)
   target_compile_options(ikemen-debugger PRIVATE /W3 /utf-8 /EHsc)
@@ -40,7 +45,7 @@ else()
   # wWinMain, and no MSYS2 DLLs needed next to the exe
   target_link_options(ikemen-debugger PRIVATE -municode -static)
 endif()
-target_link_libraries(ikemen-debugger PRIVATE imgui opengl32 user32 gdi32)
+target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32)
 # No per-configuration folder: the exe looks for ikdbg.lua next to itself.
 set_target_properties(ikemen-debugger PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>")
 
@@ -56,3 +61,6 @@ target_sources(ikemen-debugger PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ikdbg.lua")
 # Tests of the parts that do not need a window: scripts/build.ps1 test
 add_executable(air-test tests/air_test.cpp src/air.cpp)
 target_include_directories(air-test PRIVATE src)
+add_executable(sff-test tests/sff_test.cpp src/sff.cpp)
+target_include_directories(sff-test PRIVATE src)
+target_link_libraries(sff-test PRIVATE lodepng)

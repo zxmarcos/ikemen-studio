@@ -57,6 +57,7 @@ Windows:
 | Control | Pause/continue (F5), step 1 tick (F10), step 10 (F11), run N ticks, speed, save/load state, reset round, reload the match from disk, collision boxes, Ikemen's debug display |
 | Players | Every player and helper: state, previous state, animation, element, time, types, ctrl, position, velocity, life, power |
 | Animation (engine side) | The selected entity's animation element in its AIR file: the elements (a click shows one on the game), the element's sprite, offset and time, its Clsn1 and Clsn2 boxes (own, or the action's default and how many elements share it), add and delete boxes. The action can be shown on the player, copied, renumbered or deleted; an element duplicated, deleted, moved or made the loop start. With **On the game, drag its boxes**, the boxes are drawn on the Game window with handles: drag an edge, a corner or the inside; with **the sprite**, a drag near the player moves the element's offset. The previous element's boxes can be shown faint. Every change goes to the game at once (only the animations are compiled again); **Save** writes the AIR file, which the Code window edits too |
+| Sprites (engine side) | The selected player's SFF file (v1 or v2): the sprites, filtered by group; a preview (wheel: zoom, drag: move the axis) with any of the palettes; renumber, axis, replace with a PNG, save as a PNG, delete; add PNG files (to the character's palette 1,1, or with palettes of their own). **Save** writes SFF v2 (the first time the old file is kept as `.bak`) and the game reads it again at once. The Animation window picks an element's sprite among thumbnails and can show the previous element's sprite faint on the game |
 | Inspector | The selected entity in full, `var`/`fvar` (changes of the last tick in yellow), and actions: SelfState, ChangeAnim, set life, full life/power, stand, toggle AI. Engine side: double-click a `var`/`fvar` to change it, set position and velocity |
 | Frame data | Tick by tick history of the selected entity (1200 ticks); state changes and hits are highlighted. Engine side: the number of controllers that ran; click a tick to see them in Code |
 | Trace | State changes and hits of every entity |
@@ -85,7 +86,7 @@ calls it once per frame.
 New Lua functions: `debugTraceEnable(on)`, `debugTraceRead()` (character id,
 source index pairs since the last call), `debugSourceCount()`,
 `debugSources(from, count)`, `stateSource([stateNo])`, `setVar`, `setFvar`,
-`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`.
+`setSysVar`, `setSysFvar`, `setPos(x, y[, z])`, `setVel(x, y[, z])`, `debugMoveBy(dx, dy)` (pixels of the game picture), `debugReloadChar(pn)` (`editor_reload.go`: load and compile a player's files again in the middle of a match), `debugReloadAnims(pn[, textFile])` (the animations alone, optionally from unsaved text), `debugCharFiles(pn)`, `debugSetAnimElem(elem[, time])`, `debugReloadSprites(pn)` and `debugReloadSounds(pn)` (the SFF or SND read again, for every player using it).
 
 ## How it works
 
@@ -138,7 +139,8 @@ Snapshots are about 1 KB per tick with two characters.
 - Breakpoints stop the game after the tick, not in the middle of a state:
   the trace shows exactly which controllers ran and in which order, but
   there is no stepping from one controller to the next.
-- Sprites are not reloaded by **Save and apply** (the SFF in use is kept):
-  use **Reload match** after changing them.
+- **Save and apply** keeps the SFF and SND in use: changes to them made
+  outside the debugger need **Reload match** (the Sprites window reloads the
+  SFF it saves).
 - The stdin bridge only exists in the normal match loop: not in netplay or
   rollback matches.

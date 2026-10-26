@@ -35,8 +35,10 @@ Game window, which zooms and pans; the previous element's boxes; elements
 duplicated, deleted, moved, loop start; actions copied, renumbered,
 deleted; `src/air.cpp` parses and edits AIR text, `tests/air_test.cpp`
 tests it. Not done: a sprite onion skin and a canvas of its own, which need
-the app to draw sprites, i.e. an SFF reader); then sprites, sounds,
-commands.
+the app to draw sprites, i.e. an SFF reader); sprites (done: window
+Sprites, `src/sff.cpp` with checked
+decoders and lodepng; `debugReloadSprites`; the sprite picker and the onion
+sprite in Animation); then sounds (`debugReloadSounds` is there), commands.
 
 ## Where things are
 
@@ -65,6 +67,9 @@ tools/debugger/
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
   src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
   src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
+  src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
+  third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
+  tests/                 air_test.cpp, sff_test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -115,7 +120,9 @@ helper "Bag"):
 ## Testing
 
 - `scripts/build.ps1 test`: unit tests of the parts without a window
-  (`tests/air_test.cpp`, AIR parsing and edits).
+  (`tests/air_test.cpp`, AIR parsing and edits; `tests/sff_test.cpp`, every
+  sprite of kfm.sff (v2) and ryusprite.sff (v1) decoded, written as v2 and
+  read back with the same pixels, a sprite through PNG and back).
 - `scripts/probe.ps1 [-P1 ryu_pots]`: protocol test without the GUI. Starts
   the game with the mod, sends commands over stdin at fixed times, prints the
   replies, sample sources and one tick's trace; full output in
@@ -212,6 +219,12 @@ Reloading a character (`editor_reload.go`):
   animations, `gi.snd`.
 - CNS compile errors name the line after the statedef's section, not the
   line of the bad value.
+- `loadSff` and `LoadSnd` borrow an SFF/SND already loaded under the same
+  name (`findActiveSff`, `findActiveSnd`): `debugReloadChar` therefore keeps
+  them; `debugReloadSprites` hides the old SFF's name while loading, then
+  rebuilds the palettes as the loader does (`palettedata` from the SFF,
+  `loadPalettes` for the ACT files) and compiles the animations again (they
+  hold the SFF); `debugReloadSounds` uses `LoadSndFiltered`.
 
 Compiler (`compiler.go`):
 

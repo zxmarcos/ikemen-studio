@@ -249,6 +249,13 @@ function ikdbg.anims(pn, textFile)
 	ikdbg.dirty = true
 end
 
+-- Reads a player's SFF again (the debugger wrote it), for every player using it.
+function ikdbg.sprites(pn)
+	local ok, err = debugReloadSprites(pn)
+	if not ok then send('@IKRES', {ok = false, r = 'sprites of P' .. pn .. ': ' .. tostring(err)}) end
+	ikdbg.dirty = true
+end
+
 -- A breakpoint on a state controller: the game stops after a tick in which it ran.
 function ikdbg.ctrlBrkSet(src, on)
 	ikdbg.ctrlBreak[src] = on or nil
