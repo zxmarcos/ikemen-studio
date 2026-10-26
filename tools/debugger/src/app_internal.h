@@ -9,6 +9,7 @@
 //   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
 //   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
 //   app_roster.cpp   Roster: select.def's characters in the select screen's grid, its stages
+//   app_lab.cpp      Lab: a dummy, takes of input, characters swapped
 //   app_debug.cpp    Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 #pragma once
 
@@ -49,6 +50,7 @@ struct Entity {
     std::string stt, mvt, phy;
     int hitpause = 0, moveHit = 0, moveContact = 0, moveGuarded = 0;
     bool clsn1 = false; // its animation element has a Clsn1 box
+    int numExplods = 0, numProjs = 0;
     int stateSrc = 0;   // source index of the current statedef (patched Ikemen only)
     std::vector<double> vars, fvars;
     // Its explods and projectiles (the watched entity, patched Ikemen only)
@@ -112,6 +114,7 @@ struct TraceEvent {
     bool byHelper = false, guarded = false, fall = false;
     int damage = 0, hittime = 0, shake = 0, slide = 0, ctrltime = 0, combo = 0, animtype = 0;
     std::string attr;
+    int hitdefSrc = 0; // the attacker's HitDef or Projectile controller last run (source index), 0 if not known
 };
 
 struct Breakpoint {
@@ -398,6 +401,15 @@ extern std::string g_selectDef; // as the game names it (frame geometry), "" whe
 extern int g_rosterPick;        // a select screen's cell picked on the Game window: 1 + its grid index
 void OutlineSelectCell(int tag); // the Game window outlines that cell (1 + its grid index)
 void RosterWindow();
+std::vector<std::string> ListDefs(bool stages); // characters as select.def names them, or stages' defs
+
+// Lab: a dummy, takes of a player's input recorded and played, characters swapped in a match
+void OnLabState(const Json &lab); // the snapshot's "lab" (null: nothing going on)
+void OnTake(const Json &j);       // @IKTAKE: a take recorded
+void LabSettingsLine(const std::string &key, const std::string &value);
+void LabSettingsWrite(ImGuiTextBuffer *buf);
+void LabHello();                  // the game started: its dummy again
+void LabWindow();
 
 // Fonts: the font files loaded (frame geometry), their defs and glyphs
 extern std::vector<std::string> g_fontFiles; // as the game names them; a text's font is 1 + an index

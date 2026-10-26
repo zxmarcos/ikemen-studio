@@ -293,6 +293,8 @@ void ReadEntity(const Json &j, Entity &e) {
     e.moveGuarded = j["mg"].i();
     e.stateSrc = j["ss"].i();
     e.clsn1 = j["c1"].truthy();
+    e.numExplods = j["nex"].i();
+    e.numProjs = j["npr"].i();
     for (const auto &v : j["vars"].items) e.vars.push_back(v.num());
     for (const auto &v : j["fvars"].items) e.fvars.push_back(v.num());
     e.hasObjects = j["explods"].type == Json::Array;
@@ -331,6 +333,7 @@ void OnSnapshot(const Json &j) {
     }
 
     std::map<int, bool> changed, contact;
+    size_t added = j["ev"].items.size();
     for (const auto &ev : j["ev"].items) {
         TraceEvent t;
         t.t = ev["t"].i();
@@ -373,11 +376,28 @@ void OnSnapshot(const Json &j) {
             while (rows.size() > kHistory) rows.pop_front();
         }
         g_selTick = -1;
+        // A hit's attack: the HitDef (or Projectile, ReversalDef) its attacker ran last, this tick or before
+        for (size_t n = g_trace.size() - std::min(added, g_trace.size()); n < g_trace.size(); n++) {
+            TraceEvent &t = g_trace[n];
+            auto rows = g_history.find(t.by);
+            if (t.kind != "got" || rows == g_history.end()) continue;
+            for (auto r = rows->second.rbegin(); r != rows->second.rend() && !t.hitdefSrc; ++r) {
+                if (r->t > t.t) continue;
+                for (int src : r->ran) {
+                    if (src <= 0 || src >= (int)g_sources.size()) continue;
+                    std::string type = g_sources[src].type;
+                    std::transform(type.begin(), type.end(), type.begin(), ::tolower);
+                    if (type == "hitdef" || type == "projectile" || type == "reversaldef") t.hitdefSrc = src;
+                }
+            }
+        }
     }
 
     for (const auto &bk : j["bk"].items)
         for (auto &b : g_breakpoints)
             if (b.bid == bk["bid"].i()) b.hits = bk["hits"].i();
+
+    OnLabState(j["lab"]);
 
     for (const auto &item : j["w"].items)
         for (auto &w : g_watches)
@@ -420,6 +440,9 @@ void OnLine(const Bridge::Line &line) {
                                (g_canTrace ? " (with the debugger patch)" : " (no controller trace: unpatched Ikemen GO)"));
         for (const auto &b : g_breakpoints) SendBreakpoint(b);
         for (const auto &w : g_watches) SendWatchExpr(w);
+        LabHello();
+    } else if (tag == "@IKTAKE") {
+        OnTake(j);
     } else if (tag == "@IKSRC") {
         size_t from = (size_t)std::max(1, j["from"].i());
         const auto &items = j["items"].items;
@@ -509,6 +532,7 @@ void DefaultLayout(ImGuiID dock) {
     ImGui::DockBuilderDockWindow("Frame data", bottom);
     ImGui::DockBuilderDockWindow("Trace", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
+    ImGui::DockBuilderDockWindow("Lab", bottom);
     for (const char *w : kScreenWindows) ImGui::DockBuilderDockWindow(w, screens);
     ImGui::DockBuilderFinish(dock);
 }
@@ -557,6 +581,8 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         int t = 0, used = 0;
         if (sscanf(value.c_str(), "%d|%n", &t, &used) == 1 && used > 0)
             g_watches.push_back({g_nextWatch++, t, value.substr(used)});
+    } else {
+        LabSettingsLine(key, value);
     }
 }
 
@@ -571,6 +597,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
         if (!b.cond.empty()) buf->appendf("CtrlBreakIf=%s\n", b.cond.c_str());
     }
     for (const auto &w : g_watches) buf->appendf("WatchExpr=%d|%s\n", w.target, w.code.c_str());
+    LabSettingsWrite(buf);
     buf->append("\n");
 }
 
@@ -641,6 +668,7 @@ void App_Frame() {
     TraceWindow();
     BreakpointsWindow();
     WatchWindow();
+    LabWindow();
     ConsoleWindow();
     CodeWindow();
     if (g_autoLaunch) {

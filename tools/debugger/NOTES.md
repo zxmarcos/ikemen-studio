@@ -114,6 +114,22 @@ every file of a screenpack the engine reads (`system.def`, `fight.def`,
 storyboards, `select.def`, fonts, their SFFs and animations) is edited with
 the game showing it.
 
+Phase 4, the lab (testing a move the same way again and again), begun with
+the Lab window (`editor_lab.go`; one line in `CommandList.InputUpdate`
+hands the 14 buttons read for a player's root to `editorInputButtons`,
+which records them or replaces them, back and forward in place of left
+and right from `Char.fbFlip`, set just before): a dummy (the mod's
+`ikdbg.dummy` holds its keys each tick with `debugInputHold`, guarding
+when `inGuardDist()`, one tick late, which is enough), takes recorded and
+played (`ikdbg.record`, `ikdbg.play`: after `resetRound()` they start on
+the first tick of round state 2 seen after another; `sys.randseed` saved
+at the start and given back), characters swapped (`debugSwapChar`: the
+side's `sys.sel.selected` entry, `reloadCharSlot` and `reloadFlg`, as
+MatchRestart does; the character added to the select list when not in
+it); the attack of each hit taken found in the attacker's controller
+history (Trace); explod and projectile counts in Players. Next for it: see
+"Limits and next steps".
+
 ## Where things are
 
 Branch `debugger-bridge` of this clone (local only, never pushed), on top of
@@ -141,6 +157,7 @@ src/editor_storyboard.go engine side: the same for the storyboard playing
 src/editor_select.go     engine side: select.def's characters and stages emptied to be added again
 src/editor_font.go       engine side: every font loaded, a font's file read again in place
 src/editor_objects.go    engine side: a character's explods and projectiles (debugObjects)
+src/editor_lab.go        engine side: a player's keys held, recorded, played; a character swapped
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -264,6 +281,13 @@ helper "Bag"):
   reach the game only while Game has focus: click the picture first. P1's
   keyboard (`save/config.ini`): arrows, a b c = Z X C, x y z = A S D.
   Click coordinates depend on the layout: take a shot first.
+- Lab tests: with `-IniExtra "AI1=0`nAI2=0"` nobody moves on their own;
+  `lua:debugInputHold(1, 'F')` stands for held keys (they are recorded like
+  real ones), `ikdbg.record(1, true)` and `ikdbg.stopTake()` record a take
+  (it shows in the log as "Take N: P1, n ticks" and is saved in the ini),
+  and a run without `-Fresh` keeps it to play from the Lab window (its tab
+  is at `click:540,577`, a take's "P1" button at `click:632,812`).
+  `-IniExtra "Dummy=2|1|1|1|0"` makes P2 a crouching dummy that guards.
 - A debug-build ImGui assertion shows a modal box that can be hidden behind
   the window and looks like a freeze: attach `cdb.exe` (Windows Kits) and
   `~*kb` to find it.
@@ -547,4 +571,9 @@ one had no hit pause left); an "only if" condition on controller
 breakpoints (`ikdbg.ctrlBrkSet(src, on, cond)`, read after the tick on
 the entity that ran it: a controller "runs" when its triggers held, as
 `tracedSctrl.Run` records).
+
+Phase 4 next steps: the dummy's reactions (a move after guarding or on
+waking up, from a take: "play this take when it can act again"); the
+keys held shown on the Game window while a take plays; juggle points and
+combo damage in Trace; takes kept per character (now one list).
 

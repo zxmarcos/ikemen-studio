@@ -95,7 +95,7 @@ static DefInfo &InfoOf(const std::string &name, bool stage, bool &budget) {
 }
 
 // The folders' contents, for adding: characters as select.def names them, stages' defs
-static std::vector<std::string> ListDefs(bool stages) {
+std::vector<std::string> ListDefs(bool stages) {
     std::vector<std::string> out;
     WIN32_FIND_DATAA fd;
     auto each = [&](const std::string &pattern, const std::function<void(const WIN32_FIND_DATAA &)> &f) {

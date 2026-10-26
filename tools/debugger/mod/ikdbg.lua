@@ -12,6 +12,7 @@
 --   @IKSRC {...}     where state controllers come from (needs the debugger patch)
 --   @IKRELOAD {...}  result of ikdbg.reload (needs the debugger patch)
 --   @IKFILES {...}   every player's files (needs the debugger patch)
+--   @IKTAKE {...}    a take of a player's input recorded (needs the debugger patch)
 -- In (stdin): Ikemen runs each line as Lua, once per frame. The debugger
 -- only sends "if ikdbg then ikdbg.exec('...') end", so a bad command is
 -- reported instead of raising a Lua error (which would stop the engine).
@@ -44,6 +45,9 @@ ikdbg = {
 	watch = {},       -- id -> true: send var/fvar for these entities
 	breakpoints = {}, -- bid -> {pn, cond, fn, enabled, hits}
 	exprs = {},       -- n -> {pn, fn} or {err}: the Watch window's expressions
+	-- The Lab window: dummy {pn, stance, guard, life, power, lastHit}; waiting: a take to record or
+	-- play once the round reset starts the fight; playing: the take played, to loop with a reset
+	lab = {},
 }
 
 --;-----------------------------------------------------------
@@ -159,6 +163,7 @@ local function readEntity()
 		hp = hitPauseTime(), alive = alive(),
 		mh = moveHit(), mc = moveContact(), mg = moveGuarded(),
 		ss = stateSource and stateSource() or nil, c1 = hasClsn1(),
+		nex = numExplod and numExplod() or nil, npr = numProj and numProj() or nil,
 	}
 	if ikdbg.watch[e.id] then
 		local v, fv = {_array = true}, {_array = true}
@@ -322,6 +327,178 @@ function ikdbg.reloadRoster(textFile)
 	if not ok then error(err, 0) end
 end
 
+--;-----------------------------------------------------------
+--; Lab: a dummy, takes of input (needs the debugger patch: debugInputHold, debugInputRecord,
+--; debugInputPlay, debugSwapChar)
+--;-----------------------------------------------------------
+-- Runs f with the trigger context on player pn (its root).
+local function onPlayer(pn, f)
+	local hasOld, oldid = pcall(id)
+	local ok, there = pcall(player, pn)
+	local res = {false}
+	if ok and there then res = {pcall(f)} end
+	if hasOld then pcall(playerId, oldid) end
+	return unpack(res)
+end
+
+-- A player held by the editor: stance 'stand', 'crouch' or 'jump'; guard 'never', 'always' or
+-- 'first' (after a first hit, until 90 ticks go by without one); life and power kept full
+-- once each combo is over. pn 0: none.
+function ikdbg.dummy(pn, stance, guard, life, power)
+	local d = ikdbg.lab.dummy
+	if d and d.pn ~= pn then debugInputHold(d.pn, nil) end
+	ikdbg.lab.dummy = nil
+	if pn > 0 then
+		ikdbg.lab.dummy = {pn = pn, stance = stance, guard = guard, life = life, power = power, lastHit = -1000}
+		onPlayer(pn, function() setAILevel(0) end) -- its AI would play on
+	end
+	ikdbg.dirty = true
+end
+
+local function runDummy()
+	local d = ikdbg.lab.dummy
+	if not d or ikdbg.lab.playing and ikdbg.lab.playing.pn == d.pn then return end
+	local keys
+	onPlayer(d.pn, function()
+		local hit = moveType() == 'H'
+		if hit then d.lastHit = gameTime() end
+		local guard = d.guard == 'always' or (d.guard == 'first' and gameTime() - d.lastHit < 90)
+		keys = (d.stance == 'crouch' and 'D' or d.stance == 'jump' and 'U' or '') ..
+			(guard and inGuardDist() and 'B' or '')
+		if not hit and ctrl() then
+			if d.life and life() < lifeMax() then setLife(lifeMax()) end
+			if d.power and power() < powerMax() then setPower(powerMax()) end
+		end
+	end)
+	if keys then debugInputHold(d.pn, keys) end
+end
+
+-- Takes go between the debugger and the game as runs: key bits, ticks, key bits, ticks...
+local function toRuns(take)
+	local runs, last, n = {_array = true}, nil, 0
+	for _, v in ipairs(take) do
+		if v == last then
+			n = n + 1
+		else
+			if last then table.insert(runs, last); table.insert(runs, n) end
+			last, n = v, 1
+		end
+	end
+	if last then table.insert(runs, last); table.insert(runs, n) end
+	return runs
+end
+
+local function fromRuns(runs)
+	local take = {}
+	for i = 1, #runs - 1, 2 do
+		for _ = 1, runs[i + 1] do take[#take + 1] = runs[i] end
+	end
+	return take
+end
+
+local function startTake(w)
+	if w.kind == 'rec' then
+		debugInputRecord(w.pn, true)
+		ikdbg.lab.recording = w.pn
+	else
+		debugInputPlay(w.pn, fromRuns(w.runs), w.loop and not w.reset, w.seed)
+		ikdbg.lab.playing = w
+	end
+end
+
+-- Records player pn's input (from the start of the fight, after a round reset, with reset).
+function ikdbg.record(pn, reset)
+	ikdbg.stopTake()
+	local w = {kind = 'rec', pn = pn, reset = reset}
+	if reset then
+		resetRound()
+		ikdbg.lab.waiting = w
+	else
+		startTake(w)
+	end
+	ikdbg.dirty = true
+end
+
+-- Plays a take as player pn's input; seed: the recording's random seed, for the same random
+-- numbers; reset: from the start of the fight after a round reset (each time, with loop).
+function ikdbg.play(pn, runs, loop, seed, reset)
+	ikdbg.stopTake()
+	local w = {kind = 'play', pn = pn, runs = runs, loop = loop, seed = seed, reset = reset}
+	if reset then
+		resetRound()
+		ikdbg.lab.waiting = w
+	else
+		startTake(w)
+	end
+	ikdbg.dirty = true
+end
+
+-- Stops recording (the take goes out as @IKTAKE {pn, seed, runs}) or playing.
+function ikdbg.stopTake()
+	local lab = ikdbg.lab
+	if lab.recording then
+		local take, seed = debugInputRecord(lab.recording, false)
+		send('@IKTAKE', {pn = lab.recording, seed = seed, runs = toRuns(take)})
+		lab.recording = nil
+	end
+	if lab.playing then debugInputPlay(lab.playing.pn) end
+	lab.playing, lab.waiting = nil, nil
+	ikdbg.dirty = true
+end
+
+-- Puts another character in player pn's place; the match starts again with it.
+function ikdbg.swap(pn, def, pal)
+	ikdbg.stopTake()
+	local ok, err = debugSwapChar(pn, def, pal)
+	if not ok then error(err, 0) end
+	ikdbg.lastState, ikdbg.lastContact = {}, {}
+end
+
+-- Each tick: a take waiting for the fight to start, a take played to its end, the dummy.
+local function runLab()
+	local lab = ikdbg.lab
+	local w = lab.waiting
+	if w then
+		if roundState() ~= 2 then
+			w.left = true -- the reset began
+		elseif w.left then
+			lab.waiting = nil
+			startTake(w)
+		end
+	end
+	local p = lab.playing
+	if p then
+		local _, _, playing = debugInputState(p.pn)
+		if not playing then
+			if p.loop and p.reset then
+				lab.playing = nil
+				resetRound()
+				p.left = nil
+				lab.waiting = p
+			elseif not p.loop then
+				lab.playing = nil
+			end
+		end
+	end
+	runDummy()
+end
+
+-- What the Lab window shows: {dummy, rec, recTicks, play, at, len, waiting}.
+local function labState()
+	local lab = ikdbg.lab
+	if not (lab.dummy or lab.recording or lab.playing or lab.waiting) then return nil end
+	local s = {dummy = lab.dummy and lab.dummy.pn or 0, waiting = lab.waiting and lab.waiting.kind or nil}
+	if lab.recording then
+		local _, n = debugInputState(lab.recording)
+		s.rec, s.recTicks = lab.recording, n
+	end
+	if lab.playing then
+		local _, _, _, at, len = debugInputState(lab.playing.pn)
+		s.play, s.at, s.len = lab.playing.pn, at, len
+	end
+	return s
+end
+
 -- A breakpoint on a state controller: the game stops after a tick in which it ran; with a
 -- condition, only if that is true then for the one that ran it.
 function ikdbg.ctrlBrkSet(src, on, cond)
@@ -473,9 +650,11 @@ local function frame()
 		tr = debugTraceRead()
 		tr._array = true
 	end
+	if advanced and debugInputHold then runLab() end
 	send('@IKS', {
 		t = tick, rs = roundState(), rn = roundNo(), paused = paused(), steps = ikdbg.steps,
 		adv = advanced, ents = ents, ev = ev, bk = bk, tr = tr, w = readExprs(),
+		lab = debugInputHold and labState() or nil,
 	})
 	ikdbg.events = {}
 

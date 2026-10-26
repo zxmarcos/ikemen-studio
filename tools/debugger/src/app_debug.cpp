@@ -138,12 +138,13 @@ void PlayersWindow() {
     }
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable |
                             ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
-    if (ImGui::BeginTable("players", 13, flags)) {
+    if (ImGui::BeginTable("players", 14, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         float em = ImGui::GetFontSize();
         ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 7);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, em * 8);
-        for (const char *h : {"State", "Prev", "Anim", "Elem", "Time", "Type", "Ctrl", "Pos", "Vel", "Life", "Power"})
+        for (const char *h : {"State", "Prev", "Anim", "Elem", "Time", "Type", "Ctrl", "Pos", "Vel", "Life", "Power",
+                              "Explods, projs"})
             ImGui::TableSetupColumn(h);
         ImGui::TableHeadersRow();
         for (const auto &e : g_ents) {
@@ -178,6 +179,8 @@ void PlayersWindow() {
             ImGui::Text("%d/%d", e.life, e.lifemax);
             ImGui::TableNextColumn();
             ImGui::Text("%d", e.pow);
+            ImGui::TableNextColumn();
+            if (e.numExplods || e.numProjs) ImGui::Text("%d, %d", e.numExplods, e.numProjs);
         }
         ImGui::EndTable();
     }
@@ -666,13 +669,27 @@ void TraceWindow() {
             ImGui::Text("%d", t.t);
             ImGui::TableNextColumn();
             ImGui::PushID((int)n);
-            if (ImGui::Selectable(Who(t.pn, t.helper, t.id).c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
+            if (ImGui::Selectable(Who(t.pn, t.helper, t.id).c_str(), false,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
                 g_selId = t.id, g_selPicked++;
             ImGui::PopID();
             ImGui::TableNextColumn();
             if (isState)
                 ImGui::Text("state %d -> %d", t.from, t.to);
             else if (t.kind == "got") {
+                if (t.hitdefSrc) {
+                    const Source &s = g_sources[t.hitdefSrc];
+                    ImGui::PushID((int)n);
+                    if (ImGui::SmallButton(s.type.c_str())) {
+                        g_codeFile = s.file;
+                        g_codeLine = g_codeScrollTo = s.line;
+                        g_codeHold = true;
+                    }
+                    ImGui::PopID();
+                    ImGui::SetItemTooltip("The attack: %s:%d, in state %d. Click to show it in Code.", s.file.c_str(),
+                                          s.line, s.state);
+                    ImGui::SameLine();
+                }
                 // what the hit does to it: hitstun (or guard stun), hit shake (its hit pause), slide, ctrl
                 std::string by = t.byPn ? Who(t.byPn, t.byHelper, t.by) : "id " + std::to_string(t.by);
                 ImGui::TextColored(t.guarded ? ImVec4(0.6f, 0.8f, 1, 1) : ImVec4(1, 0.7f, 0.4f, 1),

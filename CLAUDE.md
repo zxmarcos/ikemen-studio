@@ -5,7 +5,7 @@ an external debugger: the engine side in `src/script_debugger.go` and
 `src/editor_*.go` (plus one or two lines each in `compiler.go`, `bytecode.go`,
 `script.go`, `system.go`, `stage.go`, `anim.go`, `common.go`, `render.go`,
 `fightscreen.go`, `image.go`, `sound.go`, `font.go`, `font_gl33.go`, `font_gles32.go`,
-`bgdef.go`; and two blocks
+`bgdef.go`, `input.go`; and two blocks
 of `external/script/main.lua` and `start.lua` made functions) and the
 debugger program in `tools/debugger`. Read `tools/debugger/NOTES.md` first: state of the work,
 build environment and tests.

@@ -2822,6 +2822,8 @@ func (cl *CommandList) InputUpdate(char *Char, controller int) bool {
 		}
 	}
 
+	buttons = editorInputButtons(char, buttons)
+
 	// Convert bool slice back to named inputs
 	U, D, L, R := buttons[0], buttons[1], buttons[2], buttons[3]
 	a, b, c := buttons[4], buttons[5], buttons[6]
