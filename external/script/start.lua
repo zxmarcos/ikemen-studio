@@ -1574,7 +1574,9 @@ function start.f_slotSelected(cell, side, cmd, player, x, y)
 	return main.f_btnPalNo(cmd) > 0 and (not t_reservedChars[side][start.t_grid[y + 1][x + 1].char_ref] or start.t_grid[start.c[player].selY + 1][start.c[player].selX + 1].char == 'randomselect'),false
 end
 
---generate start.t_grid table, assign row and cell to main.t_selChars
+--generate start.t_grid table, assign row and cell to main.t_selChars (an external editor runs it
+--again after main.f_loadSelectDef, -ikdbg)
+function start.f_makeGrid()
 local cnt = motif.select_info.columns + 1
 local row = 1
 local col = 0
@@ -1607,6 +1609,8 @@ for i = 1, motif.select_info.rows * motif.select_info.columns do
 	end
 end
 if gameOption('Debug.DumpLuaTables') then main.f_printTable(start.t_grid, 'debug/t_grid.txt') end
+end
+start.f_makeGrid()
 
 local function updateCommon(common, add)
 	for k, values in pairs(common) do

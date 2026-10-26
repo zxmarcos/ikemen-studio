@@ -219,7 +219,8 @@ func editorRenderSprite(rp *RenderParams) {
 //	  the action of the def it shows ([Begin Action]) and its element (1-based), else -1, -1;
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
 //	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem] (kx, ky: per unit of its start);
-//	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go).
+//	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go);
+//	"select": the motif's select.def (editor_select.go).
 func editorScreenGeometry(b []byte) []byte {
 	editorMotifIndex()
 	block := func(name, def string, sff *Sff, file int8) {
@@ -265,6 +266,10 @@ func editorScreenGeometry(b []byte) []byte {
 	block("motif", sys.motif.Def, sys.motif.Sff, editorFileMotif)
 	if sys.storyboard.active {
 		block("storyboard", sys.storyboard.Def, sys.storyboard.Sff, editorFileStoryboard)
+	}
+	if sys.motif.Def != "" && sys.motif.Files.Select != "" {
+		b = append(b, `,"select":`...)
+		b = editorJSONString(b, sys.motif.Files.Select)
 	}
 	edFight.drawn = edFight.drawn[:0]
 	edFight.cur = 0

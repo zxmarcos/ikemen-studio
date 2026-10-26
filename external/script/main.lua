@@ -1566,6 +1566,9 @@ function main.f_addStageEntry(line, stageSlot)
 	return row
 end
 
+local t_storyModeList = {}
+--adds the characters and stages of select.def (an external editor runs it again, -ikdbg)
+function main.f_loadSelectDef()
 main.t_includeStage = {{}, {}} --includestage = 1, includestage = -1
 main.t_stageSlots = {}
 main.t_orderChars = {default = {}}
@@ -1574,7 +1577,7 @@ main.t_bonusChars = {}
 main.t_selGrid = {}
 main.t_selOptions = {}
 main.t_selStoryMode = {}
-local t_storyModeList = {}
+t_storyModeList = {}
 local t_addExluded = {}
 local tmp = ''
 local section = 0
@@ -1869,6 +1872,8 @@ if main.t_selOptions.timeattackmaxmatches == nil then main.t_selOptions.timeatta
 if main.t_selOptions.survivalmaxmatches == nil then main.t_selOptions.survivalmaxmatches = {-1, 0, 0, 0, 0, 0, 0, 0, 0, 0} end
 
 hook.run("main.selectDef.defaults", main.t_selOptions)
+end
+main.f_loadSelectDef()
 
 --uppercase title
 function main.f_itemnameUpper(title, uppercase)
