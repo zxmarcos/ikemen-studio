@@ -41,3 +41,22 @@ bool Cmd_Add(std::string &text, const CmdFile &f, const CmdCommand *after, const
              const std::string &command);
 bool Cmd_Duplicate(std::string &text, const CmdCommand &c); // the copy goes after it
 bool Cmd_Delete(std::string &text, const CmdCommand &c);
+
+// A step of a command's motion ("~30$D", "/F", ">x+y") as the visual editor shows it: a
+// direction and buttons pressed together, with the prefixes on the first of them. A step it
+// does not show (prefixes on a later key, "|", "*", N, L, R, a charge on "/") stays in raw.
+struct CmdStep {
+    bool strict = false;  // > nothing else in between
+    bool release = false; // ~
+    int charge = 0;       // ~30: held that long before the release
+    bool hold = false;    // /
+    bool four = false;    // $ the diagonals count
+    int dir = 0;          // 0 none, then kCmdDirs
+    unsigned buttons = 0; // bits in kCmdButtons order
+    std::string raw;      // as written, when not shown
+};
+extern const char *const kCmdDirs[9]; // "", "B", "DB", "D", "DF", "F", "UF", "U", "UB"
+extern const char kCmdButtons[];      // "abcxyzsdwm"
+std::vector<CmdStep> Cmd_Steps(const std::string &command);
+std::string Cmd_StepText(const CmdStep &s);
+std::string Cmd_StepsText(const std::vector<CmdStep> &steps); // "~D, DF, F, x"

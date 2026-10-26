@@ -179,10 +179,12 @@ tools/debugger/
   src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
-  src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits
+  src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
+  src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
+  src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], CNS or ZSS
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
-  tests/                 air_test, sff_test, snd_test, cmd_test, ini_test .cpp (scripts/build.ps1 test)
+  tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)

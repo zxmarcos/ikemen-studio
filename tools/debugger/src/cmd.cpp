@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 
 namespace {
@@ -202,4 +203,85 @@ bool Cmd_Delete(std::string &text, const CmdCommand &c) {
     lines.erase(lines.begin() + from, lines.begin() + to);
     text = JoinLines(lines);
     return true;
+}
+
+const char *const kCmdDirs[9] = {"", "B", "DB", "D", "DF", "F", "UF", "U", "UB"};
+const char kCmdButtons[] = "abcxyzsdwm";
+
+namespace {
+
+bool ParseStep(const std::string &text, CmdStep &s) {
+    s = CmdStep();
+    std::string t = Trim(text);
+    size_t i = 0;
+    for (; i < t.size(); i++) {
+        char ch = t[i];
+        if (ch == '>' && !s.strict) s.strict = true;
+        else if (ch == '~' && !s.release) {
+            s.release = true;
+            while (i + 1 < t.size() && isdigit((unsigned char)t[i + 1])) s.charge = s.charge * 10 + (t[++i] - '0');
+        } else if (ch == '/' && !s.hold) {
+            s.hold = true;
+            if (i + 1 < t.size() && isdigit((unsigned char)t[i + 1])) return false; // Ikemen's charged hold
+        } else if (ch == '$' && !s.four) s.four = true;
+        else if (ch != ' ' && ch != '\t') break;
+    }
+    std::string body = t.substr(i);
+    if (body.empty() || body.find('|') != std::string::npos) return false;
+    size_t a = 0;
+    for (;;) {
+        size_t b = body.find('+', a);
+        std::string part = Trim(body.substr(a, b == std::string::npos ? std::string::npos : b - a));
+        int d = 0;
+        for (int k = 1; k <= 8; k++)
+            if (part == kCmdDirs[k]) d = k;
+        const char *btn = part.size() == 1 ? strchr(kCmdButtons, part[0]) : nullptr;
+        if (d && !s.dir) s.dir = d;
+        else if (btn && !(s.buttons & (1u << (btn - kCmdButtons)))) s.buttons |= 1u << (btn - kCmdButtons);
+        else return false; // a prefix on a later key, N, L, R, two directions...
+        if (b == std::string::npos) break;
+        a = b + 1;
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<CmdStep> Cmd_Steps(const std::string &command) {
+    std::vector<CmdStep> out;
+    size_t a = 0;
+    for (;;) {
+        size_t b = command.find(',', a);
+        std::string part = Trim(command.substr(a, b == std::string::npos ? std::string::npos : b - a));
+        if (!part.empty()) {
+            CmdStep s;
+            if (!ParseStep(part, s)) {
+                s = CmdStep();
+                s.raw = part;
+            }
+            out.push_back(s);
+        }
+        if (b == std::string::npos) break;
+        a = b + 1;
+    }
+    return out;
+}
+
+std::string Cmd_StepText(const CmdStep &s) {
+    if (!s.raw.empty()) return s.raw;
+    std::string t;
+    if (s.strict) t += '>';
+    if (s.release) t += '~' + (s.charge > 0 ? std::to_string(s.charge) : "");
+    if (s.hold) t += '/';
+    if (s.four) t += '$';
+    std::string body = kCmdDirs[s.dir];
+    for (int i = 0; kCmdButtons[i]; i++)
+        if (s.buttons & (1u << i)) body += (body.empty() ? "" : "+") + std::string(1, kCmdButtons[i]);
+    return t + body;
+}
+
+std::string Cmd_StepsText(const std::vector<CmdStep> &steps) {
+    std::string t;
+    for (const CmdStep &s : steps) t += (t.empty() ? "" : ", ") + Cmd_StepText(s);
+    return t;
 }

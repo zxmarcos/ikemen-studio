@@ -313,6 +313,7 @@ void SoundsWindow();
 // Analysis: a character's states checked (Lint), its variables, the graph of its states
 void AnalysisWindow();
 std::string VarName(const std::string &def, char kind, int index); // "" without one ('v', 'f', 's', 'S')
+std::string StatedefFile(int pn, int no); // the character's file whose [Statedef no] the engine reads first; "" none
 void AnalysisSettingsLine(const std::string &key, const std::string &value);
 void AnalysisSettingsWrite(ImGuiTextBuffer *buf);
 

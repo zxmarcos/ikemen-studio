@@ -47,6 +47,7 @@ add_executable(ikemen-debugger WIN32
   src/app_layout.cpp
   src/app_check.cpp
   src/cns.cpp
+  src/make.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp
@@ -96,3 +97,5 @@ add_executable(fnt-test tests/fnt_test.cpp src/fnt.cpp)
 target_include_directories(fnt-test PRIVATE src)
 add_executable(cns-test tests/cns_test.cpp src/cns.cpp)
 target_include_directories(cns-test PRIVATE src)
+add_executable(make-test tests/make_test.cpp src/make.cpp src/cns.cpp)
+target_include_directories(make-test PRIVATE src)

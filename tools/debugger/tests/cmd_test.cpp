@@ -127,12 +127,45 @@ static void TestKfm() {
     CHECK(f.commands.size() == 37);
     CHECK(!f.commands.empty() && f.commands[0].name == "TripleKFPalm" && f.commands[1].index == 1);
     for (const auto &c : f.commands) CHECK(!c.name.empty() && !c.command.empty());
+    // Every motion of kfm.cmd is shown as steps and written back as it was
+    for (const auto &c : f.commands) {
+        std::vector<CmdStep> steps = Cmd_Steps(c.command);
+        bool shown = true;
+        for (const auto &s : steps) shown &= s.raw.empty();
+        CHECK(shown);
+        std::string back = Cmd_StepsText(steps), want;
+        for (char ch : c.command) want += ch == ' ' ? "" : std::string(1, ch);
+        std::string got;
+        for (char ch : back) got += ch == ' ' ? "" : std::string(1, ch);
+        if (got != want) printf("  %s: \"%s\" written back as \"%s\"\n", c.name.c_str(), c.command.c_str(), back.c_str());
+        CHECK(got == want);
+    }
+}
+
+static void TestSteps() {
+    std::vector<CmdStep> s = Cmd_Steps("~D, DF, F, x");
+    CHECK(s.size() == 4 && s[0].release && s[0].dir == 3 && s[1].dir == 4 && s[3].dir == 0 && s[3].buttons == 1u << 3);
+    s = Cmd_Steps("~30$B, F, x+y");
+    CHECK(s.size() == 3 && s[0].charge == 30 && s[0].four && s[0].dir == 1 && s[2].buttons == ((1u << 3) | (1u << 4)));
+    CHECK(Cmd_StepsText(s) == "~30$B, F, x+y");
+    s = Cmd_Steps("/$D");
+    CHECK(s.size() == 1 && s[0].hold && s[0].four && Cmd_StepText(s[0]) == "/$D");
+    s = Cmd_Steps(">~F, DF+a");
+    CHECK(s.size() == 2 && s[0].strict && s[0].release && s[1].dir == 4 && s[1].buttons == 1);
+    CHECK(Cmd_StepsText(s) == ">~F, DF+a");
+    // What the editor does not show stays as written
+    s = Cmd_Steps("a|b, /30F, D+~a, N, s");
+    CHECK(s.size() == 5 && s[0].raw == "a|b" && s[1].raw == "/30F" && s[2].raw == "D+~a" && s[3].raw == "N");
+    CHECK(s[4].raw.empty() && s[4].buttons == 1u << 6);
+    CHECK(Cmd_StepsText(s) == "a|b, /30F, D+~a, N, s");
+    CHECK(Cmd_Steps("m+w")[0].buttons == ((1u << 9) | (1u << 8)));
 }
 
 int main() {
     TestParse();
     TestEdits();
     TestKfm();
+    TestSteps();
     printf(g_failed ? "cmd-test: %d failed\n" : "cmd-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

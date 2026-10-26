@@ -370,6 +370,20 @@ Model *ModelOf(int pn) {
     return &g_model;
 }
 
+} // namespace
+
+std::string StatedefFile(int pn, int no) {
+    Model *m = ModelOf(pn);
+    if (!m) return "";
+    for (const ParsedFile &pf : m->files)
+        if (pf.own)
+            for (const CnsState &s : pf.cns.states)
+                if (s.literal && s.function.empty() && s.no == no) return pf.path;
+    return "";
+}
+
+namespace {
+
 void ShowLine(const Model &m, int file, int line) {
     if (file < 0 || file >= (int)m.files.size()) return;
     g_codeFile = m.files[file].path;

@@ -4,10 +4,14 @@
 
 #include <cfloat>
 #include <climits>
+#include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <set>
 
 #include "cmd.h"
+#include "cns.h"
+#include "make.h"
 #include "imgui_stdlib.h"
 
 namespace app {
@@ -117,6 +121,267 @@ const CmdFile &CmdOf(const SourceFile &sf) {
 void CmdChanged(SourceFile &sf, bool ok) {
     if (ok) sf.version++;
     else Log(LogLine::Error, "The command moved in the file; pick it again.");
+}
+
+// A direction as a vector, facing right (F is +x, D is +y)
+ImVec2 DirVector(int d) {
+    static const float v[9][2] = {{0, 0}, {-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}};
+    float x = v[d][0], y = v[d][1], n = sqrtf(x * x + y * y);
+    return n > 0 ? ImVec2(x / n, y / n) : ImVec2(0, 0);
+}
+
+void DrawArrow(ImDrawList *draw, ImVec2 c, float r, int d, ImU32 col) {
+    if (!d) {
+        draw->AddCircleFilled(c, r * 0.25f, col);
+        return;
+    }
+    ImVec2 v = DirVector(d), n(-v.y, v.x);
+    ImVec2 tip(c.x + v.x * r, c.y + v.y * r), tail(c.x - v.x * r * 0.8f, c.y - v.y * r * 0.8f);
+    ImVec2 base(c.x + v.x * r * 0.15f, c.y + v.y * r * 0.15f);
+    draw->AddLine(tail, base, col, r * 0.28f);
+    draw->AddTriangleFilled(tip, ImVec2(base.x + n.x * r * 0.55f, base.y + n.y * r * 0.55f),
+                            ImVec2(base.x - n.x * r * 0.55f, base.y - n.y * r * 0.55f), col);
+}
+
+// In kCmdButtons order: a b c x y z s d w m
+const ImU32 kButtonColors[10] = {IM_COL32(220, 90, 90, 255),  IM_COL32(230, 180, 60, 255), IM_COL32(90, 190, 90, 255),
+                                 IM_COL32(90, 140, 230, 255), IM_COL32(170, 110, 220, 255), IM_COL32(80, 200, 200, 255),
+                                 IM_COL32(160, 160, 160, 255), IM_COL32(200, 130, 90, 255), IM_COL32(130, 170, 110, 255),
+                                 IM_COL32(120, 120, 140, 255)};
+
+float StepWidth(const CmdStep &s, float em) {
+    if (!s.raw.empty()) return std::max(em * 3, ImGui::CalcTextSize(s.raw.c_str()).x + em * 0.8f);
+    int buttons = __builtin_popcount(s.buttons);
+    return em * 0.8f + (s.dir || !buttons ? em * 1.9f : 0) + buttons * em * 1.5f;
+}
+
+// A step as a chip: its arrow and buttons, its prefixes above. True when clicked.
+bool StepChip(const CmdStep &s, int id, bool picked) {
+    float em = ImGui::GetFontSize(), w = StepWidth(s, em), h = em * 3.4f;
+    ImGui::PushID(id);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    bool clicked = ImGui::InvisibleButton("step", ImVec2(w, h));
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    ImU32 bg = picked ? IM_COL32(90, 75, 30, 255) : ImGui::IsItemHovered() ? IM_COL32(60, 64, 80, 255) : IM_COL32(45, 48, 60, 255);
+    draw->AddRectFilled(p, ImVec2(p.x + w, p.y + h), bg, em * 0.35f);
+    if (picked) draw->AddRect(p, ImVec2(p.x + w, p.y + h), IM_COL32(230, 190, 80, 255), em * 0.35f, 2.0f);
+    std::string mods;
+    if (s.strict) mods += "> ";
+    if (s.release) mods += s.charge > 0 ? "~" + std::to_string(s.charge) + " " : "~ ";
+    if (s.hold) mods += "hold ";
+    if (s.four) mods += "$";
+    draw->AddText(ImVec2(p.x + em * 0.3f, p.y + em * 0.1f), IM_COL32(230, 200, 120, 255), mods.c_str());
+    float x = p.x + em * 0.4f, cy = p.y + h * 0.62f;
+    if (!s.raw.empty()) {
+        draw->AddText(ImVec2(x, cy - em * 0.5f), IM_COL32(255, 140, 140, 255), s.raw.c_str());
+    } else {
+        if (s.dir || !s.buttons) {
+            DrawArrow(draw, ImVec2(x + em * 0.95f, cy), em * 0.7f, s.dir, IM_COL32(235, 235, 235, 255));
+            x += em * 1.9f;
+        }
+        for (int i = 0; kCmdButtons[i]; i++)
+            if (s.buttons & (1u << i)) {
+                draw->AddCircleFilled(ImVec2(x + em * 0.7f, cy), em * 0.62f, kButtonColors[i]);
+                char t[2] = {kCmdButtons[i], 0};
+                ImVec2 ts = ImGui::CalcTextSize(t);
+                draw->AddText(ImVec2(x + em * 0.7f - ts.x / 2, cy - ts.y / 2), IM_COL32(20, 20, 20, 255), t);
+                x += em * 1.5f;
+            }
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Cmd_StepText(s).c_str());
+    ImGui::PopID();
+    return clicked;
+}
+
+// Motions to start from: the last step's buttons stay at the end
+const struct {
+    const char *label, *command;
+} kMotions[] = {
+    {"Quarter circle forward (D, DF, F)", "~D, DF, F"},
+    {"Quarter circle back (D, DB, B)", "~D, DB, B"},
+    {"Dragon punch (F, D, DF)", "~F, D, DF"},
+    {"Half circle forward (B, DB, D, DF, F)", "~B, DB, D, DF, F"},
+    {"Half circle back (F, DF, D, DB, B)", "~F, DF, D, DB, B"},
+    {"Double quarter circle forward", "~D, DF, F, D, DF, F"},
+    {"Dash forward (F, F)", "F, F"},
+    {"Dash back (B, B)", "B, B"},
+    {"Charge back, then forward", "~30$B, F"},
+    {"Charge down, then up", "~30$D, U"},
+    {"Hold down", "/$D"},
+};
+
+// The selected command's motion as a row of steps, the one picked edited under it; and a
+// ChangeState on the command at the top of [Statedef -1].
+void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
+    static int pick;
+    static std::string pickFor;
+    if (pickFor != c.name + "\n" + std::to_string(c.index)) pickFor = c.name + "\n" + std::to_string(c.index), pick = 0;
+    std::vector<CmdStep> steps = Cmd_Steps(c.command);
+    bool changed = false;
+    float em = ImGui::GetFontSize();
+    if (ImGui::CollapsingHeader("Motion", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        for (int i = 0; i < (int)steps.size(); i++) {
+            if (i) {
+                ImGui::SameLine(0, em * 0.3f);
+                if (ImGui::GetCursorScreenPos().x + StepWidth(steps[i], em) > right) ImGui::NewLine();
+            }
+            if (StepChip(steps[i], i, i == pick)) pick = i;
+        }
+        if (!steps.empty()) ImGui::SameLine(0, em * 0.3f);
+        if (ImGui::Button("+", ImVec2(em * 2, em * 3.4f))) {
+            CmdStep s;
+            s.dir = 5; // F
+            int at = std::min((int)steps.size(), pick + 1);
+            steps.insert(steps.begin() + at, s);
+            pick = at;
+            changed = true;
+        }
+        ImGui::SetItemTooltip("A step after the one picked");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::BeginCombo("##start", "Start from a motion...", ImGuiComboFlags_HeightLarge)) {
+            for (const auto &m : kMotions)
+                if (ImGui::Selectable(m.label)) {
+                    unsigned buttons = !steps.empty() && !steps.back().dir && steps.back().raw.empty() ? steps.back().buttons : 1u << 3;
+                    steps = Cmd_Steps(m.command);
+                    if (!strchr(m.command, '/')) {
+                        CmdStep last;
+                        last.buttons = buttons;
+                        steps.push_back(last);
+                    }
+                    pick = (int)steps.size() - 1;
+                    changed = true;
+                }
+            ImGui::EndCombo();
+        }
+
+        // The step picked
+        if (!changed && !steps.empty()) {
+            pick = std::clamp(pick, 0, (int)steps.size() - 1);
+            CmdStep &s = steps[pick];
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("Step %d", pick + 1);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("<") && pick > 0) {
+                std::swap(steps[pick], steps[pick - 1]);
+                pick--;
+                changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(">") && pick + 1 < (int)steps.size()) {
+                std::swap(steps[pick], steps[pick + 1]);
+                pick++;
+                changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Delete the step") && steps.size() > 1) {
+                steps.erase(steps.begin() + pick);
+                pick = std::max(0, pick - 1);
+                changed = true;
+            }
+            if (!changed && !s.raw.empty()) {
+                ImGui::TextColored(ImVec4(1, 0.55f, 0.55f, 1), "\"%s\" is edited in the command's text.", s.raw.c_str());
+            } else if (!changed) {
+                // The direction pad, facing right
+                static const int pad[3][3] = {{8, 7, 6}, {1, 0, 5}, {2, 3, 4}};
+                float cell = em * 2.1f;
+                ImGui::BeginGroup();
+                ImGui::TextDisabled("direction");
+                for (int r = 0; r < 3; r++)
+                    for (int col = 0; col < 3; col++) {
+                        int d = pad[r][col];
+                        if (col) ImGui::SameLine(0, 2);
+                        ImGui::PushID(r * 3 + col);
+                        ImVec2 bp = ImGui::GetCursorScreenPos();
+                        ImGui::PushStyleColor(ImGuiCol_Button, s.dir == d ? ImVec4(0.75f, 0.6f, 0.2f, 1) : ImVec4(0.2f, 0.22f, 0.28f, 1));
+                        if (ImGui::Button("##d", ImVec2(cell, cell))) {
+                            s.dir = d;
+                            changed = true;
+                        }
+                        ImGui::PopStyleColor();
+                        DrawArrow(ImGui::GetWindowDrawList(), ImVec2(bp.x + cell / 2, bp.y + cell / 2), cell * 0.32f, d,
+                                  d ? IM_COL32(235, 235, 235, 255) : IM_COL32(150, 150, 150, 255));
+                        ImGui::SetItemTooltip(d ? "%s" : "no direction", kCmdDirs[d]);
+                        ImGui::PopID();
+                    }
+                ImGui::EndGroup();
+                ImGui::SameLine(0, em);
+                ImGui::BeginGroup();
+                ImGui::TextDisabled("buttons, together");
+                for (int i = 0; kCmdButtons[i]; i++) {
+                    if (i % 3 || i == 9) ImGui::SameLine(0, 2); // a b c, x y z, s d w m
+                    bool on = (s.buttons >> i) & 1;
+                    char t[2] = {kCmdButtons[i], 0};
+                    ImGui::PushID(100 + i);
+                    ImGui::PushStyleColor(ImGuiCol_Button, on ? ImGui::ColorConvertU32ToFloat4(kButtonColors[i]) : ImVec4(0.2f, 0.22f, 0.28f, 1));
+                    ImGui::PushStyleColor(ImGuiCol_Text, on ? ImVec4(0.08f, 0.08f, 0.08f, 1) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+                    if (ImGui::Button(t, ImVec2(cell, cell))) {
+                        s.buttons ^= 1u << i;
+                        changed = true;
+                    }
+                    ImGui::PopStyleColor(2);
+                    ImGui::PopID();
+                }
+                ImGui::EndGroup();
+                ImGui::SameLine(0, em);
+                ImGui::BeginGroup();
+                ImGui::TextDisabled("how");
+                changed |= ImGui::Checkbox("held (/)", &s.hold);
+                changed |= ImGui::Checkbox("released (~)", &s.release);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(em * 3);
+                ImGui::BeginDisabled(!s.release);
+                if (ImGui::InputInt("charge", &s.charge, 0)) {
+                    s.charge = std::max(0, s.charge);
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                ImGui::SetItemTooltip("Frames it must be held before it is released (0: none)");
+                changed |= ImGui::Checkbox("$: the diagonals count", &s.four);
+                changed |= ImGui::Checkbox(">: nothing else in between", &s.strict);
+                ImGui::EndGroup();
+                if (!s.dir && !s.buttons) ImGui::TextColored(ImVec4(1, 0.55f, 0.55f, 1), "A step needs a direction or a button.");
+            }
+        }
+    }
+    // Written once every step means something
+    for (const CmdStep &s : steps)
+        if (s.raw.empty() && !s.dir && !s.buttons) changed = false;
+    if (changed) {
+        CmdChanged(sf, Cmd_SetField(sf.text, c, "command", Cmd_StepsText(steps)));
+        return; // c is the old text's
+    }
+
+    if (ImGui::CollapsingHeader("Start a state with this command")) {
+        static int state = 200, when = 1;
+        static bool ctrl = true;
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("state", &state, 0);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(em * 8);
+        ImGui::Combo("when", &when, "any statetype\0standing (S)\0crouching (C)\0in the air (A)\0");
+        ImGui::SameLine();
+        ImGui::Checkbox("with control", &ctrl);
+        // The [Statedef -1] the engine reads first, or a new one in the CMD file
+        std::string file = StatedefFile(pn, -1);
+        if (ImGui::Button("Add to [Statedef -1]")) {
+            SourceFile &tf = LoadSource(file.empty() ? sf.path : file);
+            bool zss = Cns_IsZss(tf.path);
+            if (file.empty()) tf.text += std::string(tf.text.empty() || tf.text.back() == '\n' ? "" : "\n") + "\n[Statedef -1]\n";
+            int line = 0;
+            if (Make_InsertInStatedef(tf.text, zss, -1, Make_CommandEntry(zss, c.name, state, when, ctrl), &line)) {
+                tf.version++;
+                g_codeFile = tf.path;
+                g_codeLine = g_codeScrollTo = line;
+                g_codeHold = true;
+                Log(LogLine::Info, "A ChangeState to " + std::to_string(state) + " on \"" + c.name + "\" at the top of [Statedef -1] (" +
+                                       tf.path + "); Apply to try it.");
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", file.empty() ? "(a new one in the CMD file)" : file.c_str());
+        ImGui::TextDisabled("It goes first: entries higher up in [Statedef -1] win over those below.");
+    }
 }
 
 void CommandsWindow() {
@@ -269,6 +534,7 @@ void CommandsWindow() {
                 g_codeHold = true;
             }
         }
+        if (sf.text == text) MotionEditor(sf, *sel, pn);
     }
 
     static std::string filter;
@@ -293,9 +559,11 @@ void CommandsWindow() {
         return s;
     };
     std::string want = lower(filter);
+    // At least some rows high: under the motion editor the window scrolls
     if (ImGui::BeginTable("commands", 6,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit |
-                              ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable)) {
+                              ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable,
+                          ImVec2(0, std::max(ImGui::GetContentRegionAvail().y, em * 14)))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Name");
         ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthStretch);
