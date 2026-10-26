@@ -32,7 +32,7 @@ int g_nextBid = 1;
 std::string g_breakText;
 std::deque<LogLine> g_log;
 bool g_logScroll;
-int g_selId = -1, g_watchId = -1;
+int g_selId = -1, g_watchId = -1, g_selPicked;
 unsigned g_snapshots, g_lastRate, g_rateCount;
 double g_rateTime;
 
@@ -418,6 +418,7 @@ void OnLine(const Bridge::Line &line) {
         }
         g_breakText = buf;
         g_selId = j["id"].i();
+        g_selPicked++;
         Log(LogLine::Break, buf);
     }
 }

@@ -21,6 +21,16 @@ std::string CharFile(int pn, const char *key) {
 
 void SpriteLog(const std::string &s) { Log(LogLine::Info, s); }
 
+SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal) {
+    auto it = g_spriteFiles.find(NormPath(path));
+    if (it != g_spriteFiles.end()) return it->second;
+    SpriteFile &sf = g_spriteFiles[NormPath(path)];
+    sf.path = path;
+    sf.pal = pal;
+    Sff_Load(sf.doc, GamePath(path), pal.empty() ? "" : GamePath(pal));
+    return sf;
+}
+
 // The SFF file of a player's sprites (nullptr until the game has told its files).
 SpriteFile *SpritesOf(int pn) {
     std::string path = CharFile(pn, "sprite");
@@ -28,13 +38,7 @@ SpriteFile *SpritesOf(int pn) {
         AirPath(pn); // asks for the files
         return nullptr;
     }
-    auto it = g_spriteFiles.find(NormPath(path));
-    if (it != g_spriteFiles.end()) return &it->second;
-    SpriteFile &sf = g_spriteFiles[NormPath(path)];
-    sf.path = path;
-    std::string pal1 = CharFile(pn, "pal1");
-    Sff_Load(sf.doc, GamePath(path), pal1.empty() ? "" : GamePath(pal1));
-    return &sf;
+    return &SpriteFileAt(path, CharFile(pn, "pal1"));
 }
 
 void SpritesChanged(SpriteFile &sf) {
@@ -126,6 +130,7 @@ void SaveSprites(SpriteFile &sf) {
     sf.dirty = false;
     sf.doc.converted = false;
     Log(LogLine::Info, "Saved " + path);
+    ScreenSpritesSaved(sf.path);
     for (const auto &kv : g_charFiles) {
         auto f = kv.second.find("sprite");
         if (f == kv.second.end() || f->second.empty() || NormPath(f->second[0]) != NormPath(sf.path)) continue;
@@ -169,14 +174,27 @@ void SpritesWindow() {
         ImGui::End();
         return;
     }
-    const Entity *e = FindEntity(g_selId);
-    const FrameEntity *fe = FindFrameEntity(g_selId);
-    int pn = fe && fe->animPn > 0 ? fe->animPn : e ? e->pn : 0;
-    SpriteFile *spf = pn > 0 ? SpritesOf(pn) : nullptr;
+    // Whose: the selected player's, or the SFF of the screen whose element was picked last
+    static bool onScreen = false;
+    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, onScreen = false;
+    bool picked = g_screenPicked != seenPicked, scroll = false;
+    if (picked) seenPicked = g_screenPicked, onScreen = true;
+    const char *screen = nullptr;
+    int shows = -1; // the sprite the element picked shows
+    SpriteFile *spf = onScreen ? SelectedScreenSprites(&screen, picked ? &shows : nullptr) : nullptr;
+    if (spf && shows >= 0) spf->sel = shows, scroll = true;
     if (!spf) {
-        ImGui::TextDisabled(!e ? "Pick a player." : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
-        ImGui::End();
-        return;
+        const Entity *e = FindEntity(g_selId);
+        const FrameEntity *fe = FindFrameEntity(g_selId);
+        int pn = fe && fe->animPn > 0 ? fe->animPn : e ? e->pn : 0;
+        spf = pn > 0 ? SpritesOf(pn) : nullptr;
+        if (!spf) {
+            ImGui::TextDisabled(!e ? "Pick a player, or an element of a screen (Fight screen, Motif, Storyboard)."
+                                : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+            ImGui::End();
+            return;
+        }
     }
     SpriteFile &sf = *spf;
     SffDoc &d = sf.doc;
@@ -185,8 +203,7 @@ void SpritesWindow() {
     ImGui::SetItemTooltip("Writes the SFF file (the old one is kept as .bak the first time) and the game reads it again.");
     ImGui::SameLine();
     if (ImGui::Button("Revert")) {
-        std::string pal1 = CharFile(pn, "pal1");
-        Sff_Load(d, GamePath(sf.path), pal1.empty() ? "" : GamePath(pal1));
+        Sff_Load(d, GamePath(sf.path), sf.pal.empty() ? "" : GamePath(sf.pal));
         sf.dirty = false;
         sf.version++;
     }
@@ -194,8 +211,8 @@ void SpritesWindow() {
     ImGui::SameLine();
     if (ImGui::Button("Add PNG files...")) ImGui::OpenPopup("add");
     ImGui::SameLine();
-    ImGui::TextDisabled("%s%s  %zu sprites, %zu palettes", sf.path.c_str(), sf.dirty ? " *" : "", d.sprites.size(),
-                        d.pals.size());
+    ImGui::TextDisabled("%s%s%s%s%s  %zu sprites, %zu palettes", screen ? "the " : "", screen ? screen : "",
+                        screen ? "'s " : "", sf.path.c_str(), sf.dirty ? " *" : "", d.sprites.size(), d.pals.size());
     if (!d.error.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", d.error.c_str());
     if (d.converted)
         ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "An SFF v1 file: saving writes SFF v2 (palette 1,1 from the .act).");
@@ -207,7 +224,7 @@ void SpritesWindow() {
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
         ImGui::InputInt("From number", &addNumber, 0);
         ImGui::Combo("Axis", &addAxis, "At the feet\0In the centre\0Top left\0");
-        ImGui::Combo("Palette", &addPal, "The character's (1,1)\0Their own\0");
+        ImGui::Combo("Palette", &addPal, screen ? "The shared one (1,1)\0Their own\0" : "The character's (1,1)\0Their own\0");
         if (ImGui::Button("Choose the files...")) {
             std::vector<std::string> files = PickFiles(kPngFilter, true);
             if (!files.empty()) AddSprites(sf, files, addGroup, addNumber, addAxis, addPal);
@@ -228,6 +245,9 @@ void SpritesWindow() {
     for (int i = 0; i < (int)d.sprites.size(); i++)
         if ((fg < 0 || d.sprites[i].group == fg) && (fn < 0 || d.sprites[i].number == fn)) shown.push_back(i);
     if (ImGui::BeginChild("list", ImVec2(listW, 0), ImGuiChildFlags_Borders)) {
+        auto at = std::find(shown.begin(), shown.end(), sf.sel);
+        if (scroll && at != shown.end())
+            ImGui::SetScrollY((at - shown.begin()) * ImGui::GetTextLineHeightWithSpacing() - ImGui::GetWindowHeight() / 2);
         ImGuiListClipper clipper;
         clipper.Begin((int)shown.size());
         while (clipper.Step())

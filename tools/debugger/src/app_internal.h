@@ -155,6 +155,7 @@ extern std::string g_breakText;
 extern std::deque<LogLine> g_log;
 extern bool g_logScroll;
 extern int g_selId, g_watchId;
+extern int g_selPicked; // bumped when a player or helper is picked, even the one selected
 extern unsigned g_snapshots, g_lastRate, g_rateCount;
 extern double g_rateTime;
 
@@ -244,11 +245,13 @@ void AnimationWindow();
 struct SpriteFile {
     SffDoc doc;
     std::string path;   // as the game names it
+    std::string pal;    // the ACT file of an SFF v1's shared palette (a character's pal1), or ""
     bool dirty = false;
     unsigned version = 1; // bumped by every change (the textures follow)
     int sel = -1;
 };
 
+SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal = ""); // read the first time
 SpriteFile *SpritesOf(int pn);
 GLuint SpriteTexture(SpriteFile &sf, int index, int pal = -1);
 ImTextureRef TexRef(GLuint tex);
@@ -330,12 +333,18 @@ struct FrameFightItem {
 // of its def: for the Animation window, which edits the action in the def's text
 struct ScreenAnim {
     SourceFile *sf = nullptr;
+    SpriteFile *sprites = nullptr; // the screen's SFF, nullptr: not known
     std::string label;           // as "[Lifebar] p1.front50 (fight screen)"
     int action = -1, elem = 0;   // shown now (elem 0: not on screen)
     std::function<void()> apply; // after an edit of sf's text: the game shows it
 };
 bool SelectedScreenAnim(ScreenAnim &out);
 extern int g_screenAnimPicked; // bumped when such an element is picked
+extern int g_screenPicked;     // bumped when any element of a screen is picked
+// The SFF of the screen whose element was picked last; what: as "motif"; sprite: the index of the
+// one that element shows, -1 not known
+SpriteFile *SelectedScreenSprites(const char **what = nullptr, int *sprite = nullptr);
+void ScreenSpritesSaved(const std::string &path); // the screens using that SFF read it again
 
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players

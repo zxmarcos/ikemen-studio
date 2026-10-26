@@ -149,7 +149,7 @@ void PlayersWindow() {
             ImGui::PushID(e.id);
             std::string who = Who(e.pn, e.helper, e.id);
             if (ImGui::Selectable(who.c_str(), g_selId == e.id, ImGuiSelectableFlags_SpanAllColumns))
-                g_selId = e.id;
+                g_selId = e.id, g_selPicked++;
             ImGui::PopID();
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(e.name.c_str());
@@ -445,7 +445,7 @@ void TraceWindow() {
             ImGui::TableNextColumn();
             ImGui::PushID((int)n);
             if (ImGui::Selectable(Who(t.pn, t.helper, t.id).c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
-                g_selId = t.id;
+                g_selId = t.id, g_selPicked++;
             ImGui::PopID();
             ImGui::TableNextColumn();
             if (isState)

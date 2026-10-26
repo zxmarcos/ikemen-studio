@@ -82,9 +82,13 @@ their defs) in the Animation window: each element drawn says the action and
 element it shows (`Animation.actionNumber`, set for actions compiled from a
 text; `editorSpriteDrawn` records it), and a reload lets every animation go
 on from the element it was at (`editorKeepPlayback`: old and new structures
-walked together; fight screen and storyboard). Next: the screens' sprites
-(the sprite picker, the Sprites window on a screen's SFF), the motif's
-animations kept playing across a reload.
+walked together; fight screen and storyboard). Then the screens' sprites: the
+frame geometry names each screen's SFF, the sprite picker and the Sprites
+window open it (at the sprite the element picked shows: its action's
+element, its `spr`, a BG's `spriteno`), and saving it reloads the screen
+with the SFF read again (the reload functions' `sprites` argument; SND and
+fonts still borrowed). Next: the motif's animations kept playing across a
+reload.
 
 ## Where things are
 
@@ -404,6 +408,10 @@ Fight screen (`fightscreen.go`, `common.go`, `editor_fight.go`):
   they step: after a reload, every `Animation` of the new fight screen is
   found by reflection and `UpdateSprite` runs (a paused game draws them).
 - Save state/Load state bring the old fight screen back (`FightScreen.Clone`).
+- `findActiveSff` does not look at the fight screen's, motif's or
+  storyboard's SFF (only characters, stage, common FX): without `keep` a
+  reload reads them again; with it, `editorKeptSff` lends them unless
+  `edFight.newSff` is set.
 
 Motif (`motif.go`, `iniutils.go`, `editor_motif.go`):
 

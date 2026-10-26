@@ -26,6 +26,7 @@ struct ScreenDef {
     bool live;
     double every;                     // seconds at least between reloads
     std::string def;                  // as the game names it (from the frame geometry)
+    std::string sff;                  // its SFF file, the same way
     std::vector<FrameFightItem> items; // where its elements were drawn in the last frame
     std::string section, prefix;      // the element selected (lower case)
     bool pending = false;             // an edit not sent yet
@@ -36,6 +37,7 @@ struct ScreenDef {
     int animAction = -1; // the action the element selected showed when last on screen
 
     SourceFile *Source() { return def.empty() ? nullptr : &LoadSource(def); }
+    SpriteFile *Sprites() { return def.empty() || sff.empty() ? nullptr : &SpriteFileAt(sff); }
     // The def parsed, again when its text changes.
     const IniFile &Ini(const SourceFile &sf) {
         if (!parsed || parsedText != sf.text) {
@@ -52,12 +54,13 @@ static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", "motif", true, fa
 static ScreenDef g_story{"Storyboard", "storyboard", "debugReloadStoryboard", "storyboard", true, true, 0.1};
 static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the ones drawn in front first
 static ScreenDef *g_lastScreen; // the one whose element was selected last
-int g_screenAnimPicked;
+int g_screenAnimPicked, g_screenPicked;
 
 // An element selected (picked on the game or in its window).
 static void SelectElement(ScreenDef &d, const std::string &section, const std::string &prefix) {
     d.section = section, d.prefix = prefix;
     g_lastScreen = &d;
+    g_screenPicked++;
     for (const auto &f : d.items)
         if (f.section == section && f.prefix == prefix && f.action >= 0) {
             g_screenAnimPicked++;
@@ -83,6 +86,7 @@ void ReadScreenGeometry(const Json &j) {
     for (ScreenDef *d : g_screens) {
         const Json &g = j[d->geometry];
         d->def = g["def"].str();
+        d->sff = g["sff"].str();
         d->items.clear();
         SourceFile *sf = nullptr;
         for (const auto &f : g["items"].items) {
@@ -161,9 +165,10 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
 // which the game deletes once read), at most every so often while edits keep coming
 // ---------------------------------------------------------------------------
 
-// keep: the game keeps the SFF, SND and fonts in use (an edit of the text, not of the files).
-static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = false) {
-    std::string arg;
+// keep: the game keeps the SFF, SND and fonts in use (an edit of the text, not of the files);
+// sprites: the SFF all the same (it was saved).
+static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = false, bool sprites = false) {
+    std::string arg = "nil";
     if (fromText) {
         // One file per reload: the game deletes each once read, maybe after the next is written
         static int n;
@@ -176,7 +181,8 @@ static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = fals
         }
         arg = LuaQuote(tmp);
     }
-    if (keep) arg += ", true";
+    arg += keep ? ", true" : ", false";
+    if (sprites) arg += ", true";
     Exec(std::string("local ok, err = ") + d.reloadFn + "(" + arg + ") if not ok then error(err, 0) end");
     d.sent = ImGui::GetTime();
     d.pending = false;
@@ -554,7 +560,38 @@ bool SelectedScreenAnim(ScreenAnim &out) {
     std::string p = d->prefix.empty() ? "" : " " + d->prefix.substr(0, d->prefix.size() - 1);
     out.label = "[" + (s ? s->name : d->section) + "]" + p + "  (" + d->what + ")";
     out.apply = [d, sf] { Edited(*d, *sf); };
+    out.sprites = d->Sprites();
     return true;
+}
+
+SpriteFile *SelectedScreenSprites(const char **what, int *sprite) {
+    ScreenDef *d = g_lastScreen;
+    SpriteFile *spf = d ? d->Sprites() : nullptr;
+    SourceFile *sf = spf ? d->Source() : nullptr;
+    if (!sf) return nullptr;
+    if (what) *what = d->what;
+    if (!sprite) return spf;
+    // The sprite: of its action's element on screen, else its spr (a BG's spriteno)
+    int g = -1, n = -1;
+    ScreenAnim sa;
+    const IniFile &ini = d->Ini(*sf);
+    const IniSection *s = FindSection(ini, d->section);
+    if (SelectedScreenAnim(sa)) {
+        auto it = AirOf(*sf).actions.find(sa.action);
+        if (sa.elem > 0 && it != AirOf(*sf).actions.end() && sa.elem <= (int)it->second.elems.size())
+            g = it->second.elems[sa.elem - 1].group, n = it->second.elems[sa.elem - 1].image;
+    } else if (s) {
+        std::string key = IsBgSection(ini, *s) ? std::string("spriteno") : d->prefix + "spr";
+        if (const IniField *f = s->Field(key.c_str())) sscanf(f->value.c_str(), "%d , %d", &g, &n);
+    }
+    *sprite = g >= 0 ? Sff_FindSprite(spf->doc, g, n) : -1;
+    return spf;
+}
+
+void ScreenSpritesSaved(const std::string &path) {
+    for (ScreenDef *d : g_screens)
+        if (!d->sff.empty() && NormPath(d->sff) == NormPath(path))
+            if (SourceFile *sf = d->Source()) Reload(*d, *sf, true, true, true);
 }
 
 } // namespace app

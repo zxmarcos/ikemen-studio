@@ -151,8 +151,8 @@ void AnimationWindow() {
     }
     // What it shows: the selected player's animation, or that of the screen's element picked last
     static bool onScreen = false;
-    static int seenSel = -2, seenPicked = 0;
-    if (g_selId != seenSel) seenSel = g_selId, onScreen = false;
+    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, onScreen = false;
     if (g_screenAnimPicked != seenPicked) seenPicked = g_screenAnimPicked, onScreen = true, g_animFollow = true;
     ScreenAnim sa;
     bool screen = onScreen && SelectedScreenAnim(sa);
@@ -350,7 +350,7 @@ void AnimationWindow() {
         bool changed = r < 2 ? ImGui::DragInt2(rows[r], &v[r * 2], 0.2f) : ImGui::DragInt(rows[r], &v[4], 0.2f);
         if (changed) Air_SetElem(sf.text, el, v[0], v[1], v[2], v[3], v[4]);
         done |= ImGui::IsItemDeactivatedAfterEdit();
-        if (r == 0 && !screen) {
+        if (r == 0) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Pick...")) ImGui::OpenPopup("pick");
         }
@@ -364,7 +364,7 @@ void AnimationWindow() {
         if (ImGui::IsWindowAppearing()) group = el.group;
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
         ImGui::InputInt("Group", &group);
-        SpriteFile *spf = SpritesOf(t.pn);
+        SpriteFile *spf = screen ? sa.sprites : SpritesOf(t.pn);
         if (!spf) ImGui::TextDisabled("Waiting for the sprites...");
         float cell = ImGui::GetFontSize() * 5;
         int col = 0, cols = 8;

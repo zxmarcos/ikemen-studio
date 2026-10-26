@@ -576,6 +576,7 @@ void GameWindow() {
         }
         if (clicked && hoverId >= 0) {
             g_selId = hoverId;
+            g_selPicked++;
             dragId = hoverId;
             dragRest = ImVec2(0, 0);
         }
