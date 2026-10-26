@@ -30,7 +30,8 @@ import (
 //	then the geometry, JSON:
 //	  {"f": frame, "vp": [x, y, w, h], "scr": [w, h], "e": [{"id", "pn", "h",
 //	   "ax": [x, y], "an": action, "el": element, "apn": player of the action,
-//	   "k": [x, y] pixels per AIR unit, "c1": [l, t, w, h, ...], "c2": [...]}]}
+//	   "k": [x, y] pixels per AIR unit, "c1": [l, t, w, h, ...], "c2": [...],
+//	   players only: "in" and "cm", see editor_input.go}]}
 //	  "vp" is where the game's picture is in the frame (top-left origin), "scr"
 //	  the size of the game's picture; "ax" and boxes are in its pixels.
 //	event ring after the slots: events of 4 int32 values, kind first:
@@ -268,6 +269,9 @@ func editorFrameGeometry(winW, winH int32) []byte {
 					num(r[3] * sy)
 				}
 				b = append(b, ']')
+			}
+			if c.helperIndex == 0 {
+				b = editorInputGeometry(b, c)
 			}
 			b = append(b, '}')
 		}
