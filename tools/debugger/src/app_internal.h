@@ -369,6 +369,16 @@ bool GameFileExists(const std::string &path);
 void OpenPath(const std::string &path, bool keep, const std::string &pal = "");
 void ProjectFiles(std::vector<std::string> &out); // every file of the projects, for Go to file
 void ExplorerWindow();
+// The character the windows work on (Analysis, Sounds, Commands, Sprites): the player selected in
+// the game, or the character picked in Explorer since (with the game not running: the toolbar's
+// P1). Its player number; one not in the match is read from disk as kDiskPn. 0: none.
+const int kDiskPn = 1000;
+int WorkPn();
+std::string WorkDef();          // its def, "" none
+std::string WorkLabel(int pn);  // "P1", "from disk"
+void WorkOn(const std::string &def);
+// A player's files as the game lists them (key -> paths), kDiskPn's read from disk; nullptr not known
+const std::map<std::string, std::vector<std::string>> *FilesFor(int pn);
 
 // The palette (Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G a line, Ctrl+Shift+O a section) and
 // the File menu (app_palette.cpp)

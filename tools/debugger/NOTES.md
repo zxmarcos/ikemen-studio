@@ -141,9 +141,18 @@ marked, a character put in the match from it), Code's tabs (a preview tab,
 kept ones saved with the settings, Ctrl+W asking about changes), the palette
 (`app_palette.cpp`: Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G line,
 Ctrl+Shift+O section) and the File menu, the status bar (game state with its
-colour, Code's cursor, files not saved). Next: B, a character's model read
-from its def on disk when it is not in the match (Analysis, Lint, the
-windows that find files by player number: `CharFile(pn, ...)`); C,
+colour, Code's cursor, files not saved). Stage B, done: the character worked
+on (`WorkPn` in `app_explorer.cpp`): the selected player's, or the one
+picked in Explorer since (a player picked takes it back; offline, the
+toolbar's P1). One not in the match is read from disk as the player
+`kDiskPn` (1000), its files listed as `editorCharFiles` lists them (the
+[Files] keys sorted, st0..st9 as "st", a state file not found as its .zss;
+config.ini's common states, AIR, CMD), so `CharFile`, `FilesOf`, `ModelOf`,
+`SndOf`, `SpritesOf` work unchanged (they go through `FilesFor`; the loops
+over `g_charFiles` stay the match's players). Analysis, Sounds, Commands (its
+CMD part) and Sprites use it; Animation and Create still need the player in
+the match (Animation draws on the game; a canvas of its own would lift
+that). Next: C,
 navigation (find and replace, find in files, go to definition: ChangeState
 to its Statedef, anim to its action; references; outline); D, the visual
 editors as documents (an `.air` in Animation, an `.sff` in Sprites as tabs),

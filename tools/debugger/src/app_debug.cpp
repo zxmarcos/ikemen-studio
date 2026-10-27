@@ -925,10 +925,10 @@ const ConsoleExample kConsoleExamples[] = {
 
 // Is the character's first state file ZSS (false when not known yet)
 bool CharIsZss(int pn) {
-    auto it = g_charFiles.find(pn);
-    if (it == g_charFiles.end()) return false;
-    auto st = it->second.find("st");
-    return st != it->second.end() && !st->second.empty() && Cns_IsZss(st->second[0]);
+    const auto *files = FilesFor(pn);
+    if (!files) return false;
+    auto st = files->find("st");
+    return st != files->end() && !st->second.empty() && Cns_IsZss(st->second[0]);
 }
 
 // The Console's controllers: the text, run on the selected player with Ctrl+Enter. True when run.

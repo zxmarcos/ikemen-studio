@@ -81,11 +81,14 @@ bool NamesFile(const std::string &section, const std::string &key) {
 
 std::string MotifPath();
 
+// A character's state files, its "st0".."st9" read as "st" (editorDefFiles in editor_reload.go)
+bool IsStKey(const std::string &key) {
+    return key.compare(0, 2, "st") == 0 && key.find_first_not_of("0123456789", 2) == std::string::npos;
+}
+
 // A state file not found as named is the ".zss" one (common1.cns is data/common1.cns.zss), as
 // the engine's stateCompile does
-bool IsStateKey(const std::string &key) {
-    return key == "cns" || key == "stcommon" || (key.size() <= 3 && key.compare(0, 2, "st") == 0);
-}
+bool IsStateKey(const std::string &key) { return key == "cns" || key == "cmd" || key == "stcommon" || IsStKey(key); }
 
 std::string Resolve(const std::string &def, const std::string &value, bool state) {
     std::string v = value;
@@ -152,11 +155,20 @@ const std::vector<DefEntry> &DefFiles(const std::string &def) {
             while (!v.empty() && v.back() == ' ') v.pop_back();
             if (v.empty() || v.find('.') == std::string::npos || !NamesFile(s.lower, f.key)) continue;
             std::string path = Resolve(def, v, IsStateKey(f.key));
-            bool dup = false;
-            for (const DefEntry &e : c.files) dup |= NormPath(e.path) == NormPath(path);
-            if (!dup) c.files.push_back({f.key, path, GameFileExists(path)});
+            c.files.push_back({f.key, path, GameFileExists(path)});
         }
     return c.files;
+}
+
+// The same, a file named twice (a character's cns and st) once
+std::vector<DefEntry> DefFilesOnce(const std::string &def) {
+    std::vector<DefEntry> out;
+    for (const DefEntry &f : DefFiles(def)) {
+        bool dup = false;
+        for (const DefEntry &o : out) dup |= NormPath(o.path) == NormPath(f.path);
+        if (!dup) out.push_back(f);
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +225,55 @@ std::vector<DefEntry> CommonFiles() {
 }
 
 // ---------------------------------------------------------------------------
+// The character the windows work on: the player selected in the game, or the character picked
+// in Explorer since. One not in the match is read from disk, as player kDiskPn: its files as the
+// engine lists them (editorCharFiles: the [Files] keys in order, st0..st9 as "st"; config.ini's
+// common states, AIR and CMD), so CharFile, the model of Analysis, SndOf, SpritesOf work on it.
+// ---------------------------------------------------------------------------
+
+std::string g_workDef;   // picked in Explorer ("": the player selected)
+int g_workSelPicked = -1; // a player picked in the game since takes it back
+std::map<std::string, std::vector<std::string>> g_diskFiles;
+std::string g_diskFor;
+double g_diskRead = -100;
+
+void ReadDiskChar(const std::string &def) {
+    if (NormPath(def) == NormPath(g_diskFor) && ImGui::GetTime() - g_diskRead < 1.0) return;
+    g_diskFor = def;
+    g_diskRead = ImGui::GetTime();
+    auto &files = g_diskFiles;
+    files.clear();
+    files["def"] = {def};
+    std::vector<DefEntry> list = DefFiles(def);
+    std::stable_sort(list.begin(), list.end(), [](const DefEntry &a, const DefEntry &b) { return a.key < b.key; });
+    for (const DefEntry &f : list) files[IsStKey(f.key) ? "st" : f.key].push_back(f.path);
+    for (const DefEntry &f : CommonFiles()) {
+        const char *key = f.key == "states" ? "common.states" : f.key == "air" ? "common.air" : f.key == "cmd" ? "common.cmd" : nullptr;
+        if (key) files[key].push_back(f.path);
+    }
+}
+
+// A character as the toolbar names it ("kfm", "kfm/kfm720.def"): its def
+std::string CharDefOf(const std::string &name) {
+    if (name.empty()) return "";
+    std::string n = name;
+    bool def = ExtOf(n) == "def";
+    if (n.find('/') == std::string::npos) return "chars/" + n + "/" + (def ? n : n + ".def");
+    return "chars/" + n + (def ? "" : ".def");
+}
+
+// The player a character's def is in the match as, 0 none
+int PlayerOf(const std::string &def) {
+    for (const auto &[pn, files] : g_charFiles) {
+        auto f = files.find("def");
+        if (f != files.end() && !f->second.empty() && NormPath(f->second[0]) == NormPath(def)) return pn;
+    }
+    return 0;
+}
+
+std::string g_rowChar; // the character whose files the tree is drawing
+
+// ---------------------------------------------------------------------------
 // The tree
 // ---------------------------------------------------------------------------
 
@@ -254,7 +315,7 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
 
 // A def's files under it; a def among them (a motif's fight.def) opens to its own
 void DefChildren(const std::string &def, const std::string &pal, bool all, int depth) {
-    for (const DefEntry &f : DefFiles(def)) {
+    for (const DefEntry &f : DefFilesOnce(def)) {
         if (!all && !Passes(f.path) && !(ExtOf(f.path) == "def" && depth < 2 && AnyPasses(f.path, false))) continue;
         FileRow(f.path, f.key.c_str(), f.exists, f.key == "sprite" || f.key == "spr" ? pal : "", all, depth);
     }
@@ -272,8 +333,10 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
     if (nested && g_filter.IsActive()) ImGui::SetNextItemOpen(true);
     bool expanded = ImGui::TreeNodeEx(label.c_str(), flags);
     if (!exists) ImGui::PopStyleColor();
+    bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen();
+    if (clicked && !g_rowChar.empty()) WorkOn(g_rowChar);
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) OpenPath(path, true, pal);
-    else if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) OpenPath(path, false, pal);
+    else if (clicked) OpenPath(path, false, pal);
     ImGui::SetItemTooltip("%s%s", path.c_str(), exists ? "" : "\nnot found");
     RowNote(key, ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
     if (ImGui::BeginPopupContextItem()) {
@@ -286,7 +349,7 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
     }
 }
 
-// The players a character's def is in the match as
+// The players a character's def is in the match as ("P1 P2")
 std::string PlayersOf(const std::string &def) {
     std::string out;
     for (const auto &[pn, files] : g_charFiles) {
@@ -301,7 +364,13 @@ void CharNode(const Project &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
-    bool open = ImGui::TreeNodeEx(p.name.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
+    // The character the windows work on: selected
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (NormPath(WorkDef()) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
+    bool open = ImGui::TreeNodeEx(p.name.c_str(), flags);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) WorkOn(p.def);
+    ImGui::SetItemTooltip("%s\nA click: Analysis, Sounds, Commands and Sprites work on it (from disk when it is not "
+                          "in the match).", p.def.c_str());
     std::string players = PlayersOf(p.def);
     if (!players.empty()) RowNote(players.c_str(), ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
@@ -323,8 +392,10 @@ void CharNode(const Project &p) {
     std::string pal;
     for (const DefEntry &f : DefFiles(p.def))
         if (f.key == "pal1") pal = f.path;
+    g_rowChar = p.def;
     if (all || Passes(p.def)) FileRow(p.def, "def", true, "", all, 2);
     DefChildren(p.def, pal, all, 2);
+    g_rowChar.clear();
     ImGui::TreePop();
 }
 
@@ -358,6 +429,38 @@ bool Group(const char *label, size_t count) {
 
 } // namespace
 
+void WorkOn(const std::string &def) {
+    g_workDef = def;
+    g_workSelPicked = g_selPicked;
+}
+
+int WorkPn() {
+    if (!g_workDef.empty() && g_selPicked != g_workSelPicked) g_workDef.clear();
+    std::string def = g_workDef;
+    if (def.empty()) {
+        if (const Entity *e = FindEntity(g_selId)) return e->pn;
+        if (Connected()) return 0;
+        def = CharDefOf(g_settings.p1); // the game not running: the character its match starts with
+    }
+    if (int pn = PlayerOf(def)) return pn;
+    if (!GameFileExists(def)) return 0;
+    ReadDiskChar(def);
+    return kDiskPn;
+}
+
+std::string WorkDef() {
+    int pn = WorkPn();
+    return pn ? CharFile(pn, "def") : "";
+}
+
+std::string WorkLabel(int pn) { return pn == kDiskPn ? std::string("from disk") : "P" + std::to_string(pn); }
+
+const std::map<std::string, std::vector<std::string>> *FilesFor(int pn) {
+    if (pn == kDiskPn) return g_diskFor.empty() ? nullptr : &g_diskFiles;
+    auto it = g_charFiles.find(pn);
+    return it == g_charFiles.end() ? nullptr : &it->second;
+}
+
 void OpenPath(const std::string &path, bool keep, const std::string &pal) {
     std::string ext = ExtOf(path);
     if (!IsBinary(path)) {
@@ -371,10 +474,9 @@ void OpenPath(const std::string &path, bool keep, const std::string &pal) {
     }
     if (ext == "snd") {
         ShowWindow("Sounds");
-        bool inMatch = false;
-        for (const auto &[pn, files] : g_charFiles)
-            if (CharFile(pn, "sound") == path) inMatch = true;
-        if (!inMatch) Log(LogLine::Info, "Sounds shows the SND file of the player selected in the match.");
+        int pn = WorkPn();
+        if (!pn || NormPath(CharFile(pn, "sound")) != NormPath(path))
+            Log(LogLine::Info, "Sounds shows the SND file of the character worked on (picked in Explorer or in the match).");
         return;
     }
     Log(LogLine::Info, "No window edits ." + ext + " files (" + path + "); Show in folder opens its folder.");

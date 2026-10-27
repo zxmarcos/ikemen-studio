@@ -24,10 +24,10 @@ void ShowInSprites(SpriteFile &sf, int index, const std::string &what) {
 }
 
 std::string CharFile(int pn, const char *key) {
-    auto it = g_charFiles.find(pn);
-    if (it == g_charFiles.end()) return "";
-    auto f = it->second.find(key);
-    return f == it->second.end() || f->second.empty() ? "" : f->second[0];
+    const auto *files = FilesFor(pn);
+    if (!files) return "";
+    auto f = files->find(key);
+    return f == files->end() || f->second.empty() ? "" : f->second[0];
 }
 
 void SpriteLog(const std::string &s) { Log(LogLine::Info, s); }
@@ -199,6 +199,8 @@ void SpritesWindow() {
     static int mode = Player;
     static int seenSel = -2, seenSelPicked = 0, seenPicked = 0, seenShown = 0;
     if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, mode = Player;
+    static std::string seenWork;
+    if (std::string work = WorkDef(); work != seenWork) seenWork = work, mode = Player;
     bool picked = g_screenPicked != seenPicked, scroll = false;
     if (picked) seenPicked = g_screenPicked, mode = Screen;
     if (g_spritesShownN != seenShown) seenShown = g_spritesShownN, mode = Shown, scroll = true;
@@ -209,12 +211,15 @@ void SpritesWindow() {
     if (mode == Shown) screen = g_spritesShownWhat.c_str();
     if (spf && shows >= 0) spf->sel = shows, scroll = true;
     if (!spf) {
+        // The character worked on; a player showing another's animation (a custom state): that one's
+        int pn = WorkPn();
         const Entity *e = FindEntity(g_selId);
         const FrameEntity *fe = FindFrameEntity(g_selId);
-        int pn = fe && fe->animPn > 0 ? fe->animPn : e ? e->pn : 0;
+        if (e && e->pn == pn && fe && fe->animPn > 0) pn = fe->animPn;
         spf = pn > 0 ? SpritesOf(pn) : nullptr;
         if (!spf) {
-            ImGui::TextDisabled(!e ? "Pick a player, or an element of a screen (Fight screen, Motif, Storyboard)."
+            ImGui::TextDisabled(!pn ? "Pick a player or a character in Explorer, or an element of a screen (Fight "
+                                      "screen, Motif, Storyboard)."
                                 : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
             ImGui::End();
             return;

@@ -36,16 +36,16 @@ void OnFiles(const Json &j) {
 
 // The AIR file of a player's animations ("" until the game has told).
 std::string AirPath(int pn) {
-    auto it = g_charFiles.find(pn);
-    if (it == g_charFiles.end()) {
-        if (Connected() && g_canTrace && ImGui::GetTime() - g_filesAsked[pn] > 2.0) {
+    const auto *files = FilesFor(pn);
+    if (!files) {
+        if (pn != kDiskPn && Connected() && g_canTrace && ImGui::GetTime() - g_filesAsked[pn] > 2.0) {
             g_filesAsked[pn] = ImGui::GetTime();
             SendRaw("ikdbg.files()");
         }
         return "";
     }
-    auto f = it->second.find("anim");
-    return f == it->second.end() || f->second.empty() ? "" : f->second[0];
+    auto f = files->find("anim");
+    return f == files->end() || f->second.empty() ? "" : f->second[0];
 }
 
 // Parsed AIR files, parsed again when their text changes.

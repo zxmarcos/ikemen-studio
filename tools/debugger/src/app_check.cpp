@@ -1,4 +1,5 @@
-// Analysis: a character's states read from its files as the game names them (debugCharFiles) and
+// Analysis: a character's states read from its files as the game names them (debugCharFiles; or,
+// for a character not in the match, as Explorer finds them on disk: WorkPn) and
 // checked (Lint): states, actions, sounds and commands named that do not exist, sprites missing,
 // controllers without a type or a trigger, statedefs given twice, states and commands nothing
 // uses. The state files are read in the order the engine compiles them (st, cmd, stcommon,
@@ -83,10 +84,10 @@ size_t Signature(const std::vector<std::string> &paths, int pn) {
 
 const std::vector<std::string> &FilesOf(int pn, const char *key) {
     static const std::vector<std::string> none;
-    auto it = g_charFiles.find(pn);
-    if (it == g_charFiles.end()) return none;
-    auto f = it->second.find(key);
-    return f == it->second.end() ? none : f->second;
+    const auto *files = FilesFor(pn);
+    if (!files) return none;
+    auto f = files->find(key);
+    return f == files->end() ? none : f->second;
 }
 
 // Where a controller names a state: (parameter, given to another)
@@ -464,7 +465,8 @@ void UseButtons(const Model &m, const std::vector<const VarUse *> &uses, const c
     }
 }
 
-void VariablesTab(Model &m, const Entity &e) {
+// e: the entity whose values are shown, nullptr none (a character read from disk)
+void VariablesTab(Model &m, const Entity *e) {
     static int kindIdx = 0;
     static bool onlyUsed = true;
     const char kinds[] = {'v', 'f', 's', 'S'};
@@ -479,8 +481,9 @@ void VariablesTab(Model &m, const Entity &e) {
                "and read (any expression), by state; a click shows the line. Names are kept per character "
                "and shown in the Inspector. Now: the selected entity's value.");
     char kind = kinds[kindIdx];
-    if (kind == 'v' || kind == 'f') Watch(e.id); // its var/fvar come with the snapshots
-    const std::vector<double> &now = kind == 'v' ? e.vars : e.fvars;
+    if (e && (kind == 'v' || kind == 'f')) Watch(e->id); // its var/fvar come with the snapshots
+    static const std::vector<double> none;
+    const std::vector<double> &now = !e ? none : kind == 'v' ? e->vars : e->fvars;
 
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
@@ -541,11 +544,13 @@ void Curve(ImDrawList *draw, ImVec2 a, ImVec2 b, ImU32 col, float thick, bool da
 // The states around one: those that change to it on the left, those it changes to on the right
 // (by numbers written in ChangeState, SelfState, HitDef p1stateno...; dashed: given to another),
 // a few steps each way. The path the player came by is green; states that do not exist red.
-void GraphTab(Model &m, const Entity &e) {
+void GraphTab(Model &m, const Entity *e) {
     static int focus = 0, depth = 2;
     static bool follow = true;
     float em = ImGui::GetFontSize();
+    ImGui::BeginDisabled(!e);
     ImGui::Checkbox("Follow the player", &follow);
+    ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 5);
     if (ImGui::InputInt("State", &focus, 0)) follow = false;
@@ -557,7 +562,7 @@ void GraphTab(Model &m, const Entity &e) {
                "ChangeState, SelfState, HitDef/ReversalDef/Projectile p1stateno (dashed: p2stateno, "
                "TargetState, Helper: given to another). Green: the path the player came by; red: a state "
                "that does not exist. Click a state to center on it, double-click to show it in Code.");
-    if (follow) focus = e.st;
+    if (follow && e) focus = e->st;
 
     std::map<int, std::vector<const StateRef *>> out, in;
     for (const auto &r : m.refs)
@@ -588,7 +593,7 @@ void GraphTab(Model &m, const Entity &e) {
     }
     // The path the player came by: its last states, oldest first
     std::vector<int> path;
-    if (auto h = g_history.find(e.id); h != g_history.end())
+    if (auto h = e ? g_history.find(e->id) : g_history.end(); h != g_history.end())
         for (auto r = h->second.rbegin(); r != h->second.rend() && path.size() < 10; ++r)
             if (path.empty() || path.back() != r->st) path.push_back(r->st);
     std::reverse(path.begin(), path.end());
@@ -635,7 +640,7 @@ void GraphTab(Model &m, const Entity &e) {
     }
     // Nodes
     for (const auto &[no, p] : pos) {
-        bool exists = m.states.count(no) > 0, now = no == e.st, onPath = pathStates.count(no) > 0;
+        bool exists = m.states.count(no) > 0, now = e && no == e->st, onPath = pathStates.count(no) > 0;
         ImU32 fill = !exists ? IM_COL32(120, 40, 40, 230) : onPath ? IM_COL32(40, 100, 50, 230) : IM_COL32(45, 55, 80, 230);
         ImU32 border = no == focus ? IM_COL32(255, 220, 60, 255) : now ? IM_COL32(90, 230, 90, 255) : IM_COL32(120, 130, 160, 255);
         ImVec2 q(p.x + nodeW, p.y + nodeH);
@@ -692,33 +697,42 @@ void AnalysisSettingsWrite(ImGuiTextBuffer *buf) {
 
 void AnalysisWindow() {
     if (!BeginTool("Analysis")) return;
-    const Entity *e = FindEntity(g_selId);
-    if (!g_canTrace || !e) {
-        ImGui::TextDisabled(!Connected() ? "Launch the game." : !g_canTrace ? "Needs an Ikemen GO with the debugger patch."
-                                                                            : "Pick a player.");
+    // The character worked on: a player's (its files as the game lists them, patched Ikemen), or
+    // one read from disk
+    int pn = WorkPn();
+    if (!pn || (pn != kDiskPn && !g_canTrace)) {
+        ImGui::TextDisabled(pn ? "Needs an Ikemen GO with the debugger patch."
+                               : "Pick a player in the game, or a character in Explorer.");
         ImGui::End();
         return;
     }
-    Model *m = ModelOf(e->pn);
+    // Its entity, for the values now and the path it came by: the one selected, else its root
+    const Entity *e = FindEntity(g_selId);
+    if (e && e->pn != pn) e = nullptr;
+    if (!e && pn != kDiskPn)
+        for (const Entity &o : g_ents)
+            if (o.pn == pn && !o.helper) e = &o;
+    Model *m = ModelOf(pn);
     if (!m) {
-        ImGui::TextDisabled("Waiting for the files of P%d's character...", e->pn);
+        ImGui::TextDisabled("Waiting for the files of P%d's character...", pn);
         ImGui::End();
         return;
     }
     ImGui::Text("%s", m->def.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("(P%d: %zu state files, %zu statedefs used)", e->pn, m->files.size(), m->states.size());
+    ImGui::TextDisabled("(%s: %zu state files, %zu statedefs used)", WorkLabel(pn).c_str(), m->files.size(),
+                        m->states.size());
     if (ImGui::BeginTabBar("analysis")) {
         if (ImGui::BeginTabItem("Lint")) {
             LintTab(*m);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Variables")) {
-            VariablesTab(*m, *e);
+            VariablesTab(*m, e);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("States")) {
-            GraphTab(*m, *e);
+            GraphTab(*m, e);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

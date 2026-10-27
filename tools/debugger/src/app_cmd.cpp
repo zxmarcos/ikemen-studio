@@ -406,27 +406,52 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
     }
 }
 
+void InputHistory(int pn, float em);
+void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float em);
+
 void CommandsWindow() {
     UpdateInputs();
     if (!BeginTool("Commands")) return;
-    const Entity *e = FindEntity(g_selId);
-    if (!e) {
-        ImGui::TextDisabled("Pick a player.");
+    int pn = WorkPn(); // the selected player's character, or one picked in Explorer
+    if (!pn) {
+        ImGui::TextDisabled("Pick a player in the game, or a character in Explorer.");
         ImGui::End();
         return;
     }
-    int pn = e->pn;
     const FrameEntity *fe = nullptr;
     for (const auto &f : g_frameEnts)
         if (!f.helper && f.pn == pn) fe = &f;
     float em = ImGui::GetFontSize();
 
-    // The keys held now; under them on the left, what was held before
+    // The keys held now; under them on the left, what was held before (a player in the match)
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("P%d input", pn);
-    ImGui::SameLine();
-    if (fe && fe->held.size() >= 14) HeldKeys(*fe);
-    else ImGui::TextDisabled("needs the game's frames (patched Ikemen GO)");
+    if (pn == kDiskPn) {
+        ImGui::TextDisabled("Not in the match: its CMD file from disk");
+    } else {
+        ImGui::Text("P%d input", pn);
+        ImGui::SameLine();
+        if (fe && fe->held.size() >= 14) HeldKeys(*fe);
+        else ImGui::TextDisabled("needs the game's frames (patched Ikemen GO)");
+    }
+    if (pn != kDiskPn) InputHistory(pn, em);
+
+    // Right: the CMD file
+    ImGui::BeginGroup();
+    std::string path = CharFile(pn, "cmd");
+    if (path.empty()) {
+        AirPath(pn); // asks for the files
+        ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+        ImGui::EndGroup();
+        ImGui::End();
+        return;
+    }
+    CmdFileView(pn, path, fe, em);
+    ImGui::EndGroup();
+    ImGui::End();
+}
+
+// What was held, for how many frames, newest first; at the left of the CMD file
+void InputHistory(int pn, float em) {
     if (ImGui::BeginChild("history", ImVec2(em * 8, 0), ImGuiChildFlags_Borders)) {
         auto it = g_inputRuns.find(pn);
         if (it != g_inputRuns.end()) {
@@ -446,17 +471,10 @@ void CommandsWindow() {
     ImGui::EndChild();
     ImGui::SetItemTooltip("What was held, for how many frames; newest first. Right click: clear.");
     ImGui::SameLine();
+}
 
-    // Right: the CMD file
-    ImGui::BeginGroup();
-    std::string path = CharFile(pn, "cmd");
-    if (path.empty()) {
-        AirPath(pn); // asks for the files
-        ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
-        ImGui::EndGroup();
-        ImGui::End();
-        return;
-    }
+// The CMD file: its commands edited, those under way (fe: the player's frame, nullptr none)
+void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float em) {
     SourceFile &sf = LoadSource(path);
     const CmdFile &cf = CmdOf(sf);
 
@@ -649,8 +667,6 @@ void CommandsWindow() {
         }
         ImGui::EndTable();
     }
-    ImGui::EndGroup();
-    ImGui::End();
 }
 
 } // namespace app

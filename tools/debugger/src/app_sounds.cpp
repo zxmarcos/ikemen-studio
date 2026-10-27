@@ -1,4 +1,4 @@
-// Sounds: the selected player's SND file.
+// Sounds: the SND file of the character worked on (the selected player's, or one picked in Explorer).
 #include "app_internal.h"
 
 #include <mmsystem.h>
@@ -78,11 +78,11 @@ const char kWavFilter[] = "WAV files (*.wav)\0*.wav\0All files (*.*)\0*.*\0";
 
 void SoundsWindow() {
     if (!BeginTool("Sounds")) return;
-    const Entity *e = FindEntity(g_selId);
-    int pn = e ? e->pn : 0;
+    int pn = WorkPn(); // the selected player's character, or one picked in Explorer
     SoundFile *sp = pn > 0 ? SoundsOf(pn) : nullptr;
     if (!sp) {
-        ImGui::TextDisabled(!e ? "Pick a player." : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+        ImGui::TextDisabled(!pn ? "Pick a player in the game, or a character in Explorer."
+                            : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
         ImGui::End();
         return;
     }
