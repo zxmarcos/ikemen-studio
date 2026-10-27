@@ -1144,6 +1144,9 @@ void ThemeMenu() {
     }
 }
 
+const char *ThemeName(int n) { return n >= 0 && n < IM_ARRAYSIZE(kThemes) ? kThemes[n].name : nullptr; }
+void AskTheme(int n) { g_themeAsked = n; }
+
 void ThemeFrame() {
     if (g_themeAsked < 0) return;
     ApplyTheme(g_themeAsked);

@@ -1,6 +1,8 @@
 // What the debugger's files share: its state and the functions of each window's file.
 //   app.cpp          state, commands to the game, what the game sends, settings
-//   app_layout.cpp   the menu bar, the windows opened and closed, the layouts
+//   app_layout.cpp   the menu bar, the windows opened and closed, the workspaces, the status bar
+//   app_explorer.cpp Explorer: the projects' files from disk, a file opened in its window
+//   app_palette.cpp  the palette (go to a file, a command, a line, a section) and the File menu
 //   app_game.cpp     Game: the game's frames, the players' boxes over them, keys to the game
 //   app_anim.cpp     Animation: the AIR element of the selected player
 //   app_sprites.cpp  Sprites: the SFF file
@@ -207,7 +209,11 @@ extern std::string g_codeFile;
 extern int g_codeLine, g_codeScrollTo;
 extern bool g_codeHold;
 void CodeShow(const std::string &path); // Code shows that file and stops following the state; "": follows it
+// Code shows that file in a tab of its own (keep), or in the preview tab, which the next file
+// shown replaces
+void CodeOpen(const std::string &path, bool keep);
 std::string FightScreenDef();           // the fight screen's def, as the game names it ("" not known yet)
+std::string MotifDef();                 // the motif's def, the same way
 
 extern FrameLink g_frameLink;
 extern GameFrame g_frame;
@@ -235,6 +241,10 @@ void HelpMarker(const char *text);
 bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden
 void ShowWindow(const char *name); // opened if closed, its tab to the front, without taking the keyboard
 void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
+void StatusBar();                  // the bar at the bottom, at the end of a frame
+const char *ToolName(int n);       // the windows, in the Windows menu's order; nullptr past the last
+const char *WorkspaceName(int n);  // nullptr past the last
+void AskWorkspace(int n);          // shown from the next frame; -1: the current one's arrangement restored
 void LayoutSettingsLine(const std::string &key, const std::string &value);
 void LayoutSettingsWrite(ImGuiTextBuffer *buf);
 // The Performance window (app_perf.cpp)
@@ -246,6 +256,8 @@ enum InkColor { kRed, kYellow, kGreen, kBlue, kOrange };
 ImVec4 Ink(InkColor c); // a colour for text on a window: darker on a light theme
 bool LightTheme();
 void ThemeMenu();
+const char *ThemeName(int n); // nullptr past the last
+void AskTheme(int n);
 void ThemeFrame(); // applies a theme asked for, at the start of a frame
 void ThemeSettingsLine(const std::string &key, const std::string &value);
 void ThemeSettingsWrite(ImGuiTextBuffer *buf);
@@ -343,7 +355,25 @@ void ReadSource(SourceFile &sf);
 bool SaveSource(SourceFile &sf);
 void SaveAndApply(); // saves the files changed, the game compiles its characters again
 void OnReload(const Json &j);
+FILETIME FileTime(const std::string &path);
+// The file shown and the cursor's line and column (1-based); false when none is shown
+bool CodeCursor(std::string *file, int *line, int *col);
+void CodeCloseShown(); // its tab (asks first when it has changes)
+void CodeSettingsLine(const std::string &key, const std::string &value);
+void CodeSettingsWrite(ImGuiTextBuffer *buf);
 void CodeWindow();
+
+// Explorer: the characters, stages and screenpack as trees of their files, from disk
+bool GameFileExists(const std::string &path);
+// Opens a file in the window that edits it: Code (text), Sprites (pal: an SFF v1's palette), Sounds
+void OpenPath(const std::string &path, bool keep, const std::string &pal = "");
+void ProjectFiles(std::vector<std::string> &out); // every file of the projects, for Go to file
+void ExplorerWindow();
+
+// The palette (Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G a line, Ctrl+Shift+O a section) and
+// the File menu (app_palette.cpp)
+void FileMenu();
+void PaletteFrame();
 
 // Commands
 // A ChangeState to state on command at the top of the [Statedef -1] the engine reads first (a new

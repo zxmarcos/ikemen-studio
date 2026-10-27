@@ -52,9 +52,33 @@ Above the windows, the **toolbar**: Launch/Restart and Stop; the match the
 game starts with (P1, P2, AI per side, stage); pause/continue (F5), a step
 (F10), ten (F11), the speed, and **More** (run N ticks, save/load state,
 reset round, reload the match from disk, Ikemen's collision boxes and debug
-display); the game's state (running or paused, tick, round, a breakpoint
-hit); **Settings** (the game's path, extra arguments, its own window shown,
-the connection).
+display); a breakpoint hit; **Settings** (the game's path, extra arguments,
+its own window shown, the connection).
+
+Below the windows, the **status bar**: what the game is doing (not running,
+running, paused, stepping; tick and round) and the player selected, its
+colour green while the game runs, yellow paused, red stopped at a breakpoint;
+at the right, the file shown in Code with the cursor's line and column, the
+files not saved (a click saves and applies), the workspace.
+
+The editor works without the game too: **Explorer** lists the game's
+characters (`chars/`), stages (`stages/`), the screenpack (the motif
+`config.ini` names, its fight screen, select.def, storyboards and fonts) and
+the common files (`config.ini` and its `[Common]` files), each with the files
+its def names, found as the engine finds them (a missing one in red). The
+characters in the match are marked P1, P2, the stage playing too. A click
+opens a file in its window (text in Code, an SFF in Sprites, an SND in
+Sounds); right click on a character puts it in P1's or P2's place (the match
+starts again) or makes it the toolbar's, on a stage makes it the toolbar's;
+Show in folder, Copy path. Filter: words of the path, comma separated,
+`-word` to hide.
+
+**Go to** (the palette at the top, also in the File menu): Ctrl+P a file of
+the projects by letters in order (`kfmcmd`); Ctrl+Shift+P a command (the
+game, the workspaces, the windows, the themes, File); Ctrl+G a line of the
+file in Code; Ctrl+Shift+O a section of it (`[Statedef 200]`,
+`[Begin Action 0]`). **File**: Open... (any file), Save and apply, Close the
+tab (Ctrl+W).
 
 The windows are arranged by **workspace**, one per task, picked by the tabs
 on the menu bar (or Ctrl+1 to Ctrl+5); each keeps what is changed in it
@@ -62,19 +86,19 @@ on the menu bar (or Ctrl+1 to Ctrl+5); each keeps what is changed in it
 **Workspace > Restore** puts it back as it was at first. The Game window is
 in all of them.
 
-- **Debug**: Players above Watch and Breakpoints on the left; Game and the
-  Inspector; below, Trace, Frame data, Lab, Console and Performance, then
-  Code.
-- **Code**: Analysis on the left; Code in the middle, Console and Trace below
-  it; Game and the Inspector on the right.
-- **Character**: Players on the left; Animation in the middle, Code and
-  Console below it; Game above Sprites, Sounds, Commands and Create on the
-  right.
-- **Stage**: Game, with Code (the stage's def) and Console, Performance
-  below it; Stage on the right.
-- **Screenpack**: Roster above Fonts on the left; Game, with Code (the fight
-  screen's def) and Console below it; Fight screen, Motif and Storyboard on
-  the right.
+- **Debug**: Players (Explorer in a tab) above Watch and Breakpoints on the
+  left; Game and the Inspector; below, Trace, Frame data, Lab, Console and
+  Performance, then Code.
+- **Code**: Explorer on the left; Code in the middle, Analysis, Console and
+  Trace below it; Game and the Inspector on the right.
+- **Character**: Explorer above Players on the left; Animation in the
+  middle, Code and Console below it; Game above Sprites, Sounds, Commands and
+  Create on the right.
+- **Stage**: Explorer on the left; Game, with Code (the stage's def) and
+  Console, Performance below it; Stage on the right.
+- **Screenpack**: Explorer above Roster and Fonts on the left; Game, with Code
+  (the fight screen's def) and Console below it; Fight screen, Motif and
+  Storyboard on the right.
 
 The menu bar's **Windows** opens and closes each window (one opened where
 the workspace does not have it goes next to its neighbours: Performance with
@@ -112,14 +136,15 @@ and the coloured texts are darker. The theme is kept with the settings.
 | Trace | State changes and hits of every entity: an attack that hit or was guarded, and on the one hit, by whom (its state after the tick), the damage (taken on the next tick), hit time (or guard time), shake (its hit pause), slide, ctrl time and whether it falls, the combo's hits and damage so far, the juggle points its attacker has left on it when it falls; hover for its attr and anim type. Engine side: the attack's controller (the HitDef, Projectile or ReversalDef the attacker ran last), a click shows it in Code |
 | Lab (engine side) | **Dummy:** a player whose keys the game holds (its AI turned off): it stands, crouches or jumps; guards never, always (it holds back while an attack is near enough to guard), randomly (a chance per attack), or after a first hit (the first hit goes in, then whatever the dummy can guard, until 90 ticks go by without a hit: the gaps of a combo); its life and power kept full once each combo is over; once it can act again after guarding, a hit, getting up or any of them, it plays a take, each time or with a chance (a reversal: the take starts so that its last tick is the first one the dummy can act on, from the stun or the get up animation left). **Takes:** a player's input recorded tick by tick (back and forward as it faces, so a take works on either side), from the start of the fight after a round reset or from now; played back as P1 or P2, from a reset, with the same random numbers, in a loop; each shown as its runs of keys (`DF+a 3`), the one playing highlighted, with the character it was recorded with (only those of the characters in the match, when asked); saved with the settings. **Characters:** another character from `chars/` in P1's or P2's place, the match starting again |
 | Watch | Lua expressions over Ikemen's triggers (`life(), var(3)`, or statements that return values), read by the game with each tick, on the selected entity or on a player; a value that changed on the tick shown is yellow, hover for when it last changed. Saved with the settings |
-| Code | An editor of the character's files (syntax colours, completion and documentation of triggers and controllers, undo). **Save and apply** (Ctrl+S) saves the changed files and the game loads and compiles the characters again without restarting the match (engine side); when that fails, the game keeps the previous version and the line of the error turns red. Engine side, also: the controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick); in the file, lines that ran are green, a dot marks each controller, clicking the dot sets a breakpoint. After each trigger line (CNS `trigger`/`triggerall`, ZSS `if`) its value on the tick shown: true, false, undefined, or nothing when it was not evaluated (a trigger after one that held, a state that did not run); after a controller that did not run, how many ticks ago it last did. The dot of a statedef sets a breakpoint on entering that state. Follows the selected entity's state, but not while you type |
+| Explorer | The characters, stages, screenpack and common files as trees of the files their defs name, read from disk (see above) |
+| Code | An editor of the game's text files, one tab each (syntax colours, completion and documentation of triggers and controllers, undo). The file shown goes in the preview tab (dimmed), which the next one takes, unless it is kept: double-clicked, edited, or opened to be kept (a double click in Explorer, Go to file); a tab with changes asks before closing (Save, Don't save, Cancel); the tabs kept are reopened with the debugger. **Save and apply** (Ctrl+S) saves the changed files and the game loads and compiles the characters again without restarting the match (engine side); when that fails, the game keeps the previous version and the line of the error turns red. Engine side, also: the controllers that ran on the tick, in the order they ran (all states: -4, -3, -2, -1, the current state, +1, and any state changed into during the tick); in the file, lines that ran are green, a dot marks each controller, clicking the dot sets a breakpoint. After each trigger line (CNS `trigger`/`triggerall`, ZSS `if`) its value on the tick shown: true, false, undefined, or nothing when it was not evaluated (a trigger after one that held, a state that did not run); after a controller that did not run, how many ticks ago it last did. The dot of a statedef sets a breakpoint on entering that state. Follows the selected entity's state, but not while you type |
 | Breakpoints | A Lua condition over Ikemen's triggers, for anyone, one player, or one player and its helpers; the game pauses on the tick the condition becomes true (what is already true when it is set waits until it turns false and true again). Entering a state is the condition `stateNo() == n`, set from the Code window. Engine side: breakpoints on state controllers, the game pauses after a tick in which one ran (with **Only if**, a Lua condition, only when it is true then for the one that ran it). Both are saved with the settings |
 | Analysis (engine side) | The selected player's character read from its files as the engine compiles them (its `st` files, `cmd`, `stcommon`, then config.ini's common states: the first statedef of a number is the one used), CNS and ZSS. **Lint**: errors (states, actions, sounds and commands named that do not exist; a controller without a type, or without trigger1), warnings (a statedef given twice, the AIR's sprites missing from the SFF), notes (states 200 to 4999 nothing changes to by number, commands no trigger names); only numbers written as numbers are checked, and an action guarded by `SelfAnimExist` of it, or shown in a state the character only gives to others, is not. It runs again when a file changes (on disk or in Code); a click shows the line in Code. **Variables**: each var, fvar, sysvar, sysfvar with where it is written (VarSet, VarAdd, VarRandom, VarRangeSet, ParentVarSet/Add, `:=`) and read, by state (a click shows the line), the selected entity's value now, and a name kept per character (shown in the Inspector). **States**: the graph around a state (it follows the player, or a state clicked): the states that change to it on the left, those it changes to on the right, 1 to 4 steps, by numbers written in ChangeState, SelfState, p1stateno (dashed: p2stateno, TargetState, Helper); the path the player came by green, states that do not exist red; double-click shows a statedef in Code. Changes the engine makes by itself (landing, getting hit) are not in it |
 | Create (engine side; the menu bar's Create) | **A move**: an attack for the selected player's character, written as KFM writes its own (CNS or ZSS, as the character's first state file is): name, state (one taken, or a common state's number, is pointed out), standing, crouching or in the air, normal, special or hyper (1000 power), light, medium or hard (the HitDef's values after KFM's punches, each editable: damage, pausetime, spark, slide and hit times, velocities, animtype); the action (its first element with a Clsn1 box arms the HitDef, the spark at the middle of that box; without the action, another one is copied as it); a sound at the start (played here); the command that starts it (a ChangeState at the top of `[Statedef -1]`, with control or not, a hyper's with `power >= 1000`). **Create the move** puts the statedef at the end of the first state file, saves and applies; then **Try state N** puts the player in it, and Code shows it; the text it writes is shown before. **A character** from another one (`chars/<folder>/<folder>.def`, its name and author): **its basics** (the sprites and sounds renamed after the folder, the other files of `[Files]` as they are, the constants, the statedefs below 200 it gives itself (intro, win poses, taunt) with every ZSS `[Function]`, in a `.cns` or a `.zss` as they were written, the actions of the common states, a new CMD file with the commands the engine needs and the taunt; a character that stands, walks, jumps, guards and gets hit like its base, with no attack yet) or **a full copy**, moves included (the folder copied, the def renamed); added to `select.def` or not; put in P1's or P2's place, or nowhere. **A stage** of PNG images (`stages/<file>.def` and `.sff`, name, author, localcoord: one pixel of the images is one unit), from the back: each one a sprite of the SFF (its own palette, or true colour past 255 colours) and a BG centred with its bottom on the screen's bottom, its delta set here (1 like the floor, less far away); the camera goes as far as every image still covers the screen; a preview shows the images as the camera sees them at its start, the camera's range, the screen and the floor (`zoffset`, dragged) with the players' places; music; added to `select.def`'s `[ExtraStages]`; put in the match's place at once (the match goes on) and made the toolbar's stage |
 | Console | **Lua**: any Lua, run in the game (`player(2); return stateNo(), var(3)`). **Controllers**: CNS or ZSS state controllers (ZSS when the character's first state file is), compiled with the character's compiler and run once on the selected player with Ctrl+Enter, as a negative state runs (a ChangeState is taken at once); a `[State]` header and `trigger1 = 1` are added when missing, several `[State]` blocks run in order; examples (ChangeState, VelSet, PosSet, VarSet, LifeAdd, PowerAdd, PalFX, Explod, EnvShake, HitDef); an error shows the line of the text. Ikemen's own log is shown too |
 | Performance | The game's frames during a match, measured by the engine while the window is shown: each phase (the game; the motif and Lua, the debugger's mod among it; sounds and input; the draw; showing the frame, with the debugger's capture of it; the wait) for the last 600 frames as stacked columns under the frame's time at the game's speed, frames not drawn marked, a frame's phases on hover; average, peak (red past the frame's time) and share of each; Freeze, Clear. Below, the debugger's own frame |
 
-Settings, breakpoints, the theme and each workspace's arrangement are saved in
+Settings, breakpoints, the theme, Code's tabs and each workspace's arrangement are saved in
 `ikemen-debugger.ini` next to the exe.
 
 ## Engine side

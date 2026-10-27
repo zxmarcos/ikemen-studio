@@ -221,6 +221,161 @@ void CodeShow(const std::string &path) {
     if (g_codeFile != path) g_codeFile = path, g_codeLine = 0;
 }
 
+// ---------------------------------------------------------------------------
+// The files open, as tabs. The file shown goes in a tab; the preview one (dimmed) is replaced by
+// the next file shown, unless it was kept: double-clicked, edited, or opened to be kept.
+// ---------------------------------------------------------------------------
+
+struct OpenDoc {
+    std::string path;
+    bool preview;
+};
+std::vector<OpenDoc> g_docs;
+int g_closing = -1; // the tab asked to close with changes: Save, Don't save, Cancel
+
+int FindDoc(const std::string &path) {
+    for (size_t i = 0; i < g_docs.size(); i++)
+        if (NormPath(g_docs[i].path) == NormPath(path)) return (int)i;
+    return -1;
+}
+
+void TabFor(const std::string &path, bool keep) {
+    if (int i = FindDoc(path); i >= 0) {
+        g_docs[i].preview = g_docs[i].preview && !keep;
+        return;
+    }
+    for (OpenDoc &d : g_docs)
+        if (d.preview && !LoadSource(d.path).Dirty()) {
+            d = {path, !keep};
+            return;
+        }
+    g_docs.push_back({path, !keep});
+}
+
+void CodeOpen(const std::string &path, bool keep) {
+    g_codeFollow = false;
+    if (NormPath(g_codeFile) != NormPath(path)) g_codeFile = path, g_codeLine = 0;
+    TabFor(path, keep);
+    ShowWindow("Code");
+}
+
+void CloseDoc(int i) {
+    bool shown = NormPath(g_docs[i].path) == NormPath(g_codeFile);
+    g_docs.erase(g_docs.begin() + i);
+    if (!shown) return;
+    // The one next to it is shown; following the state would open the file again
+    g_codeFollow = false;
+    g_codeLine = 0;
+    g_codeFile = g_docs.empty() ? "" : g_docs[std::min(i, (int)g_docs.size() - 1)].path;
+}
+
+void AskClose(int i) {
+    if (LoadSource(g_docs[i].path).Dirty()) g_closing = i;
+    else CloseDoc(i);
+}
+
+void CodeCloseShown() {
+    if (int i = FindDoc(g_codeFile); i >= 0) AskClose(i);
+}
+
+bool CodeCursor(std::string *file, int *line, int *col) {
+    if (g_codeFile.empty()) return false;
+    SourceFile &sf = LoadSource(g_codeFile);
+    *file = sf.path;
+    *line = dbg::Editor_CursorLine(sf.ed);
+    size_t at = std::min(dbg::Editor_CursorOffset(sf.ed), sf.text.size());
+    size_t nl = at ? sf.text.rfind('\n', at - 1) : std::string::npos;
+    *col = (int)(at - (nl == std::string::npos ? 0 : nl + 1)) + 1;
+    return true;
+}
+
+// The tabs; a tab clicked shows its file
+void DocTabs(bool &follow) {
+    static std::string selected; // the file the tab bar was last told to show
+    std::string want = NormPath(g_codeFile);
+    bool select = want != selected;
+    selected = want;
+    int closing = -1;
+    if (!ImGui::BeginTabBar("docs", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_FittingPolicyScroll |
+                                        ImGuiTabBarFlags_TabListPopupButton))
+        return;
+    for (size_t i = 0; i < g_docs.size(); i++) {
+        OpenDoc &d = g_docs[i];
+        SourceFile &sf = LoadSource(d.path);
+        if (sf.Dirty()) d.preview = false;
+        bool mine = NormPath(d.path) == want;
+        ImGuiTabItemFlags flags = sf.Dirty() ? ImGuiTabItemFlags_UnsavedDocument : 0;
+        if (select && mine) flags |= ImGuiTabItemFlags_SetSelected;
+        std::string name = d.path.substr(d.path.find_last_of("\\/") + 1);
+        std::string label = name + "###" + NormPath(d.path);
+        if (d.preview) {
+            // Halfway to the dimmed text: a preview, still readable on a selected tab
+            ImVec4 a = ImGui::GetStyleColorVec4(ImGuiCol_Text), b = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2, a.w));
+        }
+        bool open = true;
+        bool shown = ImGui::BeginTabItem(label.c_str(), &open, flags);
+        if (d.preview) ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("%s%s", d.path.c_str(), d.preview ? "\nPreview: the next file shown takes its place; "
+                                                                  "double-click to keep it" : "");
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) d.preview = false;
+        if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Middle)) open = false;
+        if (shown) {
+            // Picked by a click (the bar shows another than the one asked for, and none was asked)
+            if (!mine && !select) {
+                g_codeFile = d.path;
+                g_codeLine = 0;
+                follow = false;
+                selected = NormPath(d.path);
+            }
+            ImGui::EndTabItem();
+        }
+        if (!open) closing = (int)i;
+    }
+    ImGui::EndTabBar();
+    if (closing >= 0) AskClose(closing);
+}
+
+// Asks what to do with the changes of a tab being closed
+void CloseDialog() {
+    if (g_closing >= (int)g_docs.size()) g_closing = -1;
+    if (g_closing >= 0 && !ImGui::IsPopupOpen("Close")) ImGui::OpenPopup("Close");
+    if (!ImGui::BeginPopupModal("Close", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    if (g_closing < 0) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+    SourceFile &sf = LoadSource(g_docs[g_closing].path);
+    ImGui::Text("%s has changes.", sf.path.c_str());
+    if (ImGui::Button("Save")) {
+        if (SaveSource(sf)) CloseDoc(g_closing);
+        g_closing = -1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Don't save")) {
+        ReadSource(sf);
+        CloseDoc(g_closing);
+        g_closing = -1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) g_closing = -1;
+    if (g_closing < 0) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void CodeSettingsLine(const std::string &key, const std::string &value) {
+    if (key == "CodeDoc") g_docs.push_back({value, false});
+    else if (key == "CodeFile") g_codeFile = value;
+}
+
+void CodeSettingsWrite(ImGuiTextBuffer *buf) {
+    for (const OpenDoc &d : g_docs)
+        if (!d.preview) buf->appendf("CodeDoc=%s\n", d.path.c_str());
+    if (!g_codeFile.empty() && FindDoc(g_codeFile) >= 0 && !g_docs[FindDoc(g_codeFile)].preview)
+        buf->appendf("CodeFile=%s\n", g_codeFile.c_str());
+}
+
 void CodeWindow() {
     WatchSources();
     // The game records the trigger values of the selected entity
@@ -262,15 +417,19 @@ void CodeWindow() {
         followedSrc = stateSrc;
         JumpTo(stateSrc);
     }
+    if (!g_codeFile.empty()) TabFor(g_codeFile, false);
+    if (!g_docs.empty()) DocTabs(follow);
+    CloseDialog();
+    shown = g_codeFile.empty() ? nullptr : &LoadSource(g_codeFile);
 
     // Toolbar: Save and apply, Revert, the files with changes
     int dirty = 0;
     for (const auto &kv : g_files) dirty += kv.second.Dirty();
     bool save = ImGui::Button(dirty ? "Save and apply (Ctrl+S)" : "Apply (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl &&
-        ImGui::IsKeyPressed(ImGuiKey_S, false))
-        save = true;
+    bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    if (focused && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) save = true;
+    if (focused && io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) CodeCloseShown();
     if (save) SaveAndApply();
     ImGui::SetItemTooltip("Saves the changed files, then the game loads and compiles the characters again "
                           "(states, commands, constants, animations, sounds) without restarting the match.");
@@ -278,21 +437,6 @@ void CodeWindow() {
     ImGui::BeginDisabled(!shown || !shown->Dirty());
     if (ImGui::Button("Revert")) ReadSource(*shown);
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    std::string label = g_codeFile.empty() ? std::string("(no file)") : g_codeFile;
-    if (shown && shown->Dirty()) label += " *";
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
-    if (ImGui::BeginCombo("##file", label.c_str())) {
-        for (auto &kv : g_files) {
-            std::string name = kv.second.path + (kv.second.Dirty() ? " *" : "");
-            if (ImGui::Selectable(name.c_str(), NormPath(g_codeFile) == kv.first)) {
-                g_codeFile = kv.second.path;
-                g_codeLine = 0;
-                follow = false;
-            }
-        }
-        ImGui::EndCombo();
-    }
     ImGui::SameLine();
     ImGui::Checkbox("Follow the state", &follow);
     ImGui::SameLine();
@@ -371,8 +515,9 @@ void CodeWindow() {
     }
 
     if (!shown) {
-        ImGui::TextDisabled(g_canTrace ? "Pick a controller on the left."
-                                       : "The Code window follows the state with the patched Ikemen GO.");
+        ImGui::TextDisabled(g_canTrace ? "Pick a controller on the left, or a file in Explorer (Ctrl+P)."
+                                       : "Open a file from Explorer (Ctrl+P). With the game running, Code follows "
+                                         "the selected player's state.");
         ImGui::End();
         return;
     }

@@ -130,6 +130,26 @@ it); the attack of each hit taken found in the attacker's controller
 history (Trace); explod and projectile counts in Players. Next for it: see
 "Limits and next steps".
 
+The shape of an IDE around the live editing (decided with the user on
+2026-10-26, branch `ide-shell` off `debugger-bridge`): the projects come
+from disk, the game being the live preview, and nothing live is replaced:
+with the game running everything works as before, the IDE parts adding to
+it; without it, what can be done from the files works. Stage A, done:
+Explorer (`app_explorer.cpp`: characters, stages, screenpack, common files,
+each def's files found as the engine finds them, the ones in the match
+marked, a character put in the match from it), Code's tabs (a preview tab,
+kept ones saved with the settings, Ctrl+W asking about changes), the palette
+(`app_palette.cpp`: Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G line,
+Ctrl+Shift+O section) and the File menu, the status bar (game state with its
+colour, Code's cursor, files not saved). Next: B, a character's model read
+from its def on disk when it is not in the match (Analysis, Lint, the
+windows that find files by player number: `CharFile(pn, ...)`); C,
+navigation (find and replace, find in files, go to definition: ChangeState
+to its Statedef, anim to its action; references; outline); D, the visual
+editors as documents (an `.air` in Animation, an `.sff` in Sprites as tabs),
+a Problems panel gathering Lint, stage checks, Apply errors and the engine
+log, run configurations.
+
 ## Where things are
 
 Branch `debugger-bridge` of this clone (local only, never pushed), on top of
@@ -163,7 +183,9 @@ tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
   src/app.cpp            the debugger: state, commands, protocol handling, settings
-  src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool
+  src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool, the status bar
+  src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
+  src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
   src/app_perf.cpp       Performance window: the game's frames by phase (debugPerf), this program's frame
   src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)

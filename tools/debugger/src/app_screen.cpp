@@ -57,6 +57,7 @@ static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the one
 static ScreenDef *g_lastScreen; // the one whose element was selected last
 
 std::string FightScreenDef() { return g_fight.def; }
+std::string MotifDef() { return g_motif.def; }
 int g_screenAnimPicked, g_screenPicked;
 
 // An element selected (picked on the game or in its window).

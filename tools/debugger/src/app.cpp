@@ -550,6 +550,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         AnalysisSettingsLine(key, value);
         LayoutSettingsLine(key, value);
         ThemeSettingsLine(key, value);
+        CodeSettingsLine(key, value);
     }
 }
 
@@ -568,6 +569,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     AnalysisSettingsWrite(buf);
     LayoutSettingsWrite(buf);
     ThemeSettingsWrite(buf);
+    CodeSettingsWrite(buf);
     buf->append("\n");
 }
 
@@ -590,7 +592,7 @@ void App_Init(bool launch) {
     handler.ReadLineFn = SettingsLine;
     handler.WriteAllFn = SettingsWrite;
     ImGui::AddSettingsHandler(&handler);
-    Log(LogLine::Info, "Ikemen GO debugger. Set the path of Ikemen_GO.exe in Session and press Launch.");
+    Log(LogLine::Info, "Ikemen GO debugger. Launch starts the game (its path is in Settings, on the toolbar).");
 }
 
 void App_Poll() {
@@ -638,6 +640,9 @@ void App_Frame() {
     ConsoleWindow();
     CodeWindow();
     PerformanceWindow();
+    ExplorerWindow();
+    PaletteFrame();
+    StatusBar();
     if (g_autoLaunch) {
         g_autoLaunch = false;
         Launch();

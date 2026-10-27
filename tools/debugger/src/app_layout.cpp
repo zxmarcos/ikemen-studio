@@ -25,6 +25,8 @@ struct ToolWindow {
 // In the order of the Windows menu
 ToolWindow g_windows[] = {
     {"Game", "Game", ""},
+    {"Explorer", "Files", "Players|Analysis|Roster"},
+    {"Code", "Files", "Console|Trace"},
     {"Players", "Debugging", "Watch|Breakpoints|Roster|Analysis"},
     {"Breakpoints", "Debugging", "Watch|Players"},
     {"Watch", "Debugging", "Breakpoints|Players"},
@@ -33,7 +35,6 @@ ToolWindow g_windows[] = {
     {"Frame data", "Debugging", "Trace|Console|Lab"},
     {"Console", "Debugging", "Trace|Performance"},
     {"Performance", "Debugging", "Console|Trace|Frame data"},
-    {"Code", "Debugging", "Console|Trace"},
     {"Lab", "Character", "Trace|Frame data|Console"},
     {"Analysis", "Character", "Players|Inspector|Console"},
     {"Animation", "Character", "Inspector|Stage"},
@@ -63,22 +64,24 @@ struct Workspace {
 
 Workspace g_spaces[] = {
     {"Debug", "A fight tick by tick: the players, their states, what ran, the code.",
-     "X0.19(Y0.5(L:Players)(L:Watch,Breakpoints))"
+     "X0.19(Y0.5(L:Players,Explorer)(L:Watch,Breakpoints))"
      "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance)(L:Code)))", kFollow},
-    {"Code", "Writing a character: the editor in the middle, the Lint and the state graph beside it.",
-     "X0.2(L:Analysis)(X0.68(Y0.68(L:Code)(L:Console,Trace))(Y0.45(L:Game)(L:Inspector)))", kFollow},
+    {"Code", "Writing a character: the files, the editor in the middle, the Lint and the state graph below it.",
+     "X0.16(L:Explorer)(X0.68(Y0.68(L:Code)(L:Analysis,Console,Trace))(Y0.45(L:Game)(L:Inspector)))", kFollow},
     {"Character", "A character's animations, sprites, sounds and commands; new moves and characters.",
-     "X0.16(L:Players)(X0.62(Y0.66(L:Animation)(L:Code,Console))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
+     "X0.16(Y0.5(L:Explorer)(L:Players))"
+     "(X0.62(Y0.66(L:Animation)(L:Code,Console))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
      kFollow},
     {"Stage", "The stage on the game, its def's sections and fields, its checks and 3D model.",
-     "X0.68(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Performance)))(L:Stage)", kStageDef},
+     "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Performance)))(L:Stage))", kStageDef},
     {"Screenpack", "The fight screen, the motif's screens, storyboards, the roster and fonts.",
-     "X0.17(Y0.5(L:Roster)(L:Fonts))(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console)))(L:Fight screen,Motif,Storyboard))",
+     "X0.17(Y0.4(L:Explorer)(L:Roster,Fonts))"
+     "(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console)))(L:Fight screen,Motif,Storyboard))",
      kFightDef},
 };
 
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
-const int kLayoutVersion = 3;
+const int kLayoutVersion = 4;
 int g_layoutVersion;
 int g_space;              // the workspace shown
 int g_spaceAsked = -1;    // picked: shown from the start of the next frame
@@ -315,6 +318,90 @@ void ShowWindow(const char *name) {
     Front(*t);
 }
 
+const char *ToolName(int n) { return n >= 0 && n < IM_ARRAYSIZE(g_windows) ? g_windows[n].name : nullptr; }
+const char *WorkspaceName(int n) { return n >= 0 && n < IM_ARRAYSIZE(g_spaces) ? g_spaces[n].name : nullptr; }
+
+void AskWorkspace(int n) {
+    if (n < 0) g_restoreAsked = true;
+    else g_spaceAsked = n;
+}
+
+// The bar at the bottom: what the game is doing (its colour too, as an IDE's while debugging) and
+// the player selected; at the right, the file shown in Code and its cursor, the changes not
+// saved, the workspace.
+void StatusBar() {
+    bool running = g_bridge.Running(), live = Connected();
+    ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg);
+    if (live) {
+        ImVec4 ink = !g_breakText.empty() ? Ink(kRed) : g_paused ? Ink(kYellow) : Ink(kGreen);
+        float k = 0.22f;
+        bg = ImVec4(bg.x + (ink.x - bg.x) * k, bg.y + (ink.y - bg.y) * k, bg.z + (ink.z - bg.z) * k, 1);
+    }
+    ImGui::PushStyleColor(ImGuiCol_MenuBarBg, bg);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNavFocus;
+    if (ImGui::BeginViewportSideBar("##status", ImGui::GetMainViewport(), ImGuiDir_Down, ImGui::GetFrameHeight(), flags) &&
+        ImGui::BeginMenuBar()) {
+        float em = ImGui::GetFontSize();
+        if (!running) {
+            ImGui::TextDisabled("Not running");
+        } else if (!live) {
+            ImGui::TextColored(Ink(kYellow), "Waiting for the mod...");
+        } else {
+            ImGui::TextUnformatted(g_steps > 0 ? "Stepping" : g_paused ? "Paused" : "Running");
+            ImGui::SameLine(0, em);
+            ImGui::Text("tick %d", g_tick);
+            ImGui::SameLine(0, em);
+            ImGui::TextDisabled("round %d (%d)", g_roundNo, g_roundState);
+            if (const Entity *e = FindEntity(g_selId)) {
+                ImGui::SameLine(0, em * 2);
+                ImGui::Text("%s  state %d", Who(e->pn, e->helper, e->id).c_str(), e->st);
+            }
+        }
+        // At the right
+        struct Item {
+            std::string text;
+            ImVec4 color;
+            std::function<void()> click;
+            const char *tip;
+        };
+        std::vector<Item> right;
+        std::string file;
+        int line, col;
+        if (CodeCursor(&file, &line, &col)) {
+            char where[64];
+            snprintf(where, sizeof(where), "  Ln %d, Col %d", line, col);
+            right.push_back({file.substr(file.find_last_of("\\/") + 1) + where, ImGui::GetStyleColorVec4(ImGuiCol_Text),
+                             [] { ShowWindow("Code"); }, "The file shown in Code"});
+        }
+        int dirty = 0;
+        for (const auto &kv : g_files) dirty += kv.second.Dirty();
+        if (g_applying) right.push_back({"applying...", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), nullptr, nullptr});
+        else if (dirty)
+            right.push_back({std::to_string(dirty) + " unsaved", Ink(kYellow), SaveAndApply,
+                             "Saves them; the game loads the characters again (Ctrl+S in Code)"});
+        right.push_back({g_spaces[g_space].name, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), nullptr,
+                         "The workspace (Ctrl+1..5)"});
+        float total = 0;
+        for (const Item &it : right) total += ImGui::CalcTextSize(it.text.c_str()).x + em * 1.5f;
+        float at = ImGui::GetWindowWidth() - total - ImGui::GetStyle().WindowPadding.x;
+        if (at > ImGui::GetCursorPosX() + em) ImGui::SameLine(at);
+        else ImGui::SameLine(0, em * 2);
+        for (const Item &it : right) {
+            ImGui::PushStyleColor(ImGuiCol_Text, it.color);
+            ImVec2 size(ImGui::CalcTextSize(it.text.c_str()).x, 0);
+            if (ImGui::Selectable(it.text.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups, size) && it.click)
+                it.click();
+            ImGui::PopStyleColor();
+            if (it.tip) ImGui::SetItemTooltip("%s", it.tip);
+            ImGui::SameLine(0, em * 1.5f);
+        }
+        ImGui::EndMenuBar();
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+}
+
 void LayoutFrame() {
     ThemeFrame();
     ImGuiIO &io = ImGui::GetIO();
@@ -323,6 +410,10 @@ void LayoutFrame() {
             if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + n), false)) g_spaceAsked = n;
 
     if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            FileMenu();
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("Windows")) {
             const char *group = "";
             for (ToolWindow &t : g_windows) {
@@ -383,8 +474,10 @@ void LayoutFrame() {
     if (!g_entered) {
         // No arrangement saved, or an older one: the workspace's own. Else ImGui's settings have
         // it, and the open windows are those in it.
+        if (g_layoutVersion < kLayoutVersion)
+            for (Workspace &old : g_spaces) old.saved.clear();
         const Workspace &w = g_spaces[g_space];
-        if (g_firstRun || g_layoutVersion < kLayoutVersion || w.saved.empty()) Enter(w.layout, size);
+        if (g_firstRun || w.saved.empty()) Enter(w.layout, size);
         else OpenFrom(w.saved);
         g_entered = true;
         g_firstRun = false;

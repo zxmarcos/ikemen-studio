@@ -110,23 +110,10 @@ void Toolbar() {
     }
     ImGui::EndDisabled();
 
-    // Its state
-    flow(em * 22);
-    ImGui::AlignTextToFramePadding();
-    if (!running) {
-        ImGui::TextDisabled("not running");
-    } else if (!live) {
-        ImGui::TextColored(Ink(kYellow), "waiting for the mod...");
-    } else {
-        const char *state = g_steps > 0 ? "STEPPING" : g_paused ? "PAUSED" : "RUNNING";
-        ImGui::TextColored(g_paused ? Ink(kYellow) : Ink(kGreen), "%s", state);
-        ImGui::SameLine();
-        ImGui::Text("tick %d  round %d (%d)", g_tick, g_roundNo, g_roundState);
-        ImGui::SetItemTooltip("Round %d, round state %d; %d players and helpers", g_roundNo, g_roundState,
-                              (int)g_ents.size());
-    }
+    // Why it stopped (its state is on the status bar)
     if (!g_breakText.empty()) {
-        ImGui::SameLine(0, em);
+        flow(em * 22);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton("x")) g_breakText.clear();

@@ -50,6 +50,8 @@ add_executable(ikemen-debugger WIN32
   src/app_create.cpp
   src/app_model.cpp
   src/app_check.cpp
+  src/app_explorer.cpp
+  src/app_palette.cpp
   src/cns.cpp
   src/make.cpp
   src/stagecheck.cpp
@@ -71,7 +73,7 @@ else()
   # wWinMain, and no MSYS2 DLLs needed next to the exe
   target_link_options(ikemen-debugger PRIVATE -municode -static)
 endif()
-target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32 winmm)
+target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32 shell32 winmm)
 # No per-configuration folder: the exe looks for ikdbg.lua next to itself.
 set_target_properties(ikemen-debugger PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>")
 
