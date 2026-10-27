@@ -95,7 +95,7 @@ struct ModelFrame {
     int sel = -1, hover = -1, picked = -1;
     std::vector<float> sb, hb, sp, hp; // the selected and hovered nodes' boxes (segments) or points
     bool mats = false;                 // the selected node's matrices: it can be dragged
-    GltfMat viewProj{}, parentWorld{};
+    GltfMat viewProj{}, parentWorld{}, world{};
     float w = 0, h = 0; // the game picture's size
 };
 ModelFrame g_mframe;
@@ -225,10 +225,120 @@ void EulerToQuat(const float e[3], float q[4]) {
 }
 
 // ---------------------------------------------------------------------------
+// Undo and redo of the model's changes (the def's placement is the def's text): each gesture is
+// a step, a field or a node dragged from the press to the release. One history for the match's
+// model, one for the model from disk.
+// ---------------------------------------------------------------------------
+
+enum EditKind { eTRS, eProps, eMaterial, eLight };
+
+struct Values {
+    ModelView::Node node;
+    ModelView::Material material;
+    ModelView::Light light;
+};
+
+struct Change {
+    EditKind kind;
+    int i;
+    Values before, after;
+};
+
+struct History {
+    std::string file;
+    // The values before the gesture going on (taken while none goes on)
+    std::vector<ModelView::Node> nodes;
+    std::vector<ModelView::Material> materials;
+    std::vector<ModelView::Light> lights;
+    std::vector<Change> open; // the gesture's changes
+    std::vector<std::vector<Change>> undo, redo;
+    int frame = -1;
+};
+History g_histLive, g_histDisk;
+bool g_replaying; // an undo or redo puts values back: not recorded
+
+History &HistoryOf(const ModelView *v) { return v == &g_live ? g_histLive : g_histDisk; }
+
+bool InRange(const std::vector<ModelView::Node> &nodes, const std::vector<ModelView::Material> &materials,
+             const std::vector<ModelView::Light> &lights, EditKind k, int i) {
+    size_t n = k == eMaterial ? materials.size() : k == eLight ? lights.size() : nodes.size();
+    return i >= 0 && i < (int)n;
+}
+
+Values Get(const std::vector<ModelView::Node> &nodes, const std::vector<ModelView::Material> &materials,
+           const std::vector<ModelView::Light> &lights, EditKind k, int i) {
+    Values v;
+    if (k == eMaterial) v.material = materials[i];
+    else if (k == eLight) v.light = lights[i];
+    else v.node = nodes[i];
+    return v;
+}
+
+bool Same(EditKind k, const Values &a, const Values &b) {
+    if (k == eTRS) {
+        const auto &x = a.node, &y = b.node;
+        return !memcmp(x.t, y.t, sizeof(x.t)) && !memcmp(x.r, y.r, sizeof(x.r)) && !memcmp(x.s, y.s, sizeof(x.s));
+    }
+    if (k == eProps) {
+        const auto &x = a.node, &y = b.node;
+        return x.trans == y.trans && x.hasLayer == y.hasLayer && x.layer == y.layer && x.shadow == y.shadow &&
+               x.ztest == y.ztest && x.zwrite == y.zwrite && x.outline == y.outline;
+    }
+    if (k == eMaterial) {
+        const auto &x = a.material, &y = b.material;
+        return !memcmp(x.color, y.color, sizeof(x.color)) && !memcmp(x.emission, y.emission, sizeof(x.emission)) &&
+               x.metallic == y.metallic && x.roughness == y.roughness && x.ao == y.ao && x.cutoff == y.cutoff &&
+               x.alpha == y.alpha && x.doubleSided == y.doubleSided && x.unlit == y.unlit;
+    }
+    const auto &x = a.light, &y = b.light;
+    return !memcmp(x.rgb, y.rgb, sizeof(x.rgb)) && x.intensity == y.intensity && x.range == y.range && x.inner == y.inner &&
+           x.outer == y.outer;
+}
+
+// A change about to be sent: the gesture's first one of that thing keeps its value before
+void Record(EditKind k, int i) {
+    if (g_replaying) return;
+    History &h = HistoryOf(g_view);
+    for (const Change &c : h.open)
+        if (c.kind == k && c.i == i) return;
+    ModelView &v = View();
+    Change c{k, i, {}, {}};
+    c.before = InRange(h.nodes, h.materials, h.lights, k, i) ? Get(h.nodes, h.materials, h.lights, k, i)
+                                                              : Get(v.nodes, v.materials, v.lights, k, i);
+    h.open.push_back(c);
+}
+
+// Once a frame: the gesture ended (no field active, the mouse let go) becomes a step
+void HistoryTick(ModelView &v) {
+    History &h = HistoryOf(&v);
+    int frame = ImGui::GetFrameCount();
+    if (h.frame == frame) return;
+    if (h.file != v.file) h = History(), h.file = v.file;
+    h.frame = frame;
+    bool busy = ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    if (!h.open.empty() && !busy) {
+        std::vector<Change> step;
+        for (Change &c : h.open) {
+            if (!InRange(v.nodes, v.materials, v.lights, c.kind, c.i)) continue;
+            c.after = Get(v.nodes, v.materials, v.lights, c.kind, c.i);
+            if (!Same(c.kind, c.before, c.after)) step.push_back(c);
+        }
+        h.open.clear();
+        if (!step.empty()) {
+            h.undo.push_back(std::move(step));
+            h.redo.clear();
+            if (h.undo.size() > 300) h.undo.erase(h.undo.begin());
+        }
+    }
+    if (h.open.empty()) h.nodes = v.nodes, h.materials = v.materials, h.lights = v.lights;
+}
+
+// ---------------------------------------------------------------------------
 // Changes sent to the game
 // ---------------------------------------------------------------------------
 
 void SendLiveTRS(int i, const ModelView::Node &n) {
+    Record(eTRS, i);
     char lua[320];
     snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)", i, n.t[0], n.t[1], n.t[2],
              n.r[0], n.r[1], n.r[2], n.r[3], n.s[0], n.s[1], n.s[2]);
@@ -239,6 +349,7 @@ void SendLiveTRS(int i, const ModelView::Node &n) {
 // From disk: into the model read (what Save writes), the preview showing it at once
 void SendTRS(int i) {
     const auto &n = View().nodes[i];
+    Record(eTRS, i);
     if (!g_isLive) {
         GltfNode &d = g_disk.doc.nodes[i];
         memcpy(d.t, n.t, sizeof(d.t)), memcpy(d.r, n.r, sizeof(d.r)), memcpy(d.s, n.s, sizeof(d.s));
@@ -252,10 +363,39 @@ void SendTRS(int i) {
 // A node dragged with the mouse, on the Game window or on the preview
 // ---------------------------------------------------------------------------
 
-// A point through a matrix, divided by its w
+// A point (w 1) or a direction (w 0) through a matrix, not divided by its w
 bool Project(const GltfMat &m, const float in[3], float w, float out[4]) {
     for (int r = 0; r < 4; r++) out[r] = m[r] * in[0] + m[4 + r] * in[1] + m[8 + r] * in[2] + m[12 + r] * w;
     return out[3] != 0;
+}
+
+float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+void Cross(const float a[3], const float b[3], float out[3]) {
+    out[0] = a[1] * b[2] - a[2] * b[1], out[1] = a[2] * b[0] - a[0] * b[2], out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+// Its length, it made 1 long (unchanged when 0)
+float Normalize(float v[3]) {
+    float l = std::sqrt(Dot(v, v));
+    if (l > 0)
+        for (int k = 0; k < 3; k++) v[k] /= l;
+    return l;
+}
+
+// a * b (x, y, z, w)
+void QuatMul(const float a[4], const float b[4], float out[4]) {
+    float r[4] = {a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]};
+    float l = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]);
+    for (int k = 0; k < 4; k++) out[k] = l > 0 ? r[k] / l : r[k];
+}
+
+// A clip space point back into the world
+void Unproject(const GltfMat &inv, float x, float y, float z, float out[3]) {
+    float in[3] = {x, y, z}, o[4];
+    Project(inv, in, 1, o);
+    for (int k = 0; k < 3; k++) out[k] = o[3] != 0 ? o[k] / o[3] : o[k];
 }
 
 // Its translation (in its parent's space) once the mouse moved from a to b (both -1..1 across the
@@ -300,59 +440,363 @@ const char *AnimatedNote(const ModelView::Node &n) {
     return n.animated ? "\nAn animation moves it: its place at rest changes (seen with the animations off)." : "";
 }
 
+// What a drag does: the Model window's and the Game window's Move, Turn, Scale
+enum DragMode { kMove, kTurn, kScale };
+int g_dragMode = kMove;
+
+// How a picture of the model is on the screen: its view-projection, and the rectangle its clip
+// space's -1..1 fills
+struct Picture {
+    GltfMat viewProj{};
+    ImVec2 p0, size;
+};
+
+void ToNdc(const Picture &p, ImVec2 q, float out[2]) {
+    out[0] = (q.x - p.p0.x) / p.size.x * 2 - 1, out[1] = 1 - (q.y - p.p0.y) / p.size.y * 2;
+}
+
+ImVec2 NdcToScreen(const Picture &p, float x, float y) {
+    return ImVec2(p.p0.x + (x + 1) / 2 * p.size.x, p.p0.y + (1 - y) / 2 * p.size.y);
+}
+
+// A point of the world on the screen; false behind the camera
+bool WorldToScreen(const Picture &p, const float w[3], ImVec2 &out) {
+    float c[4];
+    Project(p.viewProj, w, 1, c);
+    if (c[3] < 1e-4f) return false;
+    out = NdcToScreen(p, c[0] / c[3], c[1] / c[3]);
+    return true;
+}
+
+// The line under a point of the screen: from the near plane, towards the far one
+void Ray(const Picture &p, ImVec2 q, float from[3], float dir[3]) {
+    float n[2], to[3];
+    ToNdc(p, q, n);
+    GltfMat inv = Gltf_Invert(p.viewProj);
+    Unproject(inv, n[0], n[1], -1, from);
+    Unproject(inv, n[0], n[1], 1, to);
+    for (int k = 0; k < 3; k++) dir[k] = to[k] - from[k];
+}
+
+// Where the line under a point of the screen passes nearest to the line o + d * s: its s; false
+// when they go the same way
+bool LineParam(const Picture &p, ImVec2 q, const float o[3], const float d[3], float &s) {
+    float r0[3], rd[3], w[3];
+    Ray(p, q, r0, rd);
+    for (int k = 0; k < 3; k++) w[k] = o[k] - r0[k];
+    float a = Dot(d, d), b = Dot(d, rd), c = Dot(rd, rd), dd = Dot(d, w), e = Dot(rd, w);
+    float den = a * c - b * b;
+    if (std::fabs(den) <= 1e-6f * a * c) return false;
+    s = (b * e - c * dd) / den;
+    return true;
+}
+
+// The handles drawn around the node selected: arrows along its parent's axes (Move), circles
+// around them and one facing the camera (Turn), lines along its own axes (Scale); a square in
+// the middle moves along the screen or scales the three together
+enum Part { kBody, kCentre, kAxisX, kAxisY, kAxisZ, kRingX, kRingY, kRingZ, kRingView };
+
+struct Gizmo {
+    bool ok = false;
+    float origin[3];  // the node's origin, in the world
+    float axis[3][3]; // the handles' directions in the world, 1 long
+    float len = 0;    // their length in the world
+    float px = 0;     // and on the screen
+    ImVec2 o, tip[3];
+    std::vector<ImVec2> ring[3];
+};
+
+Gizmo MakeGizmo(const Picture &p, const GltfMat &parentWorld, const GltfMat &world, int mode) {
+    Gizmo g;
+    for (int k = 0; k < 3; k++) g.origin[k] = world[12 + k];
+    if (!WorldToScreen(p, g.origin, g.o)) return g;
+    // The world's size of a screen pixel at the node: two points 100 pixels apart at its depth
+    float c[4], n[2], a[3], b[3];
+    Project(p.viewProj, g.origin, 1, c);
+    GltfMat inv = Gltf_Invert(p.viewProj);
+    ToNdc(p, ImVec2(g.o.x, g.o.y + 100), n);
+    Unproject(inv, c[0] / c[3], c[1] / c[3], c[2] / c[3], a);
+    Unproject(inv, n[0], n[1], c[2] / c[3], b);
+    float perPixel = std::hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 100;
+    if (!(perPixel > 0) || !std::isfinite(perPixel)) return g;
+    g.px = ImGui::GetFontSize() * 4.5f;
+    g.len = g.px * perPixel;
+    const GltfMat &m = mode == kScale ? world : parentWorld;
+    for (int k = 0; k < 3; k++) {
+        float *d = g.axis[k];
+        for (int r = 0; r < 3; r++) d[r] = m[k * 4 + r];
+        if (Normalize(d) <= 0) d[0] = d[1] = d[2] = 0, d[k] = 1;
+        float tip[3] = {g.origin[0] + d[0] * g.len, g.origin[1] + d[1] * g.len, g.origin[2] + d[2] * g.len};
+        if (!WorldToScreen(p, tip, g.tip[k])) g.tip[k] = g.o;
+        if (mode != kTurn) continue;
+        // A circle around the axis: two directions square to it and to each other
+        float other[3] = {0, 0, 0}, u[3], v[3];
+        other[std::fabs(d[0]) < 0.9f ? 0 : 1] = 1;
+        Cross(d, other, u);
+        Normalize(u);
+        Cross(d, u, v);
+        for (int s = 0; s <= 48; s++) {
+            float th = s * 6.2831853f / 48, w[3];
+            for (int r = 0; r < 3; r++) w[r] = g.origin[r] + g.len * (cosf(th) * u[r] + sinf(th) * v[r]);
+            ImVec2 q;
+            if (!WorldToScreen(p, w, q)) {
+                g.ring[k].clear();
+                break;
+            }
+            g.ring[k].push_back(q);
+        }
+    }
+    g.ok = true;
+    return g;
+}
+
+float SegmentDistance(ImVec2 m, ImVec2 a, ImVec2 b) {
+    float dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    float t = l2 > 0 ? std::clamp(((m.x - a.x) * dx + (m.y - a.y) * dy) / l2, 0.0f, 1.0f) : 0;
+    return std::hypot(m.x - a.x - t * dx, m.y - a.y - t * dy);
+}
+
+// The handle under the mouse, -1 none
+int GizmoHit(const Gizmo &g, int mode, ImVec2 m) {
+    if (!g.ok) return -1;
+    float tol = std::max(5.0f, ImGui::GetFontSize() * 0.45f), best = tol;
+    int part = -1;
+    if (mode != kTurn && std::fabs(m.x - g.o.x) <= tol && std::fabs(m.y - g.o.y) <= tol) return kCentre;
+    for (int k = 0; k < 3; k++) {
+        float d = FLT_MAX;
+        if (mode == kTurn)
+            for (size_t s = 1; s < g.ring[k].size(); s++) d = std::min(d, SegmentDistance(m, g.ring[k][s - 1], g.ring[k][s]));
+        else
+            d = SegmentDistance(m, g.o, g.tip[k]);
+        if (d < best) best = d, part = (mode == kTurn ? kRingX : kAxisX) + k;
+    }
+    if (mode == kTurn && part < 0 && std::fabs(std::hypot(m.x - g.o.x, m.y - g.o.y) - g.px * 1.2f) < tol) part = kRingView;
+    return part;
+}
+
+void DrawGizmo(ImDrawList *draw, const Gizmo &g, int mode, int hot) {
+    if (!g.ok) return;
+    const ImU32 cols[3] = {IM_COL32(235, 70, 70, 255), IM_COL32(90, 205, 90, 255), IM_COL32(80, 140, 255, 255)};
+    const ImU32 yellow = IM_COL32(255, 220, 60, 255), white = IM_COL32(255, 255, 255, 220);
+    float th = std::max(1.5f, ImGui::GetFontSize() / 7), head = ImGui::GetFontSize() * 0.45f;
+    if (mode == kTurn) {
+        draw->AddCircle(g.o, g.px * 1.2f, hot == kRingView ? yellow : white, 64, hot == kRingView ? th * 1.6f : th);
+        for (int k = 0; k < 3; k++)
+            if (g.ring[k].size() > 1)
+                draw->AddPolyline(g.ring[k].data(), (int)g.ring[k].size(), hot == kRingX + k ? yellow : cols[k],
+                                  hot == kRingX + k ? th * 1.6f : th);
+        return;
+    }
+    for (int k = 0; k < 3; k++) {
+        ImU32 c = hot == kAxisX + k ? yellow : cols[k];
+        float w = hot == kAxisX + k ? th * 1.6f : th;
+        ImVec2 a = g.o, b = g.tip[k];
+        float dx = b.x - a.x, dy = b.y - a.y, l = std::hypot(dx, dy);
+        draw->AddLine(a, b, c, w);
+        if (l < 1) continue;
+        dx /= l, dy /= l;
+        if (mode == kMove)
+            draw->AddTriangleFilled(ImVec2(b.x + dx * head, b.y + dy * head), ImVec2(b.x - dy * head * 0.5f, b.y + dx * head * 0.5f),
+                                    ImVec2(b.x + dy * head * 0.5f, b.y - dx * head * 0.5f), c);
+        else
+            draw->AddRectFilled(ImVec2(b.x - head * 0.45f, b.y - head * 0.45f), ImVec2(b.x + head * 0.45f, b.y + head * 0.45f), c);
+    }
+    float h = std::max(4.0f, ImGui::GetFontSize() * 0.3f);
+    if (hot == kCentre) draw->AddRectFilled(ImVec2(g.o.x - h, g.o.y - h), ImVec2(g.o.x + h, g.o.y + h), yellow);
+    else draw->AddRect(ImVec2(g.o.x - h, g.o.y - h), ImVec2(g.o.x + h, g.o.y + h), white, 0, th);
+}
+
+const char *PartHint(int mode, int part) {
+    switch (part) {
+    case kAxisX: return mode == kMove ? "Drag: move it along its parent's X (red)" : "Drag: scale it along its own X (red)";
+    case kAxisY: return mode == kMove ? "Drag: move it along its parent's Y (green)" : "Drag: scale it along its own Y (green)";
+    case kAxisZ: return mode == kMove ? "Drag: move it along its parent's Z (blue)" : "Drag: scale it along its own Z (blue)";
+    case kRingX: return "Drag around: turn it about its parent's X (red); Ctrl: by 15 degrees";
+    case kRingY: return "Drag around: turn it about its parent's Y (green); Ctrl: by 15 degrees";
+    case kRingZ: return "Drag around: turn it about its parent's Z (blue); Ctrl: by 15 degrees";
+    case kRingView: return "Drag around: turn it as the screen turns; Ctrl: by 15 degrees";
+    }
+    return mode == kMove ? "Drag: move it along the screen (Shift: nearer or farther)"
+           : mode == kTurn ? "Drag around its middle: turn it as the screen turns; Ctrl: by 15 degrees"
+                           : "Drag right or up: scale it, the three together";
+}
+
 struct NodeDrag {
     int node = -1;      // pressed on, the left button still down
+    int part = kBody, mode = kMove;
     bool moving = false; // past a few pixels
     bool depth = false;  // Shift held: from, t0 taken again when it changes
     ImVec2 from;
-    float t0[3], orig[3];
-    GltfMat viewProj, parentWorld;
+    float t0[3], r0[4], s0[3]; // at the press
+    float ot[3], orr[4], os[3]; // where it was: the right button puts it back
+    float line0 = 0;            // an axis handle's parameter at the press
+    GltfMat parentWorld, world;
+    Picture pic;
+    Gizmo gizmo; // as it was at the press
 };
 
-void BeginDrag(NodeDrag &g, int node, const ModelView &v, const GltfMat &viewProj, const GltfMat &parentWorld) {
+void BeginDrag(NodeDrag &g, int node, const ModelView &v, const Picture &pic, const GltfMat &parentWorld, const GltfMat &world,
+               int part) {
     g = NodeDrag();
-    g.node = node;
+    g.node = node, g.part = part, g.mode = g_dragMode;
     g.from = ImGui::GetMousePos();
-    memcpy(g.t0, v.nodes[node].t, sizeof(g.t0));
-    memcpy(g.orig, g.t0, sizeof(g.orig));
-    g.viewProj = viewProj, g.parentWorld = parentWorld;
+    const ModelView::Node &n = v.nodes[node];
+    memcpy(g.t0, n.t, sizeof(g.t0)), memcpy(g.r0, n.r, sizeof(g.r0)), memcpy(g.s0, n.s, sizeof(g.s0));
+    memcpy(g.ot, n.t, sizeof(g.ot)), memcpy(g.orr, n.r, sizeof(g.orr)), memcpy(g.os, n.s, sizeof(g.os));
+    g.pic = pic, g.parentWorld = parentWorld, g.world = world;
+    g.gizmo = MakeGizmo(pic, parentWorld, world, g.mode);
     g.depth = ImGui::GetIO().KeyShift;
+    if (part >= kAxisX && part <= kAxisZ) {
+        int k = part - kAxisX;
+        if (g.mode == kMove) {
+            // Along the parent's axis as its translation counts it: one unit of t moves this much
+            float d[3] = {parentWorld[k * 4], parentWorld[k * 4 + 1], parentWorld[k * 4 + 2]};
+            if (!LineParam(pic, g.from, g.gizmo.origin, d, g.line0)) g.node = -1;
+        } else if (!LineParam(pic, g.from, g.gizmo.origin, g.gizmo.axis[k], g.line0) || std::fabs(g.line0) < 1e-6f) {
+            g.node = -1;
+        }
+    }
 }
 
-// The drag going on: the node moved to where the mouse is (a, b as DragTranslation takes them);
-// the right button puts it back (Esc would go to the game). False when it ended.
-bool StepDrag(NodeDrag &g, ModelView &v, const float a[2], const float b[2], const std::function<void(int)> &send) {
+// The angle the mouse went around a point of the screen since the press (counterclockwise)
+float AngleAround(ImVec2 o, ImVec2 from, ImVec2 m) {
+    float a = atan2f(-(m.y - o.y), m.x - o.x) - atan2f(-(from.y - o.y), from.x - o.x);
+    if (a > 3.14159265f) a -= 6.2831853f;
+    if (a < -3.14159265f) a += 6.2831853f;
+    return a;
+}
+
+// The drag going on: the node moved, turned or scaled with the mouse; the right button puts it
+// back (Esc would go to the game). False when it ended.
+bool StepDrag(NodeDrag &g, ModelView &v, const std::function<void(int)> &send) {
     if (g.node < 0 || g.node >= (int)v.nodes.size()) return g.node = -1, false;
     ModelView::Node &n = v.nodes[g.node];
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (g.moving) memcpy(n.t, g.orig, sizeof(n.t)), send(g.node);
+        if (g.moving) {
+            memcpy(n.t, g.ot, sizeof(n.t)), memcpy(n.r, g.orr, sizeof(n.r)), memcpy(n.s, g.os, sizeof(n.s));
+            send(g.node);
+        }
         return g.node = -1, false;
     }
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) return g.node = -1, false;
     ImVec2 m = ImGui::GetMousePos();
     if (!g.moving && std::hypot(m.x - g.from.x, m.y - g.from.y) < 3) return true;
     g.moving = true;
-    bool depth = ImGui::GetIO().KeyShift;
-    if (depth != g.depth) {
-        // Another way of moving: from here
-        g.depth = depth, g.from = m;
-        memcpy(g.t0, n.t, sizeof(g.t0));
-        return true;
+    ImGuiIO &io = ImGui::GetIO();
+    float t[3], r[4], s[3];
+    memcpy(t, g.t0, sizeof(t)), memcpy(r, g.r0, sizeof(r)), memcpy(s, g.s0, sizeof(s));
+    bool axis = g.part >= kAxisX && g.part <= kAxisZ;
+    int k = axis ? g.part - kAxisX : g.part >= kRingX && g.part <= kRingZ ? g.part - kRingX : -1;
+    const Gizmo &gz = g.gizmo;
+    char what[96] = "";
+    if (g.mode == kMove && !axis) {
+        bool depth = io.KeyShift;
+        if (depth != g.depth) {
+            // Another way of moving: from here
+            g.depth = depth, g.from = m;
+            memcpy(g.t0, n.t, sizeof(g.t0));
+            return true;
+        }
+        float a[2], b[2];
+        ToNdc(g.pic, g.from, a), ToNdc(g.pic, m, b);
+        if (!DragTranslation(g.pic.viewProj, g.parentWorld, g.t0, a, b, depth, t)) memcpy(t, n.t, sizeof(t));
+        snprintf(what, sizeof(what), "%.3f, %.3f, %.3f", t[0], t[1], t[2]);
+    } else if (g.mode == kMove) {
+        float d[3] = {g.parentWorld[k * 4], g.parentWorld[k * 4 + 1], g.parentWorld[k * 4 + 2]}, at;
+        if (LineParam(g.pic, m, gz.origin, d, at)) t[k] = g.t0[k] + at - g.line0;
+        else t[k] = n.t[k];
+        snprintf(what, sizeof(what), "%c %.3f", "XYZ"[k], t[k]);
+    } else if (g.mode == kTurn) {
+        // About one of the parent's axes, or the one coming out of the screen (in the parent's space)
+        float angle = AngleAround(gz.o, g.from, m), about[3], world[3];
+        if (k >= 0) {
+            about[0] = about[1] = about[2] = 0, about[k] = 1;
+            float from[3], dir[3];
+            Ray(g.pic, gz.o, from, dir);
+            if (Dot(gz.axis[k], dir) > 0) angle = -angle; // it points away: turning looks the other way
+        } else {
+            float from[3], dir[3], local[4];
+            Ray(g.pic, gz.o, from, dir);
+            for (int a = 0; a < 3; a++) world[a] = -dir[a];
+            Project(Gltf_Invert(g.parentWorld), world, 0, local);
+            memcpy(about, local, sizeof(about));
+            if (Normalize(about) <= 0) about[2] = 1;
+        }
+        if (io.KeyCtrl) angle = std::round(angle * kDeg / 15) * 15 / kDeg;
+        float q[4] = {about[0] * sinf(angle / 2), about[1] * sinf(angle / 2), about[2] * sinf(angle / 2), cosf(angle / 2)};
+        QuatMul(q, g.r0, r);
+        snprintf(what, sizeof(what), "%.1f deg", angle * kDeg);
+    } else if (axis) {
+        float at;
+        float f = LineParam(g.pic, m, gz.origin, gz.axis[k], at) ? at / g.line0 : 1;
+        if (std::fabs(f) < 1e-3f) f = f < 0 ? -1e-3f : 1e-3f;
+        s[k] = g.s0[k] * f;
+        snprintf(what, sizeof(what), "%c x%.3f", "XYZ"[k], f);
+    } else {
+        float f = expf(((m.x - g.from.x) - (m.y - g.from.y)) / (gz.px * 2));
+        for (int a = 0; a < 3; a++) s[a] = g.s0[a] * f;
+        snprintf(what, sizeof(what), "x%.3f", f);
     }
-    float t[3];
-    if (DragTranslation(g.viewProj, g.parentWorld, g.t0, a, b, depth, t) &&
-        memcmp(t, n.t, sizeof(t)) != 0) {
-        memcpy(n.t, t, sizeof(t));
+    if (memcmp(t, n.t, sizeof(t)) || memcmp(r, n.r, sizeof(r)) || memcmp(s, n.s, sizeof(s))) {
+        memcpy(n.t, t, sizeof(t)), memcpy(n.r, r, sizeof(r)), memcpy(n.s, s, sizeof(s));
         send(g.node);
     }
     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-    ImGui::SetTooltip("%s\n%.3f, %.3f, %.3f\nShift: nearer or farther; right button: back where it was%s", NodeName(g.node).c_str(),
-                      n.t[0], n.t[1], n.t[2], AnimatedNote(n));
+    ImGui::SetTooltip("%s: %s\n%sright button: back where it was%s", NodeName(g.node).c_str(), what,
+                      g.mode == kMove && !axis ? "Shift: nearer or farther; " : g.mode == kTurn ? "Ctrl: by 15 degrees; " : "",
+                      AnimatedNote(n));
     return true;
+}
+
+// The node's handles on a picture, and a press on them or on the node starting a drag. node: the
+// one selected (-1 none); hover: the one under the mouse. True when the mouse is theirs.
+bool NodeHandles(NodeDrag &drag, ModelView &v, ImDrawList *draw, const Picture &pic, int node, int hover, const GltfMat &parentWorld,
+                 const GltfMat &world, bool hovered, bool pressed, const std::function<void(int)> &send) {
+    if (drag.node >= 0) {
+        if (StepDrag(drag, v, send)) {
+            DrawGizmo(draw, MakeGizmo(pic, parentWorld, world, drag.mode), drag.mode, drag.part);
+            return true;
+        }
+    }
+    if (node < 0 || node >= (int)v.nodes.size()) return false;
+    Gizmo gz = MakeGizmo(pic, parentWorld, world, g_dragMode);
+    int hot = hovered ? GizmoHit(gz, g_dragMode, ImGui::GetMousePos()) : -1;
+    DrawGizmo(draw, gz, g_dragMode, hot);
+    if (hot < 0 && hovered && hover == node) hot = kBody;
+    if (hot < 0) return false;
+    if (pressed) {
+        BeginDrag(drag, node, v, pic, parentWorld, world, hot);
+        return true;
+    }
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    ImGui::SetTooltip("%s\n%s%s", NodeLabel(node).c_str(), PartHint(g_dragMode, hot), AnimatedNote(v.nodes[node]));
+    return true;
+}
+
+// Move, Turn, Scale: what a drag does
+float DragModeWidth() {
+    const ImGuiStyle &st = ImGui::GetStyle();
+    return ImGui::CalcTextSize("MoveTurnScale").x + st.FramePadding.x * 6 + st.ItemSpacing.x * 2;
+}
+
+void DragModeButtons() {
+    const char *names[] = {"Move", "Turn", "Scale"};
+    const char *tips[] = {"A drag moves the node selected: along the screen, or along an axis by its arrow",
+                          "A drag turns the node selected: about an axis by its circle, or as the screen turns",
+                          "A drag scales the node selected: along one of its axes by its handle, or all three"};
+    for (int k = 0; k < 3; k++) {
+        if (k) ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x);
+        bool on = g_dragMode == k;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::SmallButton(names[k])) g_dragMode = k;
+        if (on) ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("%s", tips[k]);
+    }
 }
 
 void SendProps(int i) {
     const auto &n = View().nodes[i];
+    Record(eProps, i);
     if (!g_isLive) {
         GltfNode &d = g_disk.doc.nodes[i];
         d.trans = n.trans, d.hasLayer = n.hasLayer, d.layer = n.layer;
@@ -370,6 +814,7 @@ void SendProps(int i) {
 
 void SendMaterial(int i) {
     const auto &m = View().materials[i];
+    Record(eMaterial, i);
     if (!g_isLive) {
         GltfMaterial &d = g_disk.doc.materials[i];
         memcpy(d.color, m.color, sizeof(d.color)), memcpy(d.emission, m.emission, sizeof(d.emission));
@@ -388,6 +833,7 @@ void SendMaterial(int i) {
 
 void SendLight(int i) {
     const auto &l = View().lights[i];
+    Record(eLight, i);
     if (!g_isLive) {
         GltfLight &d = g_disk.doc.lights[i];
         memcpy(d.rgb, l.rgb, sizeof(d.rgb));
@@ -400,6 +846,68 @@ void SendLight(int i) {
              l.intensity, l.range, l.inner, l.outer);
     SendRaw(lua);
     g_modelAsked = ImGui::GetTime();
+}
+
+// A change's values put back into the model shown, and sent
+void Put(EditKind k, int i, const Values &x) {
+    ModelView &v = View();
+    if (!InRange(v.nodes, v.materials, v.lights, k, i)) return;
+    if (k == eTRS) {
+        ModelView::Node &n = v.nodes[i];
+        memcpy(n.t, x.node.t, sizeof(n.t)), memcpy(n.r, x.node.r, sizeof(n.r)), memcpy(n.s, x.node.s, sizeof(n.s));
+        SendTRS(i);
+    } else if (k == eProps) {
+        ModelView::Node &n = v.nodes[i];
+        n.trans = x.node.trans, n.hasLayer = x.node.hasLayer, n.layer = x.node.layer;
+        n.shadow = x.node.shadow, n.ztest = x.node.ztest, n.zwrite = x.node.zwrite, n.outline = x.node.outline;
+        SendProps(i);
+    } else if (k == eMaterial) {
+        std::string name = v.materials[i].name;
+        int tex = v.materials[i].tex;
+        bool animated = v.materials[i].animated;
+        v.materials[i] = x.material;
+        v.materials[i].name = name, v.materials[i].tex = tex, v.materials[i].animated = animated;
+        SendMaterial(i);
+    } else {
+        ModelView::Light &l = v.lights[i];
+        memcpy(l.rgb, x.light.rgb, sizeof(l.rgb));
+        l.intensity = x.light.intensity, l.range = x.light.range, l.inner = x.light.inner, l.outer = x.light.outer;
+        SendLight(i);
+    }
+}
+
+std::string StepLabel(const std::vector<Change> &step) {
+    if (step.empty()) return "";
+    const Change &c = step[0];
+    std::string what = c.kind == eTRS      ? "the place of " + NodeName(c.i)
+                       : c.kind == eProps    ? "the drawing of " + NodeName(c.i)
+                       : c.kind == eMaterial ? "material " + MaterialName(c.i)
+                                             : "light " + LightName(c.i);
+    if (step.size() > 1) what += " and " + std::to_string(step.size() - 1) + " more";
+    return what;
+}
+
+// The last step of the model shown undone (or the last one undone done again)
+void UndoStep(bool redo) {
+    History &h = HistoryOf(g_view);
+    auto &from = redo ? h.redo : h.undo;
+    auto &to = redo ? h.undo : h.redo;
+    if (from.empty() || !h.open.empty()) return;
+    std::vector<Change> step = std::move(from.back());
+    from.pop_back();
+    g_replaying = true;
+    for (size_t k = 0; k < step.size(); k++) {
+        const Change &c = redo ? step[k] : step[step.size() - 1 - k];
+        Put(c.kind, c.i, redo ? c.after : c.before);
+    }
+    g_replaying = false;
+    // What it changed, selected
+    const Change &c = step[0];
+    if (c.kind == eTRS || c.kind == eProps) SelectNode(c.i, true);
+    else Select(c.kind == eMaterial ? kMaterial : kLight, c.i), g_tab = c.kind == eMaterial ? 1 : 3;
+    ModelView &v = View();
+    h.nodes = v.nodes, h.materials = v.materials, h.lights = v.lights;
+    to.push_back(std::move(step));
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,9 +1536,11 @@ void ReadModelGeometry(const Json &mdl) {
     floats(mdl["sp"], f.sp);
     floats(mdl["hp"], f.hp);
     f.w = (float)mdl["w"].num(), f.h = (float)mdl["h"].num();
-    f.mats = mdl["vp"].items.size() == 16 && mdl["pw"].items.size() == 16 && f.w > 0 && f.h > 0;
-    for (int k = 0; f.mats && k < 16; k++)
+    f.mats = mdl["vp"].items.size() == 16 && mdl["pw"].items.size() == 16 && mdl["nw"].items.size() == 16 && f.w > 0 && f.h > 0;
+    for (int k = 0; f.mats && k < 16; k++) {
         f.viewProj[k] = (float)mdl["vp"].items[k].num(), f.parentWorld[k] = (float)mdl["pw"].items[k].num();
+        f.world[k] = (float)mdl["nw"].items[k].num();
+    }
     // A node picked on the game: selected here
     if (f.ok && f.picked != g_pickedSeen) {
         if (g_pickedSeen >= 0 && f.sel >= 0 && g_isLive) {
@@ -1059,8 +1569,12 @@ void ModelPickToggle() {
     SameLineFits(CheckboxWidth("3D model"));
     if (ImGui::Checkbox("3D model", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
     ImGui::SetItemTooltip("The mouse picks the stage model's nodes instead of the players (window Model);\n"
-                          "the one selected, dragged, moves.");
+                          "the one selected, or its handles, dragged, moves, turns or scales it.");
     stage = g_stagePick, screen = g_screenPick;
+    if (g_modelPick) {
+        SameLineFits(DragModeWidth());
+        DragModeButtons();
+    }
 }
 
 bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
@@ -1094,23 +1608,20 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     if (f.sel >= 0) drawBox(f.sb, f.sp, IM_COL32(255, 220, 60, 255), thick * 2, f.sel);
     if (!g_modelPick) return false;
 
-    // The selected node, pressed on, dragged (the matrices it was seen through at the press)
+    HistoryTick(g_live);
+    // The selected node's handles, or the node itself, pressed on and dragged (the matrices it was
+    // seen through at the press)
     static NodeDrag drag;
-    auto ndc = [&](ImVec2 q, float out[2]) {
-        ImVec2 p = toPicture(q);
-        out[0] = p.x / f.w * 2 - 1, out[1] = 1 - p.y / f.h * 2;
-    };
-    if (drag.node >= 0) {
-        float a[2], b[2];
-        ndc(drag.from, a), ndc(ImGui::GetMousePos(), b);
-        if (StepDrag(drag, g_live, a, b, [](int i) { SendLiveTRS(i, g_live.nodes[i]); })) return true;
-    }
-    bool onSel = hovered && f.mats && f.sel >= 0 && f.hover == f.sel && f.sel < (int)g_live.nodes.size();
-    if (onSel && clicked) {
-        BeginDrag(drag, f.sel, g_live, f.viewProj, f.parentWorld);
-        return true;
-    }
-    if (onSel) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    Picture pic;
+    pic.viewProj = f.viewProj;
+    pic.p0 = toScreen(0, 0);
+    ImVec2 p1 = toScreen(f.w, f.h);
+    pic.size = ImVec2(p1.x - pic.p0.x, p1.y - pic.p0.y);
+    bool handles = f.mats && f.sel >= 0 && f.sel < (int)g_live.nodes.size() && pic.size.x > 0 && pic.size.y > 0;
+    bool mine = (handles || drag.node >= 0) &&
+                NodeHandles(drag, g_live, draw, pic, handles ? f.sel : -1, f.hover, f.parentWorld, f.world, hovered, clicked,
+                            [](int i) { SendLiveTRS(i, g_live.nodes[i]); });
+    if (drag.node >= 0) return true;
 
     // The node under the mouse, asked when it moves (the game casts the ray)
     static double asked;
@@ -1131,9 +1642,8 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             askedAt = m;
             asked = ImGui::GetTime();
         }
-        if (f.hover >= 0 && f.hover < (int)View().nodes.size())
-            ImGui::SetTooltip(onSel ? "%s\nDrag: move it (Shift: nearer or farther)%s" : "%s\nClick: select it (window Model)%s",
-                              NodeLabel(f.hover).c_str(), onSel ? AnimatedNote(View().nodes[f.hover]) : "");
+        if (!mine && f.hover >= 0 && f.hover < (int)View().nodes.size())
+            ImGui::SetTooltip("%s\nClick: select it (window Model)", NodeLabel(f.hover).c_str());
     } else if (wasHovered) {
         SendRaw("debugModelPick()");
         askedAt = ImVec2(-1, -1);
@@ -1230,6 +1740,7 @@ void DiskLoad(const std::string &path, const std::string &def) {
     d.hover = -1;
     FillDiskView();
     g_selKind = kNone, g_sel = -1;
+    g_histDisk = History();
 }
 
 // The model read again when its file changed on disk (and nothing was changed here)
@@ -1359,7 +1870,7 @@ void Matrices(const Placement &p, float aspect, GltfMat &proj, GltfMat &view) {
 
 // The preview: drawn by the debugger; the left button turns around (a click picks a node), the
 // right or middle one moves, the wheel comes nearer
-void Preview(float height) {
+void Preview() {
     DiskModel &d = g_disk;
     ModelView &v = g_diskView;
     Placement p = DefPlacement(d.def);
@@ -1381,13 +1892,16 @@ void Preview(float height) {
     ImGui::SetItemTooltip("The animations that are on");
     ImGui::SameLine();
     if (ImGui::Button("Fit")) FitOrbit(p.fov);
+    SameLineFits(DragModeWidth());
+    DragModeButtons();
     int lighting = !d.doc.lights.empty() ? 1 : p.environment ? 2 : 0;
     ImGui::SameLine();
     ImGui::TextDisabled(lighting ? "(lights: a rough look)" : "(unlit, as the game draws it)");
     ImGui::SetItemTooltip(lighting ? "The colours and lights as the debugger can show them; the game's shading is finer."
                                    : "The stage has no light and no environment map: the game draws its colours as they are.");
 
-    ImVec2 size(ImGui::GetContentRegionAvail().x, std::max(height - ImGui::GetFrameHeightWithSpacing(), 32.0f));
+    // Below the toolbar, however many lines it took
+    ImVec2 size(ImGui::GetContentRegionAvail().x, std::max(ImGui::GetContentRegionAvail().y, 32.0f));
     GltfMat proj, view;
     Matrices(p, size.x / std::max(1.0f, size.y), proj, view);
     std::vector<char> visible;
@@ -1428,24 +1942,24 @@ void Preview(float height) {
         }
         return Gltf_Pick(d.doc, d.world, visible, pts[0], pts[1]);
     };
-    // The selected node, pressed on, dragged; elsewhere a drag turns the camera
+    // The selected node's handles, or the node itself, pressed on and dragged; elsewhere a drag
+    // turns the camera
     static NodeDrag drag;
-    auto ndc = [&](ImVec2 q, float out[2]) {
-        out[0] = (q.x - p0.x) / size.x * 2 - 1, out[1] = 1 - (q.y - p0.y) / size.y * 2;
-    };
-    GltfMat viewProj = Gltf_Mul(proj, view);
-    if (drag.node >= 0) {
-        float a[2], b[2];
-        ndc(drag.from, a), ndc(io.MousePos, b);
-        if (StepDrag(drag, v, a, b, [](int i) { SendTRS(i); })) {
-            d.hover = -1;
-            return;
-        }
-    }
-    bool onSel = hovered && g_selKind == kNode && g_sel >= 0 && g_sel < (int)v.nodes.size() && d.hover == g_sel;
-    if (onSel && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        int parent = v.nodes[g_sel].parent;
-        BeginDrag(drag, g_sel, v, viewProj, parent >= 0 && parent < (int)d.world.size() ? d.world[parent] : Gltf_Identity());
+    Picture pic;
+    pic.viewProj = Gltf_Mul(proj, view);
+    pic.p0 = p0, pic.size = size;
+    int sel = g_selKind == kNode && g_sel >= 0 && g_sel < (int)v.nodes.size() && g_sel < (int)d.world.size() ? g_sel : -1;
+    int parent = sel >= 0 ? v.nodes[sel].parent : -1;
+    GltfMat parentWorld = parent >= 0 && parent < (int)d.world.size() ? d.world[parent] : Gltf_Identity();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
+    bool wasDragging = drag.node >= 0; // its release does not pick the node under the mouse
+    bool mine = (sel >= 0 || drag.node >= 0) &&
+                NodeHandles(drag, v, draw, pic, sel, d.hover, parentWorld, sel >= 0 ? d.world[sel] : Gltf_Identity(), hovered,
+                            hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left), [](int i) { SendTRS(i); });
+    draw->PopClipRect();
+    if (drag.node >= 0 || wasDragging) {
+        d.hover = -1;
         return;
     }
     static bool dragged;
@@ -1474,11 +1988,8 @@ void Preview(float height) {
         int hit = pickAt(io.MousePos);
         if (hit >= 0) SelectNode(hit, true);
     }
-    if (hovered && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        if (onSel) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-        ImGui::SetTooltip(onSel ? "%s\nDrag: move it (Shift: nearer or farther)%s" : "%s%s", NodeLabel(d.hover).c_str(),
-                          onSel ? AnimatedNote(v.nodes[d.hover]) : "");
-    }
+    if (hovered && !mine && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        ImGui::SetTooltip("%s", NodeLabel(d.hover).c_str());
 }
 
 // The lists (nodes, materials, animations, lights) and the inspector beside them, or under them
@@ -1609,6 +2120,7 @@ void ModelWindow() {
         DiskStep();
     }
     ModelView &m = View();
+    HistoryTick(m);
     SourceFile *sf = live ? StageSource() : g_disk.def.empty() ? nullptr : &LoadSource(g_disk.def);
     bool dirty = live ? (g_mframe.ok ? g_mframe.dirty : m.dirty) : g_disk.doc.Dirty();
     bool defDirty = sf && sf->Dirty();
@@ -1619,11 +2131,13 @@ void ModelWindow() {
     ImGui::Text("%s%s", name.c_str(), dirty ? " *" : "");
     ImGui::SetItemTooltip("%s\n%zu nodes, %zu meshes, %zu materials, %zu animations, %zu lights", m.file.c_str(),
                           m.nodes.size(), m.meshes.size(), m.materials.size(), m.anims.size(), m.lights.size());
-    ImGui::SameLine();
+    // The header goes on in more lines when the window is narrow
+    auto buttonWidth = [](const char *label) { return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2; };
+    SameLineFits(ImGui::CalcTextSize(live ? "in the match" : "from disk").x);
     ImGui::TextColored(live ? Ink(kGreen) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), live ? "in the match" : "from disk");
     ImGui::SetItemTooltip(live ? "The game's model: every change shows on the game."
                                : "Read from its file and drawn here; changes go to the file with Save.");
-    ImGui::SameLine();
+    SameLineFits(buttonWidth("Save"));
     ImGui::BeginDisabled(!dirty && !defDirty);
     bool save = ImGui::Button("Save");
     ImGuiIO &io = ImGui::GetIO();
@@ -1644,12 +2158,13 @@ void ModelWindow() {
         }
         if (defDirty) SaveSource(*sf);
     }
-    ImGui::SameLine();
+    SameLineFits(buttonWidth("Revert"));
     ImGui::BeginDisabled(!dirty);
     if (ImGui::Button("Revert")) {
         if (live) {
             SendRaw("debugModelRevert()");
             if (sf) ReloadStage(*sf, true);
+            g_histLive = History();
         } else {
             DiskLoad(g_disk.path, g_disk.def);
         }
@@ -1658,11 +2173,32 @@ void ModelWindow() {
                                : "The model read from its file again (the changes not saved are lost).");
     ImGui::EndDisabled();
     ImGui::EndDisabled();
+    // Undo, redo: Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z) while this window has the keyboard
+    History &hist = HistoryOf(&m);
+    bool keys = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && io.KeyCtrl;
+    for (int redo = 0; redo < 2; redo++) {
+        const auto &steps = redo ? hist.redo : hist.undo;
+        SameLineFits(buttonWidth(redo ? "Redo" : "Undo"));
+        ImGui::BeginDisabled(steps.empty());
+        bool go = ImGui::Button(redo ? "Redo" : "Undo");
+        ImGui::EndDisabled();
+        if (steps.empty()) ImGui::SetItemTooltip(redo ? "Nothing undone to do again" : "No change to undo");
+        else ImGui::SetItemTooltip("%s %s (%s)", redo ? "Do again:" : "Undo:", StepLabel(steps.back()).c_str(), redo ? "Ctrl+Y" : "Ctrl+Z");
+        if (keys && !steps.empty()) {
+            if (redo) go |= ImGui::IsKeyPressed(ImGuiKey_Y) || (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z));
+            else go |= !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z);
+        }
+        if (go) UndoStep(redo != 0);
+    }
     if (live) {
-        ImGui::SameLine();
+        SameLineFits(CheckboxWidth("Pick on the Game window"));
         if (ImGui::Checkbox("Pick on the Game window", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
         ImGui::SetItemTooltip("On the Game window the mouse shows the node under it; a click selects it,\n"
-                              "and the one selected, dragged, moves (Shift: nearer or farther).");
+                              "and the one selected, or its handles, dragged, moves, turns or scales it.");
+        if (g_modelPick) {
+            SameLineFits(DragModeWidth());
+            DragModeButtons();
+        }
     }
     if (!g_wanted.empty()) {
         ImGui::SameLine();
@@ -1674,7 +2210,7 @@ void ModelWindow() {
     if (!live) {
         float h = ImGui::GetContentRegionAvail().y;
         if (ImGui::BeginChild("preview", ImVec2(0, std::max(em * 12, h * 0.5f)), ImGuiChildFlags_ResizeY))
-            Preview(ImGui::GetContentRegionAvail().y);
+            Preview();
         ImGui::EndChild();
     }
     ListsAndInspector(lw);

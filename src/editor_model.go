@@ -322,7 +322,8 @@ func editorModelPick(m *Model, x, y float32) int {
 // pick, "dirty": changed since its file was read, "sb", "hb": the selected and hovered nodes'
 // boxes as segments [x0, y0, x1, y1, ...], or "sp", "hp": [x, y] where they are, in the game
 // picture's pixels; with a node selected, "vp": the view-projection matrix, "pw": the world
-// matrix of the selected node's parent (column-major), "w", "h": the picture's size}
+// matrix of the selected node's parent, "nw": its own (column-major), "w", "h": the picture's
+// size}
 func editorModelGeometry(b []byte) []byte {
 	m, _ := editorStageModelNow()
 	if m == nil {
@@ -381,6 +382,7 @@ func editorModelGeometry(b []byte) []byte {
 		}
 		mat("vp", e.viewProj)
 		mat("pw", parent)
+		mat("nw", m.nodes[e.sel].worldTransform)
 		b = append(b, `,"w":`...)
 		b = strconv.AppendInt(b, int64(sys.scrrect[2]), 10)
 		b = append(b, `,"h":`...)

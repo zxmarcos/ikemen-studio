@@ -807,6 +807,33 @@ rest changes (the tooltip says so). The Game window's toolbar now goes on
 in a second line when it does not fit (`SameLineFits`), which hid "3D
 model" on narrow windows.
 
+Then handles on the node selected (a gizmo drawn by the app, not ImGuizmo:
+`MakeGizmo`, `GizmoHit`, `DrawGizmo`, `StepDrag` in `app_model.cpp`), in
+three modes picked on the Game window's toolbar, the Model window's header
+or the preview's: Move (arrows along the parent's axes, so an arrow changes
+one number of the translation: the mouse's ray and the axis' line, their
+nearest points), Turn (circles about the parent's axes and a white one about
+the line of sight; the angle the mouse goes around the node's origin on the
+screen, the other way when the axis points away; the turn put before the
+rotation, `q * r`, as the parent's space has it), Scale (along the node's own
+axes, the ratio of the nearest points' distances; the middle: the three
+together). The frame geometry's "mdl" also carries "nw", the node's world
+matrix (where it is drawn, animated or not). Undo and redo: every change goes
+through `SendTRS`, `SendProps`, `SendMaterial` or `SendLight` (and
+`SendLiveTRS` from the Game window), which `Record` it with the value it had
+before the gesture (a copy of the nodes, materials and lights taken each
+frame while no gesture goes on); a gesture ends once no field is active and
+the left button is up (the Game window's picture is an Image, never active),
+its changes becoming a step (none when they put everything back). Two
+histories, the match's model and the one from disk, forgotten when the file
+shown changes or on Revert. The Model window's header goes on in more lines
+when narrow (its Save and Undo were cut off at the Stage workspace's width),
+and the preview takes the height left under its toolbar. Tested on stage3d,
+live and from disk: the stand moved along its X arrow (only x changed),
+turned 90 degrees by the green circle and by the white one, scaled by 2
+along X, each undone and done again (buttons and Ctrl+Z). Not tested: Ctrl's
+15 degrees and Shift (the test script cannot hold them during a drag).
+
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
 #707, as posted but for the colours renamed since (TabActive, NavHighlight:
