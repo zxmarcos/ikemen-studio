@@ -12,8 +12,9 @@ namespace app {
 bool g_boxEdit = true;    // the selected player's boxes can be dragged on the Game window
 bool g_followSel = true;  // a zoomed Game window keeps the selected player in view
 int g_animDrag = 0;       // what a drag on the selected player changes: 0 its boxes, 1 the sprite's offset
-bool g_onion = true;      // the previous element's boxes are drawn too, faint
-bool g_onionSprite = false; // and its sprite
+bool g_onion = true;      // the onion skin: the elements around are drawn too, faint: their boxes
+bool g_onionSprite = false; // their sprites
+bool g_onionBefore = true, g_onionAfter = false; // the element before, the one after
 bool g_animFollow = true; // the Animation window shows what the selected player shows
 int g_animAction = 0, g_animElem = 1;
 
@@ -241,6 +242,12 @@ bool BoxHandles(BoxDrag &d, ImDrawList *draw, bool hovered, const AnimTarget &t,
     return d.active || (hovered && hitG >= 0);
 }
 
+int OnionElem(const AirAction &act, int index, int dir) {
+    int n = (int)act.elems.size();
+    if (dir < 0) return index >= 1 ? index - 1 : n - 1;
+    return index + 1 < n ? index + 1 : std::max(0, act.loopStart);
+}
+
 // Number of elements of the action whose boxes come from that header line.
 int SharedBy(const AirAction &act, int g, int header) {
     int n = 0;
@@ -272,13 +279,32 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         started = ImGui::GetTime();
     }
     ImGui::SetItemTooltip("Plays the action at the game's speed (60 ticks a second), from its loop start after the end");
+    // The onion skin: which elements, what of them
     ImGui::SameLine();
-    ImGui::TextDisabled("Previous:");
+    ImGui::TextDisabled("Onion:");
     ImGui::SameLine();
+    ImGui::Checkbox("before", &g_onionBefore);
+    ImGui::SetItemTooltip("The element before drawn faint (its sprite orange), here and on the game");
+    SameLineFits(CheckboxWidth("after"));
+    ImGui::Checkbox("after", &g_onionAfter);
+    ImGui::SetItemTooltip("The element after drawn faint (its sprite green), here and on the game");
+    SameLineFits(CheckboxWidth("sprites"));
+    ImGui::Checkbox("sprites##onion", &g_onionSprite);
+    SameLineFits(CheckboxWidth("boxes"));
     ImGui::Checkbox("boxes##onion", &g_onion);
-    ImGui::SameLine();
-    ImGui::Checkbox("sprite##onion", &g_onionSprite);
-    ImGui::SetItemTooltip("The previous element drawn faint, here and on the game");
+    if (boxes) {
+        // What a drag changes, here and on the game
+        const ImGuiStyle &style = ImGui::GetStyle();
+        float radio = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x;
+        SameLineFits(ImGui::CalcTextSize("Drag: boxes sprite").x + radio * 2 + style.ItemSpacing.x * 2);
+        ImGui::TextDisabled("Drag:");
+        ImGui::SameLine();
+        ImGui::RadioButton("boxes##drag", &g_animDrag, 0);
+        ImGui::SetItemTooltip("A drag changes the element's boxes (its edges, corners or the whole box)");
+        ImGui::SameLine();
+        ImGui::RadioButton("sprite##drag", &g_animDrag, 1);
+        ImGui::SetItemTooltip("A drag moves the element's sprite (its offset from the axis)");
+    }
     {
         char zoom[16];
         snprintf(zoom, sizeof(zoom), "%.0f%%", k * 100);
@@ -293,9 +319,11 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         ImGui::SameLine();
         if (ImGui::SmallButton("Fit")) refit = true;
         ImGui::SetItemTooltip("The whole action in view (double click on the preview does it too)");
-        HelpMarker(boxes ? "Drag an edge, a corner or the inside of a box to change it. Right click: add a Clsn2 or "
-                           "Clsn1 box there, or delete the box under the mouse (Delete does it too). Changes go to "
-                           "the game at once; Save writes the file. Wheel: zoom; middle drag: pan; double click: fit."
+        HelpMarker(boxes ? "Drag boxes: drag an edge, a corner or the inside of a box to change it; the arrow keys move "
+                           "the box under the mouse (Shift: by 10). Drag sprite: drag anywhere to move the sprite; the "
+                           "arrow keys move it too. Right click: add a Clsn2 or Clsn1 box there, or delete the box "
+                           "under the mouse (Delete does it too). Changes go to the game at once when the character "
+                           "is in the match; Save writes the file. Wheel: zoom; middle drag: pan; double click: fit."
                          : "Wheel: zoom; middle drag: pan; double click: fit.");
     }
     const AirAction &act = *t.act;
@@ -339,7 +367,8 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     }
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     bool open = ImGui::BeginChild("preview", ImVec2(0, height > 0 ? height : em * 14),
-                                  ImGuiChildFlags_Borders | (height > 0 ? 0 : ImGuiChildFlags_ResizeY), ImGuiWindowFlags_NoScrollbar);
+                                  ImGuiChildFlags_Borders | (height > 0 ? 0 : ImGuiChildFlags_ResizeY),
+                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNavInputs);
     ImGui::PopStyleVar();
     if (!open) {
         ImGui::EndChild();
@@ -374,22 +403,29 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     }
     ImVec2 axis(floorf(p0.x + origin.x), floorf(p0.y + origin.y));
     auto at = [&](float x, float y) { return ImVec2(floorf(axis.x + x * k), floorf(axis.y + y * k)); };
-    const AirElem &el = act.elems[std::clamp(shown, 0, (int)act.elems.size() - 1)];
-    // The previous element, faint (the last one's before the first)
+    shown = std::clamp(shown, 0, (int)act.elems.size() - 1);
+    const AirElem &el = act.elems[shown];
+    // The ground, through the axis
+    draw->AddLine(ImVec2(p0.x, axis.y), ImVec2(p0.x + size.x, axis.y), IM_COL32(255, 230, 80, 60));
+    // The onion skin: the elements before and after, faint
     if (!playing && act.elems.size() > 1) {
-        const AirElem &prev = act.elems[shown >= 1 ? shown - 1 : act.elems.size() - 1];
-        int pi = g_onionSprite && spf ? Sff_FindSprite(spf->doc, prev.group, prev.image) : -1;
-        if (GLuint tex = pi >= 0 ? SpriteTexture(*spf, pi) : 0) {
-            const SffSprite &s = spf->doc.sprites[pi];
-            draw->AddImage(TexRef(tex), at((float)(prev.x - s.x), (float)(prev.y - s.y)),
-                           at((float)(prev.x - s.x + s.w), (float)(prev.y - s.y + s.h)), ImVec2(0, 0), ImVec2(1, 1),
-                           IM_COL32(255, 255, 255, 90));
-        }
-        if (boxes && g_onion)
-            for (int g = 0; g < 2; g++)
-                for (const AirBox &b : prev.clsn[g])
-                    draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2),
-                                  g == 0 ? IM_COL32(255, 120, 120, 90) : IM_COL32(140, 180, 255, 90));
+        int before = OnionElem(act, shown, -1), after = OnionElem(act, shown, 1);
+        auto faint = [&](int index, ImU32 tint) {
+            const AirElem &o = act.elems[index];
+            int oi = g_onionSprite && spf ? Sff_FindSprite(spf->doc, o.group, o.image) : -1;
+            if (GLuint tex = oi >= 0 ? SpriteTexture(*spf, oi) : 0) {
+                const SffSprite &s = spf->doc.sprites[oi];
+                draw->AddImage(TexRef(tex), at((float)(o.x - s.x), (float)(o.y - s.y)),
+                               at((float)(o.x - s.x + s.w), (float)(o.y - s.y + s.h)), ImVec2(0, 0), ImVec2(1, 1), tint);
+            }
+            if (boxes && g_onion)
+                for (int g = 0; g < 2; g++)
+                    for (const AirBox &b : o.clsn[g])
+                        draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2),
+                                      g == 0 ? IM_COL32(255, 120, 120, 90) : IM_COL32(140, 180, 255, 90));
+        };
+        if (g_onionAfter && after != shown && !(g_onionBefore && after == before)) faint(after, kOnionAfter);
+        if (g_onionBefore && before != shown) faint(before, kOnionBefore);
     }
     int si = spf ? Sff_FindSprite(spf->doc, el.group, el.image) : -1;
     if (si >= 0) {
@@ -415,7 +451,55 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     if (boxes && !playing && t.sf) {
         // The selected element's boxes, with handles
         auto toAir = [&](ImVec2 s) { return ImVec2((s.x - axis.x) / k, (s.y - axis.y) / k); };
-        BoxHandles(drag, draw, hovered, t, at, toAir, false, &hit);
+        static bool moving; // the sprite dragged: its offset when the drag began, the one written last
+        static ImVec2 moveStart;
+        static int moveX, moveY, setX, setY;
+        if (g_animDrag == 1) {
+            drag.active = false;
+            ImVec2 m = ImGui::GetMousePos();
+            if (!moving && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                moving = true;
+                moveStart = toAir(m);
+                moveX = setX = el.x, moveY = setY = el.y;
+            }
+            if (moving && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) moving = false;
+            if (moving) {
+                ImVec2 a = toAir(m);
+                int nx = moveX + (int)lroundf(a.x - moveStart.x), ny = moveY + (int)lroundf(a.y - moveStart.y);
+                if ((nx != setX || ny != setY) && Air_SetElem(t.sf->text, el, el.group, el.image, nx, ny, el.time)) {
+                    ApplyAnims(*t.sf);
+                    setX = nx, setY = ny;
+                }
+                char label[48];
+                snprintf(label, sizeof(label), "offset %d, %d", setX, setY);
+                draw->AddText(ImVec2(m.x + em, m.y + em), IM_COL32(255, 255, 255, 255), label);
+            }
+            if (moving || hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            for (int g = 1; g >= 0; g--)
+                for (const AirBox &b : el.clsn[g])
+                    draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2),
+                                  g ? IM_COL32(80, 140, 255, 200) : IM_COL32(255, 70, 70, 200));
+        } else {
+            moving = false;
+            BoxHandles(drag, draw, hovered, t, at, toAir, false, &hit);
+        }
+        // The arrow keys, with the preview in focus: the sprite, or the box under the mouse, a pixel
+        // (Shift: 10) that way
+        if (ImGui::IsWindowFocused() && !drag.active && !moving) {
+            int step = io.KeyShift ? 10 : 1, dx = 0, dy = 0;
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) dx = -step;
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) dx = step;
+            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) dy = -step;
+            if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) dy = step;
+            bool moved = false;
+            if ((dx || dy) && g_animDrag == 1) {
+                moved = Air_SetElem(t.sf->text, el, el.group, el.image, el.x + dx, el.y + dy, el.time);
+            } else if ((dx || dy) && hit >= 0) {
+                const AirBox &b = el.clsn[hit / 1000][hit % 1000];
+                moved = Air_SetBox(t.sf->text, b, b.x1 + dx, b.y1 + dy, b.x2 + dx, b.y2 + dy);
+            }
+            if (moved) ApplyAnims(*t.sf);
+        }
         static int menuHit;
         static ImVec2 menuAt;
         if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {

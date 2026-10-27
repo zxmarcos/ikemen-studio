@@ -297,7 +297,7 @@ void PollFrames();
 void GameWindow();
 
 // Animation
-extern bool g_boxEdit, g_followSel, g_onion, g_onionSprite, g_animFollow;
+extern bool g_boxEdit, g_followSel, g_onion, g_onionSprite, g_onionBefore, g_onionAfter, g_animFollow;
 extern int g_animDrag, g_animAction, g_animElem;
 
 // What the Animation window works on: the selected entity's AIR file, action and element.
@@ -324,6 +324,10 @@ struct BoxDrag {
 bool BoxHandles(BoxDrag &d, ImDrawList *draw, bool hovered, const AnimTarget &t,
                 const std::function<ImVec2(float, float)> &airToScreen, const std::function<ImVec2(ImVec2)> &screenToAir,
                 bool flip, int *hit = nullptr);
+// The onion skin: the element (0-based) before index (dir -1: the last one's before the first) or
+// after it (dir 1: the loop start's after the last); the tints of their sprites
+int OnionElem(const AirAction &act, int index, int dir);
+const ImU32 kOnionBefore = IM_COL32(255, 175, 120, 110), kOnionAfter = IM_COL32(120, 235, 150, 110);
 
 void OnFiles(const Json &j);
 extern std::map<int, std::pair<std::string, double>> g_swapWanted; // pn -> the character swapped in, when
@@ -600,6 +604,7 @@ const IniSection *MotifSection(const char *lower); // a section of the motif's d
 
 // Roster: the motif's select.def
 extern std::string g_selectDef; // as the game names it (frame geometry), "" when not known
+std::string SelectDef();        // g_selectDef, else the one the motif's [Files] names (from disk); "" none
 extern int g_rosterPick;        // a select screen's cell picked on the Game window: 1 + its grid index
 void OutlineSelectCell(int tag); // the Game window outlines that cell (1 + its grid index)
 void RosterWindow();

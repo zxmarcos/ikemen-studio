@@ -65,19 +65,20 @@ void SpriteThumb(int pn, int group, int image, float size) {
 }
 
 void MoveTab() {
-    const Entity *e = FindEntity(g_selId);
-    if (!e) {
-        ImGui::TextDisabled("Pick a player: the move is made for its character.");
+    // The character worked on: a player picked in the match, or one picked in Explorer (from disk)
+    int pn = WorkPn();
+    if (!pn) {
+        ImGui::TextDisabled("Pick a player, or a character in Explorer: the move is made for that character.");
         return;
     }
-    int pn = e->pn;
     std::string def = CharFile(pn, "def");
     const std::vector<std::string> *st = nullptr;
-    if (auto it = g_charFiles.find(pn); it != g_charFiles.end())
-        if (auto f = it->second.find("st"); f != it->second.end() && !f->second.empty()) st = &f->second;
+    if (const auto *files = FilesFor(pn))
+        if (auto f = files->find("st"); f != files->end() && !f->second.empty()) st = &f->second;
     if (def.empty() || !st) {
         AirPath(pn); // asks for the files
-        ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+        if (pn == kDiskPn) ImGui::TextDisabled("%s has no state file.", def.empty() ? "The character" : def.c_str());
+        else ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
         return;
     }
     MoveForm &f = g_move;
@@ -89,7 +90,16 @@ void MoveTab() {
         m.action = m.state;
     }
     float em = ImGui::GetFontSize();
-    ImGui::TextDisabled("For P%d's %s, at the end of %s", pn, def.c_str(), (*st)[0].c_str());
+    if (pn == kDiskPn) {
+        ImGui::TextDisabled("For %s", def.c_str());
+        ImGui::SameLine(0, 0);
+        ImGui::TextColored(Ink(kOrange), " (from disk)");
+        ImGui::SetItemTooltip("Not in the match: the move is written into its files, to be tried once it is in the match.");
+        ImGui::SameLine(0, 0);
+        ImGui::TextDisabled(", at the end of %s", (*st)[0].c_str());
+    } else {
+        ImGui::TextDisabled("For P%d's %s, at the end of %s", pn, def.c_str(), (*st)[0].c_str());
+    }
 
     ImGui::SetNextItemWidth(em * 14);
     ImGui::InputText("name", &m.name);
@@ -152,7 +162,7 @@ void MoveTab() {
             ApplyAnims(*air);
         }
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Then draw its boxes in the Animation window (Show on the player).");
+        ImGui::SetItemTooltip("Then draw its boxes in the Animation window.");
     } else {
         const AirAction &a = act->second;
         m.hitElem = FirstHitElem(a, &m.sparkY);
@@ -166,7 +176,11 @@ void MoveTab() {
         ImGui::Text("%zu elements, %d ticks%s", a.elems.size(), ticks, endless ? " and one that lasts" : "");
         if (m.hitElem) ImGui::Text("hits from element %d (its first Clsn1 box)", m.hitElem);
         else ImGui::TextColored(Ink(kYellow), "no Clsn1 box: it hits nothing until one is drawn");
-        if (ImGui::SmallButton("Animation window")) ShowWindow("Animation");
+        if (ImGui::SmallButton("Animation window")) {
+            g_animAction = m.action, g_animElem = m.hitElem ? m.hitElem : 1, g_animFollow = false;
+            ShowWindow("Animation");
+        }
+        ImGui::SetItemTooltip("Shows the action there, to draw its boxes");
         ImGui::EndGroup();
     }
     ImGui::Checkbox("a sound at the start", &m.sound);
@@ -200,8 +214,9 @@ void MoveTab() {
     ImGui::Checkbox("with control", &f.ctrl);
     ImGui::SameLine();
     if (ImGui::SmallButton("Commands window")) ShowWindow("Commands");
-    ImGui::TextDisabled(f.command.empty() ? "Without one, try it with the button below or SelfState."
-                                          : "A ChangeState on it goes at the top of [Statedef -1]%s.",
+    ImGui::TextDisabled(!f.command.empty() ? "A ChangeState on it goes at the top of [Statedef -1]%s."
+                        : pn == kDiskPn    ? "Without one, try it with SelfState once the character is in the match."
+                                           : "Without one, try it with the button below or SelfState.",
                         m.klass == 2 ? ", with power >= 1000" : "");
 
     ImGui::Separator();
@@ -234,10 +249,27 @@ void MoveTab() {
     if (f.made >= 0) {
         ImGui::SameLine();
         char label[64];
-        snprintf(label, sizeof(label), "Try state %d on P%d", f.made, pn);
-        ImGui::BeginDisabled(!Connected() || g_applying || !RootId(pn));
-        if (ImGui::Button(label)) ExecOn(RootId(pn), "selfState(" + std::to_string(f.made) + ")");
-        ImGui::EndDisabled();
+        if (pn == kDiskPn) {
+            // Not in the match: it can be put there
+            ImGui::BeginDisabled(!Connected() || g_applying);
+            if (ImGui::Button("Put it in P1's place")) {
+                std::string name = def;
+                if (name.compare(0, 6, "chars/") == 0) name = name.substr(6);
+                size_t slash = name.find('/');
+                // "kfm" for chars/kfm/kfm.def, as ListDefs names it
+                if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
+                    name = name.substr(0, slash);
+                SwapChar(1, name);
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1, to try the move."
+                                              : "Launch the game first (F5) to try the move.");
+        } else {
+            snprintf(label, sizeof(label), "Try state %d on P%d", f.made, pn);
+            ImGui::BeginDisabled(!Connected() || g_applying || !RootId(pn));
+            if (ImGui::Button(label)) ExecOn(RootId(pn), "selfState(" + std::to_string(f.made) + ")");
+            ImGui::EndDisabled();
+        }
         ImGui::SameLine();
         if (ImGui::SmallButton("Show in Code")) {
             g_codeFile = f.madeIn;
@@ -483,20 +515,26 @@ void CreateCharacter(CharForm &c) {
     c.status = "Made " + to + c.folder + ".def";
     Log(LogLine::Info, c.status);
     // Into select.def, at the end of [Characters]
-    if (c.select && !g_selectDef.empty()) {
-        SourceFile &sel = LoadSource(g_selectDef);
+    if (c.select && !SelectDef().empty()) {
+        SourceFile &sel = LoadSource(SelectDef());
         RosterFile r;
         Roster_Parse(sel.text, r);
-        if (sel.Dirty()) Log(LogLine::Error, g_selectDef + " has changes not saved: " + c.folder + " is not added to it.");
+        if (sel.Dirty()) Log(LogLine::Error, SelectDef() + " has changes not saved: " + c.folder + " is not added to it.");
         else if (r.charsLine && Roster_InsertLine(sel.text, r.charsEnd, c.folder) && SaveSource(sel)) {
             sel.version++;
-            c.status += ", added to " + g_selectDef;
+            c.status += ", added to " + SelectDef();
         }
     }
     if (c.load < 2 && Connected()) {
         SwapChar(c.load + 1, c.folder);
         c.status += ", now P" + std::to_string(c.load + 1);
+    } else if (c.load < 2) {
+        // The game not running: the match it starts with
+        (c.load == 0 ? g_settings.p1 : g_settings.p2) = c.folder;
+        c.status += ", P" + std::to_string(c.load + 1) + " of the next match";
     }
+    // The character worked on (Animation, Sprites, Create > Move...), in the match or not
+    WorkOn(to + c.folder + ".def");
     c.listed = false;
 }
 
@@ -538,7 +576,7 @@ void CharacterTab() {
     ImGui::RadioButton("a full copy, moves included", &c.mode, 1);
     ImGui::Checkbox("add it to select.def", &c.select);
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", g_selectDef.empty() ? "(not known yet)" : g_selectDef.c_str());
+    ImGui::TextDisabled("%s", SelectDef().empty() ? "(none found)" : SelectDef().c_str());
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Then put it");
     ImGui::SameLine();
@@ -547,6 +585,9 @@ void CharacterTab() {
     ImGui::RadioButton("in P2's", &c.load, 1);
     ImGui::SameLine();
     ImGui::RadioButton("nowhere", &c.load, 2);
+    ImGui::SameLine();
+    HelpMarker("With the game running, the match starts again with it there; without, the match the game starts "
+               "with (F5) has it. Either way it becomes the character worked on, as if picked in Explorer.");
     if (ImGui::Button("Create the character")) CreateCharacter(c);
     if (!c.status.empty()) {
         ImGui::SameLine();
@@ -658,23 +699,26 @@ void CreateStage(StageForm &f) {
     f.status = "Made " + def + " and " + sff;
     Log(LogLine::Info, f.status);
     // Into select.def's [ExtraStages]
-    if (f.select && !g_selectDef.empty()) {
-        SourceFile &sel = LoadSource(g_selectDef);
+    if (f.select && !SelectDef().empty()) {
+        SourceFile &sel = LoadSource(SelectDef());
         RosterFile r;
         Roster_Parse(sel.text, r);
         bool added = false;
-        if (sel.Dirty()) Log(LogLine::Error, g_selectDef + " has changes not saved: " + def + " is not added to it.");
+        if (sel.Dirty()) Log(LogLine::Error, SelectDef() + " has changes not saved: " + def + " is not added to it.");
         else if (r.stagesLine) added = Roster_InsertLine(sel.text, r.stagesEnd, def);
         else sel.text += std::string(sel.text.empty() || sel.text.back() == '\n' ? "" : "\n") + "\n[ExtraStages]\n" + def + "\n", added = true;
         if (added && SaveSource(sel)) {
             sel.version++;
-            f.status += ", added to " + g_selectDef;
+            f.status += ", added to " + SelectDef();
         }
     }
     if (f.use && Connected() && g_canTrace) {
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
         g_settings.stage = f.file;
         f.status += ", in the match (and the Session's stage)";
+    } else if (f.use) {
+        g_settings.stage = f.file;
+        f.status += ", the stage of the next match";
     }
     for (StageLayer &l : f.layers) FreeLayer(l);
     f.layers.clear();

@@ -34,8 +34,8 @@ widget is `src/editor.cpp`); the animation editor
 Game window, which zooms and pans; the previous element's boxes; elements
 duplicated, deleted, moved, loop start; actions copied, renumbered,
 deleted; `src/air.cpp` parses and edits AIR text, `tests/air_test.cpp`
-tests it. Not done: a sprite onion skin and a canvas of its own, which need
-the app to draw sprites, i.e. an SFF reader); sprites (done: window
+tests it; later a canvas of its own, `AnimPreview`, and an onion skin, see
+stage D); sprites (done: window
 Sprites, `src/sff.cpp` with checked
 decoders and lodepng; `debugReloadSprites`; the sprite picker and the onion
 sprite in Animation); sounds (done: window Sounds, `src/snd.cpp`,
@@ -150,9 +150,8 @@ toolbar's P1). One not in the match is read from disk as the player
 config.ini's common states, AIR, CMD), so `CharFile`, `FilesOf`, `ModelOf`,
 `SndOf`, `SpritesOf` work unchanged (they go through `FilesFor`; the loops
 over `g_charFiles` stay the match's players). Analysis, Sounds, Commands (its
-CMD part) and Sprites use it; Animation and Create still need the player in
-the match (Animation draws on the game; a canvas of its own would lift
-that). Stage C, done: navigation. The editor (`editor.cpp`) got
+CMD part) and Sprites use it; Animation and Create's Move too since (stage
+D and after). Stage C, done: navigation. The editor (`editor.cpp`) got
 highlighted ranges, Ctrl+click, a selection that does not take the focus, and
 `Editor_Replace` (an edit from outside as one undo step, the caller's
 version bumped so Sync keeps the undo). Code: the find bar (Ctrl+F/H, F3);
@@ -176,6 +175,24 @@ action played). F5 launches, Shift+F5 stops, Ctrl+Shift+F5 restarts;
 matches saved by name (`Match=` lines). Launch no longer empties `g_files`:
 changes made with the game not running stay. Not done: the Sprites window's
 files as tabs (an SFF opened from Explorer shows; one at a time).
+
+Then Animation and Create without the character in the match. The preview
+edits everything the Game window's drag did: its **Drag** choice is
+`g_animDrag` (boxes, or the sprite's offset, dragged anywhere), the arrow
+keys move the offset or the box under the mouse (the preview child has
+`NoNavInputs`, so they do not move ImGui's focus), and a line marks the
+ground. The onion skin draws the element before and the one after
+(`OnionElem`: the loop start's after the last), sprites tinted
+(`kOnionBefore`, `kOnionAfter`) and boxes, on the preview and on the game.
+Create's Move works on `WorkPn()`, so a character from disk gets its move
+written (`StatedefFile`, `AddCommandEntry` and `CommandNames` already went
+through `FilesFor`); without the match its button is Put it in P1's place.
+A character created becomes the one worked on (`WorkOn`), and without the
+game it is put in the match the game starts with (`g_settings.p1/p2`, as
+Explorer does); a stage, the toolbar's. `SelectDef()` gives the motif's
+select.def from disk when the game has not named it. Tested without the
+game: a character made from kfm, action 0 copied as 200, a Clsn1 box added
+on the preview, the move created; then launched with it as P1.
 
 ## Where things are
 

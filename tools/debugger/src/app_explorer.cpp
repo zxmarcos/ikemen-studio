@@ -437,6 +437,13 @@ bool Group(const char *label, size_t count) {
 
 bool IsTextFile(const std::string &path) { return !IsBinary(path); }
 
+std::string SelectDef() {
+    if (!g_selectDef.empty()) return g_selectDef;
+    for (const DefEntry &f : DefFiles(MotifPath()))
+        if (f.key == "select" && f.exists) return f.path;
+    return "";
+}
+
 void WorkOn(const std::string &def) {
     g_workDef = def;
     g_workSelPicked = g_selPicked;

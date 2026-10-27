@@ -294,27 +294,30 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     float grab = ImGui::GetFontSize() * 0.45f;
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
 
-    // The previous element's sprite and boxes, faint (the last element's before the first)
-    if (g_onionSprite && t.act->elems.size() > 1) {
-        const AirElem &prev = t.act->elems[t.elem >= 2 ? t.elem - 2 : t.act->elems.size() - 1];
-        SpriteFile *spf = SpritesOf(t.pn);
-        int index = spf ? Sff_FindSprite(spf->doc, prev.group, prev.image) : -1;
-        if (GLuint tex = index >= 0 ? SpriteTexture(*spf, index) : 0) {
-            const SffSprite &s = spf->doc.sprites[index];
-            float x0 = (float)(prev.x - s.x), y0 = (float)(prev.y - s.y);
-            ImVec2 a = airToScreen(x0, y0), b = airToScreen(x0 + s.w, y0 + s.h), uv0(0, 0), uv1(1, 1);
-            if (a.x > b.x) std::swap(a.x, b.x), std::swap(uv0.x, uv1.x); // facing left
-            draw->AddImage(TexRef(tex), a, b, uv0, uv1, IM_COL32(255, 255, 255, 110));
-        }
-    }
-    if (g_onion && t.act->elems.size() > 1) {
-        const AirElem &prev = t.act->elems[t.elem >= 2 ? t.elem - 2 : t.act->elems.size() - 1];
-        for (int g = 0; g < 2; g++)
-            for (const auto &b : prev.clsn[g]) {
-                ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
-                draw->AddRect(ImVec2(std::min(a.x, c.x), std::min(a.y, c.y)), ImVec2(std::max(a.x, c.x), std::max(a.y, c.y)),
-                              g == 0 ? IM_COL32(255, 120, 120, 90) : IM_COL32(140, 180, 255, 90), 0, thick);
+    // The onion skin: the elements before and after, their sprites and boxes faint
+    if (t.act->elems.size() > 1) {
+        int shown = t.elem - 1, before = OnionElem(*t.act, shown, -1), after = OnionElem(*t.act, shown, 1);
+        SpriteFile *spf = g_onionSprite ? SpritesOf(t.pn) : nullptr;
+        auto faint = [&](int at, ImU32 tint) {
+            const AirElem &o = t.act->elems[at];
+            int index = spf ? Sff_FindSprite(spf->doc, o.group, o.image) : -1;
+            if (GLuint tex = index >= 0 ? SpriteTexture(*spf, index) : 0) {
+                const SffSprite &s = spf->doc.sprites[index];
+                float x0 = (float)(o.x - s.x), y0 = (float)(o.y - s.y);
+                ImVec2 a = airToScreen(x0, y0), b = airToScreen(x0 + s.w, y0 + s.h), uv0(0, 0), uv1(1, 1);
+                if (a.x > b.x) std::swap(a.x, b.x), std::swap(uv0.x, uv1.x); // facing left
+                draw->AddImage(TexRef(tex), a, b, uv0, uv1, tint);
             }
+            if (g_onion)
+                for (int g = 0; g < 2; g++)
+                    for (const auto &b : o.clsn[g]) {
+                        ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+                        draw->AddRect(ImVec2(std::min(a.x, c.x), std::min(a.y, c.y)), ImVec2(std::max(a.x, c.x), std::max(a.y, c.y)),
+                                      g == 0 ? IM_COL32(255, 120, 120, 90) : IM_COL32(140, 180, 255, 90), 0, thick);
+                    }
+        };
+        if (g_onionAfter && after != shown && !(g_onionBefore && after == before)) faint(after, kOnionAfter);
+        if (g_onionBefore && before != shown) faint(before, kOnionBefore);
     }
 
     // Sprite mode: a drag near the player moves the element's offset, sent to the game as it goes
