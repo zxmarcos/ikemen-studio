@@ -152,9 +152,19 @@ config.ini's common states, AIR, CMD), so `CharFile`, `FilesOf`, `ModelOf`,
 over `g_charFiles` stay the match's players). Analysis, Sounds, Commands (its
 CMD part) and Sprites use it; Animation and Create still need the player in
 the match (Animation draws on the game; a canvas of its own would lift
-that). Next: C,
-navigation (find and replace, find in files, go to definition: ChangeState
-to its Statedef, anim to its action; references; outline); D, the visual
+that). Stage C, done: navigation. The editor (`editor.cpp`) got
+highlighted ranges, Ctrl+click, a selection that does not take the focus, and
+`Editor_Replace` (an edit from outside as one undo step, the caller's
+version bumped so Sync keeps the undo). Code: the find bar (Ctrl+F/H, F3);
+F12, Ctrl+click and Shift+F12 through `GoToDefinition` (`app_check.cpp`: the
+word at the offset, the parameter on that line in the model's parse
+(`ParamAt`) and the `StateParams`/`ActionParams` tables, or the identifier
+before it in a trigger; the model of the character the file is of,
+`ModelWith`). `app_navigate.cpp`: Search (find in files, references) and
+Outline. Opening a file to keep it, going to a line and a result clicked
+give the editor the keyboard (`g_codeFocus`). Outline and Search are in the
+default arrangements, not in ones saved before (Windows menu, or Workspace >
+Restore). Next: D, the visual
 editors as documents (an `.air` in Animation, an `.sff` in Sprites as tabs),
 a Problems panel gathering Lint, stage checks, Apply errors and the engine
 log, run configurations.
@@ -195,6 +205,7 @@ tools/debugger/
   src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool, the status bar
   src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
   src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
+  src/app_navigate.cpp   Search (find in files, a state's references) and Outline windows
   src/app_perf.cpp       Performance window: the game's frames by phase (debugPerf), this program's frame
   src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)

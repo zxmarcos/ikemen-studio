@@ -383,6 +383,258 @@ std::string StatedefFile(int pn, int no) {
     return "";
 }
 
+// ---------------------------------------------------------------------------
+// Go to definition (F12, Ctrl+click in Code) and references (Shift+F12): what a number or a
+// name of a character's file names, found in the model of the character the file is of
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The model of a character with that file (state, AIR or CMD file): the one worked on first,
+// then the players in the match; its player in *pn
+Model *ModelWith(const std::string &file, int *pn) {
+    std::vector<int> pns = {WorkPn()};
+    for (const auto &kv : g_charFiles) pns.push_back(kv.first);
+    std::string norm = NormPath(file);
+    for (int p : pns) {
+        if (!p) continue;
+        const auto *files = FilesFor(p);
+        if (!files) continue;
+        bool has = false;
+        for (const auto &[key, paths] : *files)
+            for (const auto &f : paths) has |= NormPath(f) == norm;
+        if (!has) continue;
+        if (Model *m = ModelOf(p)) {
+            *pn = p;
+            return m;
+        }
+    }
+    return nullptr;
+}
+
+bool IdentChar(char c) { return isalnum((unsigned char)c) || c == '_' || c == '.'; }
+
+// Where the word at an offset is: its line and the text around it
+struct Spot {
+    int line = 1;
+    std::string lineText;
+    size_t col = 0;          // of at in the line
+    std::string word;        // the identifier or number at it
+    size_t wordCol = 0;
+    std::string before;      // the identifier before it (skipping spaces and = ! ( , :), lower case
+};
+
+Spot SpotAt(const std::string &t, size_t at) {
+    Spot s;
+    at = std::min(at, t.size());
+    size_t lb = at == 0 ? 0 : t.rfind('\n', at - 1);
+    lb = lb == std::string::npos || at == 0 ? 0 : lb + 1;
+    size_t le = t.find('\n', at);
+    if (le == std::string::npos) le = t.size();
+    s.line = 1 + (int)std::count(t.begin(), t.begin() + lb, '\n');
+    s.lineText = t.substr(lb, le - lb);
+    s.col = at - lb;
+    const std::string &l = s.lineText;
+    size_t c = s.col;
+    if ((c >= l.size() || !IdentChar(l[c])) && c > 0 && IdentChar(l[c - 1])) c--;
+    if (c < l.size() && IdentChar(l[c])) {
+        size_t b = c, e = c;
+        while (b > 0 && IdentChar(l[b - 1])) b--;
+        while (e < l.size() && IdentChar(l[e])) e++;
+        s.word = l.substr(b, e - b);
+        s.wordCol = b;
+        size_t p = b;
+        while (p > 0 && strchr(" \t=!(,:", l[p - 1])) p--;
+        size_t q = p;
+        while (q > 0 && IdentChar(l[q - 1])) q--;
+        s.before = Lower(l.substr(q, p - q));
+    }
+    return s;
+}
+
+bool IsNumber(const std::string &w) { return !w.empty() && std::all_of(w.begin(), w.end(), ::isdigit); }
+
+// The controller (and the statedef) with a parameter on that line of a file, and that parameter
+const CnsParam *ParamAt(const Model &m, const std::string &file, int line, const std::string &key,
+                        const CnsCtrl **ctrl, const CnsState **state) {
+    for (const ParsedFile &pf : m.files) {
+        if (NormPath(pf.path) != NormPath(file)) continue;
+        for (const CnsState &st : pf.cns.states) {
+            for (const CnsParam &p : st.params)
+                if (p.line == line && p.key == key) {
+                    *ctrl = nullptr, *state = &st;
+                    return &p;
+                }
+            for (const CnsCtrl &c : st.ctrls)
+                for (const CnsParam &p : c.params)
+                    if (p.line == line && p.key == key) {
+                        *ctrl = &c, *state = &st;
+                        return &p;
+                    }
+        }
+    }
+    return nullptr;
+}
+
+// The state number of a statedef on that line of a file, -1 none
+int StatedefAt(const Model &m, const std::string &file, int line) {
+    for (const ParsedFile &pf : m.files)
+        if (NormPath(pf.path) == NormPath(file))
+            for (const CnsState &st : pf.cns.states)
+                if (st.line == line && st.literal && st.function.empty()) return st.no;
+    return -1;
+}
+
+enum Names { kNothing, kState, kAction, kCommand, kFunction };
+
+// What the word at an offset names, by the parameter or trigger it is in
+Names WhatAt(const Model &m, const std::string &file, const Spot &s) {
+    if (s.word.empty()) {
+        // A command's name in quotes: command = "name"
+        return kNothing;
+    }
+    if (IsNumber(s.word)) {
+        const CnsCtrl *c = nullptr;
+        const CnsState *st = nullptr;
+        if (ParamAt(m, file, s.line, s.before, &c, &st)) {
+            if (!c) return s.before == "anim" ? kAction : kNothing; // the statedef's own
+            for (const auto &[key, other] : StateParams(c->type))
+                if (s.before == key) return kState;
+            for (const char *key : ActionParams(c->type))
+                if (s.before == key) return kAction;
+        }
+        // In a trigger or an expression
+        static const std::set<std::string> states = {"stateno", "prevstateno", "p2stateno", "value", "changestate",
+                                                     "selfstate"};
+        static const std::set<std::string> actions = {"anim", "selfanimexist", "animexist", "prevanim", "changeanim"};
+        if (states.count(s.before)) return s.before == "value" ? kNothing : kState;
+        if (actions.count(s.before)) return kAction;
+        return kNothing;
+    }
+    for (const ParsedFile &pf : m.files)
+        for (const CnsState &st : pf.cns.states)
+            if (!st.function.empty() && Lower(st.function) == Lower(s.word)) return kFunction;
+    return kNothing;
+}
+
+std::string LineText(const std::string &file, int line) {
+    const std::string &t = LoadSource(file).text;
+    size_t at = 0;
+    for (int l = 1; l < line && at != std::string::npos; l++) {
+        at = t.find('\n', at);
+        if (at != std::string::npos) at++;
+    }
+    if (at == std::string::npos) return "";
+    size_t end = t.find('\n', at);
+    std::string s = t.substr(at, (end == std::string::npos ? t.size() : end) - at);
+    size_t first = s.find_first_not_of(" \t");
+    return first == std::string::npos ? "" : s.substr(first);
+}
+
+// The places changing to state n
+void StateReferences(const Model &m, int n, std::vector<CodePlace> &out) {
+    for (const StateRef &r : m.refs)
+        if (r.to == n) {
+            const std::string &f = m.files[r.file].path;
+            out.push_back({f, r.line, LineText(f, r.line),
+                           (r.fromLiteral ? "in state " + std::to_string(r.from) : std::string("in a function")) +
+                               (r.other ? ", given to another" : "")});
+        }
+}
+
+} // namespace
+
+bool GoToDefinition(const std::string &file, size_t at, bool references) {
+    int pn = 0;
+    Model *m = ModelWith(file, &pn);
+    const std::string &text = LoadSource(file).text;
+    Spot s = SpotAt(text, at);
+    if (!m) {
+        Log(LogLine::Info, "Go to definition: " + file + " is not a file of the character worked on or of a player.");
+        return false;
+    }
+    // A statedef's header: the places changing to it
+    int header = StatedefAt(*m, file, s.line);
+    // A command's name in quotes (command = "x", command != "x")
+    std::string quoted;
+    {
+        const std::string &l = s.lineText;
+        size_t q1 = l.rfind('"', s.col ? s.col - 1 : 0), q2 = l.find('"', s.col);
+        if (q1 != std::string::npos && q2 != std::string::npos && q1 < s.col && q2 >= s.col) {
+            std::string head = Lower(l.substr(0, q1));
+            while (!head.empty() && strchr(" \t=!", head.back())) head.pop_back();
+            if (head.size() >= 7 && head.compare(head.size() - 7, 7, "command") == 0) quoted = l.substr(q1 + 1, q2 - q1 - 1);
+        }
+    }
+    Names what = !quoted.empty() ? kCommand : WhatAt(*m, file, s);
+    int n = IsNumber(s.word) ? atoi(s.word.c_str()) : 0;
+    if (references || (header >= 0 && what == kNothing)) {
+        int state = what == kState ? n : header;
+        if (state < 0) {
+            Log(LogLine::Info, "Find references: put the cursor on a state number or a statedef.");
+            return false;
+        }
+        std::vector<CodePlace> places;
+        StateReferences(*m, state, places);
+        ShowReferences("State " + std::to_string(state) + ": changed to from " + std::to_string(places.size()) +
+                           (places.size() == 1 ? " place" : " places") + " (by its number)",
+                       places);
+        return true;
+    }
+    switch (what) {
+    case kState: {
+        auto it = m->states.find(n);
+        if (it == m->states.end()) break;
+        const ParsedFile &pf = m->files[it->second.first];
+        CodeShowLine(pf.path, pf.cns.states[it->second.second].line);
+        return true;
+    }
+    case kAction: {
+        std::vector<std::string> airs = {CharFile(pn, "anim")};
+        for (const auto &p : FilesOf(pn, "common.air")) airs.push_back(p);
+        for (const std::string &air : airs) {
+            if (air.empty()) continue;
+            AirFile parsed;
+            Air_Parse(LoadSource(air).text, parsed);
+            auto a = parsed.actions.find(n);
+            if (a == parsed.actions.end()) continue;
+            CodeShowLine(air, a->second.line);
+            return true;
+        }
+        break;
+    }
+    case kCommand:
+        for (const char *key : {"cmd", "common.cmd"})
+            for (const auto &p : FilesOf(pn, key)) {
+                CmdFile cmd;
+                Cmd_Parse(LoadSource(p).text, cmd);
+                for (const auto &c : cmd.commands)
+                    if (c.name == quoted) {
+                        CodeShowLine(p, c.line);
+                        return true;
+                    }
+            }
+        break;
+    case kFunction:
+        for (const ParsedFile &pf : m->files)
+            for (const CnsState &st : pf.cns.states)
+                if (!st.function.empty() && Lower(st.function) == Lower(s.word)) {
+                    CodeShowLine(pf.path, st.line);
+                    return true;
+                }
+        break;
+    case kNothing:
+        break;
+    }
+    const char *names[] = {"", "state ", "action ", "command ", "function "};
+    if (what == kNothing)
+        Log(LogLine::Info, "Go to definition: \"" + s.word + "\" names no state, action, command or function here.");
+    else
+        Log(LogLine::Info, std::string("Go to definition: ") + names[what] + (quoted.empty() ? s.word : quoted) +
+                               " is not defined in the character's files.");
+    return false;
+}
+
 namespace {
 
 void ShowLine(const Model &m, int file, int line) {

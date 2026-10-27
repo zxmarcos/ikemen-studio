@@ -758,6 +758,11 @@ struct CodeEditor {
     std::function<ImU32(int)> background_of;
     std::function<std::string(int, ImU32 *)> note_of;
     int mark_clicked = 0;
+    size_t ctrl_clicked = kNone;
+
+    /* Editor_SetHighlights */
+    std::vector<std::pair<size_t, size_t>> highlights;
+    int highlight_cur = -1;
 
     size_t hover_word = kNone;  /* the word under the mouse, and for how long */
     float hover_time = 0.0f;
@@ -1915,6 +1920,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
     float content_w = gutter + kMargin + ed->max_width + m.space * 8.0f;
     float content_h = (LineCount(ed) + 2) * m.line_h;
     ed->mark_clicked = 0;
+    ed->ctrl_clicked = kNone;
 
     ImGui::SetNextWindowContentSize(ImVec2(content_w, content_h));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -1979,6 +1985,11 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
         } else if (io.KeyShift) {
             ed->cur = p;
             ed->dragging = true;
+        } else if (io.KeyCtrl && clicks == 1 && io.MousePos.x >= area.Min.x + gutter) {
+            /* the caller's (Editor_CtrlClicked: go to a definition) */
+            ed->cur = ed->anchor = p;
+            ed->ctrl_clicked = p;
+            ed->dragging = false;
         } else if (io.MousePos.x < area.Min.x + gutter) {
             /* the line numbers: the whole line */
             ed->anchor = ed->lines[l];
@@ -2076,6 +2087,21 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), pal->error_bg);
         } else if (l == cur_line && active && sb == se) {
             dl->AddRectFilled(ImVec2(text_min.x, y), ImVec2(area.Max.x, y + m.line_h), pal->current_line);
+        }
+        if (!ed->highlights.empty()) {
+            /* the found text on this line */
+            auto it = std::lower_bound(ed->highlights.begin(), ed->highlights.end(), std::make_pair(lb, (size_t)0),
+                                       [](const std::pair<size_t, size_t> &a, const std::pair<size_t, size_t> &b) {
+                                           return a.second <= b.first;
+                                       });
+            for (; it != ed->highlights.end() && it->first <= le; ++it) {
+                size_t a = std::max(it->first, lb), b = std::min(it->second, le);
+                float xa = origin.x + TextX(m, d + lb, d + le, d + a);
+                float xb = std::max(xa + 2.0f, origin.x + TextX(m, d + lb, d + le, d + b));
+                bool current = (int)(it - ed->highlights.begin()) == ed->highlight_cur;
+                dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + m.line_h),
+                                  current ? IM_COL32(230, 160, 30, 150) : IM_COL32(200, 150, 40, 70));
+            }
         }
         if (sb != se && sb <= le && se > lb) {
             size_t a = std::max(sb, lb), b = std::min(se, le);
@@ -2175,6 +2201,13 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
                 while (we < le && IsIdent(t[we])) {
                     we++;
                 }
+                if (io.KeyCtrl) {
+                    /* Ctrl+click goes to what it names: underlined */
+                    float y = origin.y + (l + 1) * m.line_h - 2.0f;
+                    dl->AddLine(ImVec2(origin.x + TextX(m, d + lb, d + le, d + wb), y),
+                                ImVec2(origin.x + TextX(m, d + lb, d + le, d + we), y), pal->cursor, 1.0f);
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                }
                 Highlight(d + lb, le - lb, ed->colors);
                 int col = ed->colors[wb - lb];
                 if (col == C_Trigger || col == C_Redirect || col == C_Controller) {
@@ -2233,12 +2266,49 @@ void Editor_GotoLine(CodeEditor *ed, int line, bool select_line, bool focus)
     ed->want_focus = focus;
 }
 
-void Editor_Select(CodeEditor *ed, size_t begin, size_t end)
+void Editor_Select(CodeEditor *ed, size_t begin, size_t end, bool focus)
 {
     ed->sel_begin = begin;
     ed->sel_end = end;
     ed->goto_line = 0;
-    ed->want_focus = true;
+    ed->want_focus = focus;
+}
+
+bool Editor_Selection(const CodeEditor *ed, size_t *begin, size_t *end)
+{
+    if (ed->sel_begin != kNone) {
+        *begin = std::min(ed->sel_begin, ed->sel_end);
+        *end = std::max(ed->sel_begin, ed->sel_end);
+    } else {
+        *begin = SelBegin(ed);
+        *end = SelEnd(ed);
+    }
+    return *begin != *end;
+}
+
+void Editor_Replace(CodeEditor *ed, std::string &text, unsigned int &version, size_t begin, size_t end,
+                    const std::string &str)
+{
+    Sync(ed, text, version);
+    begin = std::min(begin, text.size());
+    end = std::max(begin, std::min(end, text.size()));
+    ed->merge = false;
+    Replace(ed, begin, end, str, G_None);
+    ed->changed = false;
+    version++;
+    ed->seen_version = version;
+    ed->seen_size = text.size();
+}
+
+void Editor_SetHighlights(CodeEditor *ed, std::vector<std::pair<size_t, size_t>> ranges, int current)
+{
+    ed->highlights = std::move(ranges);
+    ed->highlight_cur = current;
+}
+
+size_t Editor_CtrlClicked(const CodeEditor *ed)
+{
+    return ed->ctrl_clicked;
 }
 
 int Editor_CursorLine(const CodeEditor *ed)

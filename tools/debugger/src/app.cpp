@@ -641,6 +641,8 @@ void App_Frame() {
     CodeWindow();
     PerformanceWindow();
     ExplorerWindow();
+    OutlineWindow();
+    SearchWindow();
     PaletteFrame();
     StatusBar();
     if (g_autoLaunch) {

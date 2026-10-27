@@ -4,9 +4,9 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 # Clicks are WM_APP+0x4D47 messages (wParam 0 move, 1/2 left down/up; lParam x|y<<16) and frames
 # are saved by the app itself on WM_APP+0x4D48, so the real mouse and screen are never used.
 # Coordinates are client pixels of the debugger window (sized to 1600x1000).
-# Actions, '|'-separated: key:F5 (key:F10*3 repeats) | wait:2 | click:x,y | dclick:x,y | type:text | shot:name
+# Actions, '|'-separated: key:F5 (key:F10*3 repeats; also F3, F11, F12, RETURN, ESCAPE...) | wait:2 | click:x,y | dclick:x,y | type:text | shot:name
 #   | game:hide, game:show, game:min, game:off (the game window: hidden, shown, minimized, moved off screen)
-#   | down:RIGHT, up:RIGHT (hold and release a key; letters, digits, arrows, ALT, SHIFT) | visible (prints whether the game window is shown)
+#   | down:RIGHT, up:RIGHT (hold and release a key; letters, digits, arrows, ALT, SHIFT, CTRL) | visible (prints whether the game window is shown)
 #   | drag:x1,y1,x2,y2 (left button held from one point to the other) | ps:code (PowerShell, e.g. to edit a file)
 #   | lua:code (run in the game as if typed in the Console; the result goes to the Console)
 #   | ctrl:Z (a key with Ctrl held) | wheel:x,y,n (n notches, up when positive)
@@ -48,7 +48,7 @@ while (((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -
 if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } else { "game window not found" }
 Start-Sleep -Seconds $Wait
 
-$shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F5 = 0x74; F10 = 0x79; F11 = 0x7A; RETURN = 0x0D; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10 }
+$shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F3 = 0x72; F5 = 0x74; F10 = 0x79; F11 = 0x7A; F12 = 0x7B; ESCAPE = 0x1B; RETURN = 0x0D; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10; CTRL = 0x11 }
 foreach ($c in [char[]]"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") { $vk["$c"] = [int]$c }
 foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
   $kind, $arg = $a -split ':', 2

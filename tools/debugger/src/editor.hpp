@@ -10,6 +10,8 @@
 #include <functional>
 #include <stddef.h>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace dbg {
 
@@ -26,9 +28,18 @@ void Editor_Destroy(CodeEditor *ed);
  */
 bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int &version, ImVec2 size = ImVec2(0, 0));
 void Editor_GotoLine(CodeEditor *ed, int line, bool select_line, bool focus = true);   /* 1-based, scrolls it into view */
-void Editor_Select(CodeEditor *ed, size_t begin, size_t end);       /* byte offsets in text, scrolls, focuses */
+void Editor_Select(CodeEditor *ed, size_t begin, size_t end, bool focus = true); /* byte offsets in text, scrolls */
 int  Editor_CursorLine(const CodeEditor *ed);                       /* 1-based */
 size_t Editor_CursorOffset(const CodeEditor *ed);                   /* byte offset in text */
+bool Editor_Selection(const CodeEditor *ed, size_t *begin, size_t *end); /* false: nothing selected */
+/* Replaces [begin, end) of text with str as one step of undo, the cursor after it; bumps version. */
+void Editor_Replace(CodeEditor *ed, std::string &text, unsigned int &version, size_t begin, size_t end,
+                    const std::string &str);
+/* Ranges of the text drawn on a background (found text): sorted (begin, end) byte offsets; current: one of them
+   drawn stronger (-1 none). */
+void Editor_SetHighlights(CodeEditor *ed, std::vector<std::pair<size_t, size_t>> ranges, int current);
+/* The byte offset Ctrl+click was on during the last draw, SIZE_MAX none (the cursor goes there too). */
+size_t Editor_CtrlClicked(const CodeEditor *ed);
 void Editor_SetErrorLine(CodeEditor *ed, int line, const char *message);  /* 0: none; red line with a tooltip */
 bool Editor_IsFocused(const CodeEditor *ed);
 /*

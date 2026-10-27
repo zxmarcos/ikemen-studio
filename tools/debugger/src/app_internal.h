@@ -3,6 +3,7 @@
 //   app_layout.cpp   the menu bar, the windows opened and closed, the workspaces, the status bar
 //   app_explorer.cpp Explorer: the projects' files from disk, a file opened in its window
 //   app_palette.cpp  the palette (go to a file, a command, a line, a section) and the File menu
+//   app_navigate.cpp Search (find in files, references) and Outline
 //   app_game.cpp     Game: the game's frames, the players' boxes over them, keys to the game
 //   app_anim.cpp     Animation: the AIR element of the selected player
 //   app_sprites.cpp  Sprites: the SFF file
@@ -359,12 +360,16 @@ FILETIME FileTime(const std::string &path);
 // The file shown and the cursor's line and column (1-based); false when none is shown
 bool CodeCursor(std::string *file, int *line, int *col);
 void CodeCloseShown(); // its tab (asks first when it has changes)
+// A line of a file in Code, [begin, end) of its text selected when not empty
+void CodeShowLine(const std::string &file, int line, size_t begin = 0, size_t end = 0);
+std::string CodeSelectedText(); // the text selected in Code when on one line, else ""
 void CodeSettingsLine(const std::string &key, const std::string &value);
 void CodeSettingsWrite(ImGuiTextBuffer *buf);
 void CodeWindow();
 
 // Explorer: the characters, stages and screenpack as trees of their files, from disk
 bool GameFileExists(const std::string &path);
+bool IsTextFile(const std::string &path); // not one no window edits as text (sff, snd, png...)
 // Opens a file in the window that edits it: Code (text), Sprites (pal: an SFF v1's palette), Sounds
 void OpenPath(const std::string &path, bool keep, const std::string &pal = "");
 void ProjectFiles(std::vector<std::string> &out); // every file of the projects, for Go to file
@@ -379,6 +384,25 @@ std::string WorkLabel(int pn);  // "P1", "from disk"
 void WorkOn(const std::string &def);
 // A player's files as the game lists them (key -> paths), kDiskPn's read from disk; nullptr not known
 const std::map<std::string, std::vector<std::string>> *FilesFor(int pn);
+
+// Navigation: Search (find in files, a state's references) and Outline (app_navigate.cpp); go to
+// definition (app_check.cpp)
+struct CodePlace {
+    std::string file;
+    int line = 0;
+    std::string text, note; // the line; after it, dimmed
+};
+// The matches of pat in text, sorted (begin, end) byte offsets
+void FindAll(const std::string &text, const std::string &pat, bool matchCase, bool word,
+             std::vector<std::pair<size_t, size_t>> &out);
+void SearchFor(const std::string &text); // Search comes to the front with that text ("": as it was)
+void ShowReferences(const std::string &title, const std::vector<CodePlace> &places);
+void SearchWindow();
+void OutlineWindow();
+// What the word at an offset of a file names (a state, an action, a command, a ZSS function):
+// shown in Code; on a statedef, or with references, the places changing to that state, in Search.
+// False (logged) when nothing.
+bool GoToDefinition(const std::string &file, size_t at, bool references);
 
 // The palette (Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G a line, Ctrl+Shift+O a section) and
 // the File menu (app_palette.cpp)

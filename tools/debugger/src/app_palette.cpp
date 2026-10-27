@@ -63,9 +63,7 @@ int Fuzzy(const std::string &pat, const std::string &text, size_t nameAt) {
 }
 
 void GoToLine(int line) {
-    if (line <= 0) return;
-    g_codeLine = g_codeScrollTo = line;
-    ShowWindow("Code");
+    if (line > 0 && !g_codeFile.empty()) CodeShowLine(g_codeFile, line);
 }
 
 // A path inside the game's folder as the game names it
@@ -149,7 +147,7 @@ void Commands(std::vector<Entry> &out) {
     add("Go to file", "Ctrl+P", [] { Ask(0); });
     add("Go to line", "Ctrl+G", [] { Ask(':'); });
     add("Go to section", "Ctrl+Shift+O", [] { Ask('@'); });
-    for (int n = 0; WorkspaceName(n); n++) {
+    add("Find in files", "Ctrl+Shift+F", [] { SearchFor(CodeSelectedText()); });    for (int n = 0; WorkspaceName(n); n++) {
         char keys[16];
         snprintf(keys, sizeof(keys), "Ctrl+%d", n + 1);
         add(std::string("Workspace: ") + WorkspaceName(n), keys, [n] { AskWorkspace(n); });
@@ -168,6 +166,7 @@ void FileMenu() {
     if (ImGui::MenuItem("Go to line...", "Ctrl+G")) Ask(':');
     if (ImGui::MenuItem("Go to section...", "Ctrl+Shift+O")) Ask('@');
     ImGui::EndDisabled();
+    if (ImGui::MenuItem("Find in files...", "Ctrl+Shift+F")) SearchFor(CodeSelectedText());
     ImGui::Separator();
     if (ImGui::MenuItem("Open...")) OpenDialog();
     if (ImGui::MenuItem("Save and apply", "Ctrl+S")) SaveAndApply();
@@ -182,6 +181,7 @@ void PaletteFrame() {
         if (ImGui::IsKeyPressed(ImGuiKey_P, false)) Ask(io.KeyShift ? '>' : 0);
         else if (!io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) Ask(':');
         else if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_O, false)) Ask('@');
+        else if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false)) SearchFor(CodeSelectedText());
     }
     bool appearing = false;
     if (g_ask) {

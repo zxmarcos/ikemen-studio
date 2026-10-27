@@ -27,6 +27,8 @@ ToolWindow g_windows[] = {
     {"Game", "Game", ""},
     {"Explorer", "Files", "Players|Analysis|Roster"},
     {"Code", "Files", "Console|Trace"},
+    {"Outline", "Files", "Explorer|Players"},
+    {"Search", "Files", "Analysis|Console|Trace"},
     {"Players", "Debugging", "Watch|Breakpoints|Roster|Analysis"},
     {"Breakpoints", "Debugging", "Watch|Players"},
     {"Watch", "Debugging", "Breakpoints|Players"},
@@ -64,13 +66,15 @@ struct Workspace {
 
 Workspace g_spaces[] = {
     {"Debug", "A fight tick by tick: the players, their states, what ran, the code.",
-     "X0.19(Y0.5(L:Players,Explorer)(L:Watch,Breakpoints))"
-     "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance)(L:Code)))", kFollow},
-    {"Code", "Writing a character: the files, the editor in the middle, the Lint and the state graph below it.",
-     "X0.16(L:Explorer)(X0.68(Y0.68(L:Code)(L:Analysis,Console,Trace))(Y0.45(L:Game)(L:Inspector)))", kFollow},
+     "X0.19(Y0.5(L:Players,Explorer,Outline)(L:Watch,Breakpoints))"
+     "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance,Search)(L:Code)))", kFollow},
+    {"Code", "Writing a character: the files and the outline, the editor in the middle, the Lint, the state graph "
+             "and the search below it.",
+     "X0.16(Y0.6(L:Explorer)(L:Outline))(X0.68(Y0.68(L:Code)(L:Analysis,Search,Console,Trace))(Y0.45(L:Game)(L:Inspector)))",
+     kFollow},
     {"Character", "A character's animations, sprites, sounds and commands; new moves and characters.",
-     "X0.16(Y0.5(L:Explorer)(L:Players))"
-     "(X0.62(Y0.66(L:Animation)(L:Code,Console))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
+     "X0.16(Y0.5(L:Explorer)(L:Players,Outline))"
+     "(X0.62(Y0.66(L:Animation)(L:Code,Console,Search))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
      kFollow},
     {"Stage", "The stage on the game, its def's sections and fields, its checks and 3D model.",
      "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Performance)))(L:Stage))", kStageDef},

@@ -429,6 +429,8 @@ bool Group(const char *label, size_t count) {
 
 } // namespace
 
+bool IsTextFile(const std::string &path) { return !IsBinary(path); }
+
 void WorkOn(const std::string &def) {
     g_workDef = def;
     g_workSelPicked = g_selPicked;

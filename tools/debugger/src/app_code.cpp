@@ -3,6 +3,9 @@
 
 #include <fstream>
 
+#include "imgui_internal.h"
+#include "imgui_stdlib.h"
+
 namespace app {
 
 std::string IkemenDir() {
@@ -252,11 +255,15 @@ void TabFor(const std::string &path, bool keep) {
     g_docs.push_back({path, !keep});
 }
 
+bool g_codeFocus; // the editor takes the keyboard at its next draw
+
 void CodeOpen(const std::string &path, bool keep) {
     g_codeFollow = false;
     if (NormPath(g_codeFile) != NormPath(path)) g_codeFile = path, g_codeLine = 0;
     TabFor(path, keep);
     ShowWindow("Code");
+    // Opened to be kept (Go to file, a double click): typed into at once
+    g_codeFocus |= keep;
 }
 
 void CloseDoc(int i) {
@@ -362,6 +369,178 @@ void CloseDialog() {
     if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) g_closing = -1;
     if (g_closing < 0) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
+}
+
+std::string CodeSelectedText() {
+    if (g_codeFile.empty()) return "";
+    SourceFile &sf = LoadSource(g_codeFile);
+    size_t b, e;
+    bool sel = dbg::Editor_Selection(sf.ed, &b, &e) && e - b < 200 && sf.text.find('\n', b) >= e;
+    return sel ? sf.text.substr(b, e - b) : "";
+}
+
+// A line of a file in Code (in the preview tab), [begin, end) of its text selected when not empty
+std::pair<size_t, size_t> g_codeSelect;
+
+void CodeShowLine(const std::string &file, int line, size_t begin, size_t end) {
+    g_codeFollow = false;
+    g_codeFile = file;
+    g_codeLine = g_codeScrollTo = line;
+    g_codeHold = true;
+    g_codeSelect = {begin, end};
+    g_codeFocus = true;
+    TabFor(file, false);
+    ShowWindow("Code");
+}
+
+// ---------------------------------------------------------------------------
+// Find and replace in the file shown (Ctrl+F, Ctrl+H): every match on a background, the one
+// selected stronger; Enter, F3 the next, Shift the one before
+// ---------------------------------------------------------------------------
+
+struct FindState {
+    bool open = false, replace = false, matchCase = false, word = false;
+    bool focus = false; // the find field takes the keyboard
+    std::string find, repl;
+    std::vector<std::pair<size_t, size_t>> matches;
+    std::string forFile, forFind;
+    unsigned forVersion = 0;
+    bool forCase = false, forWord = false;
+};
+FindState g_find;
+
+// The match selected now, or the one at or after the cursor; -1 none
+int MatchAt(SourceFile &sf, bool *exact) {
+    size_t b, e;
+    bool sel = dbg::Editor_Selection(sf.ed, &b, &e);
+    if (!sel) b = e = dbg::Editor_CursorOffset(sf.ed);
+    *exact = false;
+    for (size_t i = 0; i < g_find.matches.size(); i++) {
+        if (sel && g_find.matches[i] == std::make_pair(b, e)) {
+            *exact = true;
+            return (int)i;
+        }
+        if (g_find.matches[i].first >= b) return (int)i;
+    }
+    return g_find.matches.empty() ? -1 : 0;
+}
+
+void Step(SourceFile &sf, int dir) {
+    if (g_find.matches.empty()) return;
+    bool exact;
+    int i = MatchAt(sf, &exact), n = (int)g_find.matches.size();
+    if (exact || dir < 0) i += dir;
+    i = ((i % n) + n) % n;
+    dbg::Editor_Select(sf.ed, g_find.matches[i].first, g_find.matches[i].second, false);
+}
+
+void FindBar(SourceFile &sf, bool windowFocused) {
+    ImGuiIO &io = ImGui::GetIO();
+    if (windowFocused && io.KeyCtrl && !io.KeyShift && (ImGui::IsKeyPressed(ImGuiKey_F, false) || ImGui::IsKeyPressed(ImGuiKey_H, false))) {
+        g_find.open = g_find.focus = true;
+        g_find.replace = ImGui::IsKeyPressed(ImGuiKey_H, false);
+        // The text selected, on one line, is the one looked for
+        size_t b, e;
+        if (dbg::Editor_Selection(sf.ed, &b, &e) && e - b < 200 && sf.text.find('\n', b) >= e) g_find.find = sf.text.substr(b, e - b);
+    }
+    if (!g_find.open) {
+        dbg::Editor_SetHighlights(sf.ed, {}, -1);
+        return;
+    }
+    if (NormPath(sf.path) != g_find.forFile || sf.version != g_find.forVersion || g_find.find != g_find.forFind ||
+        g_find.matchCase != g_find.forCase || g_find.word != g_find.forWord) {
+        bool typed = g_find.find != g_find.forFind;
+        g_find.forFile = NormPath(sf.path), g_find.forVersion = sf.version, g_find.forFind = g_find.find;
+        g_find.forCase = g_find.matchCase, g_find.forWord = g_find.word;
+        FindAll(sf.text, g_find.find, g_find.matchCase, g_find.word, g_find.matches);
+        // Typing selects the first match from the cursor on
+        if (typed && !g_find.matches.empty()) {
+            size_t from = dbg::Editor_CursorOffset(sf.ed), b, e;
+            if (dbg::Editor_Selection(sf.ed, &b, &e)) from = b;
+            int i = 0;
+            while (i < (int)g_find.matches.size() && g_find.matches[i].first < from) i++;
+            if (i == (int)g_find.matches.size()) i = 0;
+            dbg::Editor_Select(sf.ed, g_find.matches[i].first, g_find.matches[i].second, false);
+        }
+    }
+    bool exact;
+    int cur = MatchAt(sf, &exact);
+    dbg::Editor_SetHighlights(sf.ed, g_find.matches, exact ? cur : -1);
+
+    float em = ImGui::GetFontSize();
+    if (g_find.focus) {
+        // From the editor, which holds the keyboard while it is active
+        ImGui::ClearActiveID();
+        ImGui::SetKeyboardFocusHere();
+        g_find.focus = false;
+    }
+    ImGui::SetNextItemWidth(em * 16);
+    bool enter = ImGui::InputTextWithHint("##find", "Find", &g_find.find, ImGuiInputTextFlags_EnterReturnsTrue);
+    bool escaped = ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    if (enter) {
+        Step(sf, io.KeyShift ? -1 : 1);
+        ImGui::SetKeyboardFocusHere(-1);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Aa", &g_find.matchCase);
+    ImGui::SetItemTooltip("Match case");
+    ImGui::SameLine();
+    ImGui::Checkbox("Word", &g_find.word);
+    ImGui::SetItemTooltip("Whole words only");
+    ImGui::SameLine();
+    if (g_find.find.empty()) ImGui::TextDisabled("    ");
+    else if (g_find.matches.empty()) ImGui::TextColored(Ink(kRed), "none");
+    else if (exact) ImGui::Text("%d of %zu", cur + 1, g_find.matches.size());
+    else ImGui::Text("%zu found", g_find.matches.size());
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##prev", ImGuiDir_Up)) Step(sf, -1);
+    ImGui::SetItemTooltip("The one before (Shift+F3, Shift+Enter)");
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##next", ImGuiDir_Down)) Step(sf, 1);
+    ImGui::SetItemTooltip("The next (F3, Enter)");
+    ImGui::SameLine();
+    ImGui::Checkbox("Replace", &g_find.replace);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("x")) g_find.open = false;
+    ImGui::SetItemTooltip("Close (Escape)");
+    if (windowFocused && ImGui::IsKeyPressed(ImGuiKey_F3)) Step(sf, io.KeyShift ? -1 : 1);
+    if (escaped) {
+        // Closed, the keyboard back to the editor with the match selected
+        g_find.open = false;
+        size_t b, e;
+        dbg::Editor_Selection(sf.ed, &b, &e);
+        dbg::Editor_Select(sf.ed, b, e, true);
+    }
+    if (g_find.replace) {
+        ImGui::SetNextItemWidth(em * 16);
+        bool go = ImGui::InputTextWithHint("##replace", "Replace with", &g_find.repl, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if ((ImGui::Button("Replace") || go) && cur >= 0) {
+            if (exact) {
+                auto [b, e] = g_find.matches[cur];
+                dbg::Editor_Replace(sf.ed, sf.text, sf.version, b, e, g_find.repl);
+            }
+            // Found again, then the next one selected
+            FindAll(sf.text, g_find.find, g_find.matchCase, g_find.word, g_find.matches);
+            g_find.forVersion = sf.version;
+            Step(sf, 1);
+            if (go) ImGui::SetKeyboardFocusHere(-1);
+        }
+        ImGui::SetItemTooltip("Replaces the match selected and selects the next (Enter in the field)");
+        ImGui::SameLine();
+        if (ImGui::Button("All") && !g_find.matches.empty()) {
+            // One step of undo, from the first match to the end of the last
+            size_t first = g_find.matches.front().first, last = g_find.matches.back().second, at = first;
+            std::string mid;
+            for (const auto &[b, e] : g_find.matches) {
+                mid += sf.text.substr(at, b - at) + g_find.repl;
+                at = e;
+            }
+            Log(LogLine::Info, "Replaced " + std::to_string(g_find.matches.size()) + " in " + sf.path);
+            dbg::Editor_Replace(sf.ed, sf.text, sf.version, first, last, mid);
+        }
+        ImGui::SetItemTooltip("Replaces every match (Ctrl+Z undoes it)");
+    }
 }
 
 void CodeSettingsLine(const std::string &key, const std::string &value) {
@@ -523,9 +702,14 @@ void CodeWindow() {
     }
     SourceFile &sf = *shown;
     if (g_codeScrollTo > 0) {
-        dbg::Editor_GotoLine(sf.ed, g_codeScrollTo, false, false);
+        dbg::Editor_GotoLine(sf.ed, g_codeScrollTo, false, g_codeFocus);
         g_codeScrollTo = 0;
+    } else if (g_codeFocus) {
+        size_t b, e;
+        dbg::Editor_Selection(sf.ed, &b, &e);
+        dbg::Editor_Select(sf.ed, b, e, true);
     }
+    g_codeFocus = false;
     const auto &ctrlLines = SourceLines(sf.path, kControllers);
     const auto &trigLines = SourceLines(sf.path, kTriggers);
     const auto &defLines = SourceLines(sf.path, kStatedefs);
@@ -578,12 +762,24 @@ void CodeWindow() {
         }
         return "";
     });
+    if (g_codeSelect.second > g_codeSelect.first) {
+        dbg::Editor_Select(sf.ed, g_codeSelect.first, g_codeSelect.second, true);
+        g_codeSelect = {0, 0};
+    }
+    ImGui::BeginGroup();
     if (sf.missing) ImGui::TextDisabled("Could not read %s", sf.path.c_str());
+    FindBar(sf, focused);
     dbg::Editor_Draw(sf.ed, "file", sf.text, sf.version);
+    ImGui::EndGroup();
     if (int line = dbg::Editor_MarkClicked(sf.ed)) {
         if (ctrlLines.count(line)) ToggleCtrlBreak(file, line);
         else if (stateAt(line) >= 0) ToggleStateBreak(stateAt(line), e ? e->pn : 0);
     }
+    // Go to definition: F12 or Ctrl+click; Shift+F12 the places naming the state
+    size_t clicked = dbg::Editor_CtrlClicked(sf.ed);
+    bool f12 = dbg::Editor_IsFocused(sf.ed) && ImGui::IsKeyPressed(ImGuiKey_F12, false);
+    if (clicked != SIZE_MAX || f12)
+        GoToDefinition(file, clicked != SIZE_MAX ? clicked : dbg::Editor_CursorOffset(sf.ed), f12 && io.KeyShift);
     ImGui::End();
 }
 
