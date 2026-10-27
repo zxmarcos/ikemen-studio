@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -418,7 +419,8 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
             ch.node = c["target"]["node"].i(-1);
             ch.path = p == "translation" ? 0 : p == "rotation" ? 1 : p == "scale" ? 2 : -1;
             if (ch.path < 0 || ch.node < 0 || ch.node >= (int)doc.nodes.size()) continue;
-            const Json &s = a["samplers"][(size_t)c["sampler"].i(-1)];
+            ch.sampler = c["sampler"].i(-1);
+            const Json &s = a["samplers"][(size_t)ch.sampler];
             std::string interp = s["interpolation"].str();
             ch.interp = interp == "STEP" ? 1 : interp == "CUBICSPLINE" ? 2 : 0;
             if (!ReadAccessor(doc, s["input"].i(-1), ch.in) || !ReadAccessor(doc, s["output"].i(-1), ch.out)) continue;
@@ -490,6 +492,10 @@ void Sample(const GltfAnim::Channel &c, float time, float *out) {
 
 } // namespace
 
+void Gltf_Sample(const GltfAnim::Channel &c, float time, float *out) {
+    if (!c.in.empty()) Sample(c, time, out);
+}
+
 void Gltf_Pose(const GltfDoc &doc, const std::vector<float> &animTimes, std::vector<GltfMat> &world) {
     size_t count = doc.nodes.size();
     std::vector<std::array<float, 10>> trs(count);
@@ -500,7 +506,8 @@ void Gltf_Pose(const GltfDoc &doc, const std::vector<float> &animTimes, std::vec
     // The animations on, in order: a later one moving the same thing wins (as the engine's)
     for (size_t a = 0; a < doc.anims.size() && a < animTimes.size(); a++) {
         if (animTimes[a] < 0) continue;
-        for (const auto &c : doc.anims[a].channels) Sample(c, animTimes[a], &trs[c.node][c.path == 0 ? 0 : c.path == 1 ? 3 : 7]);
+        for (const auto &c : doc.anims[a].channels)
+            if (!c.in.empty()) Sample(c, animTimes[a], &trs[c.node][c.path == 0 ? 0 : c.path == 1 ? 3 : 7]);
     }
     world.assign(count, Gltf_Identity());
     std::vector<char> done(count, 0);
@@ -621,6 +628,68 @@ void SetOrErase(Json &obj, const char *key, bool keep, const Json &value) {
     else obj.erase(key);
 }
 
+// A sampler's times or values into the document: the accessor kept when it holds them, written
+// over when only this sampler uses it and its size is the same, else a new one at the end of the
+// glb's binary chunk. n: numbers per element. -1 with *error set when it cannot.
+int WriteKeys(GltfDoc &doc, int acc, const std::vector<float> &data, int n, bool shared, std::string *error) {
+    Json &j = doc.json;
+    std::vector<float> cur;
+    if (ReadAccessor(doc, acc, cur) && cur == data) return acc;
+    // The glb's binary chunk: the buffer without a uri
+    int binBuffer = -1;
+    for (size_t b = 0; b < j["buffers"].size() && doc.glb; b++)
+        if (j["buffers"][b]["uri"].isNull()) binBuffer = (int)b;
+    auto setMinMax = [&](Json &a) {
+        if (n == 1 && !data.empty()) {
+            a.at("min") = Json::Floats(&data.front(), 1);
+            a.at("max") = Json::Floats(&data.back(), 1);
+        } else {
+            a.erase("min"), a.erase("max");
+        }
+    };
+    const Json &a = j["accessors"][(size_t)acc];
+    if (!shared && !a.isNull() && a["componentType"].i() == 5126 && a["sparse"].isNull() && !a["bufferView"].isNull() &&
+        (size_t)a["count"].num(0) * n == data.size()) {
+        const Json &bv = j["bufferViews"][(size_t)a["bufferView"].i()];
+        int buffer = bv["buffer"].i(-1);
+        size_t stride = (size_t)bv["byteStride"].num(0), at = (size_t)bv["byteOffset"].num(0) + (size_t)a["byteOffset"].num(0);
+        if (!stride) stride = 4 * n;
+        size_t count = data.size() / n;
+        if (buffer == binBuffer && buffer >= 0 && (count == 0 || at + (count - 1) * stride + 4 * n <= doc.bin.size())) {
+            for (size_t e = 0; e < count; e++)
+                memcpy(&doc.bin[at + e * stride], &data[e * n], 4 * n);
+            doc.buffers[buffer] = doc.bin;
+            setMinMax(j.at("accessors").items[acc]);
+            return acc;
+        }
+    }
+    if (binBuffer < 0) {
+        if (error) *error = "its buffers are files of their own: animation keys are written into a .glb only";
+        return -1;
+    }
+    while (doc.bin.size() % 4) doc.bin += '\0';
+    size_t offset = doc.bin.size();
+    doc.bin.append((const char *)data.data(), data.size() * 4);
+    doc.buffers[binBuffer] = doc.bin;
+    j.at("buffers").items[binBuffer].at("byteLength") = Json::Num((double)doc.bin.size());
+    Json view = Json::EmptyObject();
+    view.at("buffer") = Json::Num(binBuffer);
+    view.at("byteOffset") = Json::Num((double)offset);
+    view.at("byteLength") = Json::Num((double)data.size() * 4);
+    Json &views = j.at("bufferViews");
+    if (views.type != Json::Array) views = Json(), views.type = Json::Array;
+    views.items.push_back(view);
+    Json added = Json::EmptyObject();
+    added.at("bufferView") = Json::Num((double)views.items.size() - 1);
+    added.at("componentType") = Json::Num(5126);
+    added.at("count") = Json::Num((double)(data.size() / n));
+    added.at("type") = Json::Str(n == 1 ? "SCALAR" : n == 3 ? "VEC3" : "VEC4");
+    setMinMax(added);
+    Json &accessors = j.at("accessors");
+    accessors.items.push_back(added);
+    return (int)accessors.items.size() - 1;
+}
+
 } // namespace
 
 bool Gltf_Save(GltfDoc &doc, std::string *error) {
@@ -693,6 +762,25 @@ bool Gltf_Save(GltfDoc &doc, std::string *error) {
             spot.at("outerConeAngle") = Json::Float(g.outer);
         }
     }
+    // Animations' keys: each sampler changed, from a channel using it
+    std::map<int, int> uses;
+    for (const Json &a : j["animations"].items)
+        for (const Json &s : a["samplers"].items) uses[s["input"].i(-1)]++, uses[s["output"].i(-1)]++;
+    for (const auto &as : doc.keys) {
+        int a = as.first, s = as.second;
+        if (a < 0 || a >= (int)doc.anims.size() || s < 0 || s >= (int)j["animations"][(size_t)a]["samplers"].size()) continue;
+        const GltfAnim::Channel *ch = nullptr;
+        for (const auto &c : doc.anims[a].channels)
+            if (c.sampler == s) ch = &c;
+        if (!ch) continue;
+        Json &smp = j.at("animations").items[a].at("samplers").items[s];
+        int in = WriteKeys(doc, smp["input"].i(-1), ch->in, 1, uses[smp["input"].i(-1)] > 1, error);
+        int out = in < 0 ? -1 : WriteKeys(doc, smp["output"].i(-1), ch->out, ch->path == 1 ? 4 : 3, uses[smp["output"].i(-1)] > 1, error);
+        if (in < 0 || out < 0) return false;
+        smp.at("input") = Json::Num(in);
+        smp.at("output") = Json::Num(out);
+        SetOrErase(smp, "interpolation", ch->interp != 0, Json::Str(ch->interp == 1 ? "STEP" : "CUBICSPLINE"));
+    }
 
     std::string out;
     if (doc.glb) {
@@ -735,6 +823,6 @@ bool Gltf_Save(GltfDoc &doc, std::string *error) {
         if (error) *error = "could not replace " + doc.path;
         return false;
     }
-    doc.trs.clear(), doc.props.clear(), doc.mats.clear(), doc.lightsChanged.clear();
+    doc.trs.clear(), doc.props.clear(), doc.mats.clear(), doc.lightsChanged.clear(), doc.keys.clear();
     return true;
 }

@@ -101,6 +101,55 @@ int main() {
     // What was not changed is as it was
     CHECK(back.json["nodes"][(size_t)1].dump() == doc.json["nodes"][(size_t)1].dump());
     CHECK(back.json["animations"].dump() == doc.json["animations"].dump());
+
+    // Keys: one value changed (written over, the binary chunk the same size), then a key added to
+    // another channel (its times and values at the end of the binary chunk)
+    GltfAnim::Channel &c0 = back.anims[0].channels[0];
+    int n0 = c0.path == 1 ? 4 : 3, per0 = c0.interp == 2 ? 3 : 1;
+    size_t keys0 = c0.in.size();
+    printf("animation 0, channel 0: node %d, path %d, sampler %d, interp %d, %zu keys\n", c0.node, c0.path, c0.sampler, c0.interp,
+           keys0);
+    CHECK(c0.sampler >= 0 && keys0 > 1);
+    c0.out[(size_t)(per0 == 3 ? 1 : 0) * n0] += 0.25f; // the first key's value
+    float changed = c0.out[(size_t)(per0 == 3 ? 1 : 0) * n0];
+    back.keys.insert({0, c0.sampler});
+    CHECK(Gltf_Save(back, &error));
+    GltfDoc keys;
+    CHECK(Gltf_Load(keys, tmp));
+    CHECK(keys.bin.size() == doc.bin.size());
+    CHECK(keys.anims[0].channels[0].in == doc.anims[0].channels[0].in);
+    CHECK(keys.anims[0].channels[0].out[(size_t)(per0 == 3 ? 1 : 0) * n0] == changed);
+    // The other animations as they were
+    for (size_t a = 1; a < doc.anims.size(); a++) CHECK(keys.anims[a].channels.size() == doc.anims[a].channels.size());
+    GltfAnim::Channel &c1 = keys.anims[1].channels[0];
+    std::vector<float> in1 = c1.in, out1 = c1.out;
+    int n1 = c1.path == 1 ? 4 : 3;
+    float between = (c1.in[0] + c1.in[1]) / 2, v[4];
+    Gltf_Sample(c1, between, v);
+    CHECK(c1.interp != 2);
+    c1.in.insert(c1.in.begin() + 1, between);
+    c1.out.insert(c1.out.begin() + n1, v, v + n1);
+    keys.keys.insert({1, c1.sampler});
+    CHECK(Gltf_Save(keys, &error));
+    if (!error.empty()) printf("%s\n", error.c_str());
+    GltfDoc added;
+    CHECK(Gltf_Load(added, tmp));
+    CHECK(added.bin.size() > doc.bin.size());
+    CHECK(added.anims[1].channels[0].in.size() == in1.size() + 1 && added.anims[1].channels[0].in[1] == between);
+    CHECK(added.anims[1].channels[0].out.size() == out1.size() + n1);
+    CHECK(added.anims[0].channels[0].out[(size_t)(per0 == 3 ? 1 : 0) * n0] == changed);
+    const Json &acc = added.json["accessors"][(size_t)added.json["animations"][(size_t)1]["samplers"][(size_t)c1.sampler]["input"].i()];
+    CHECK(acc["max"][(size_t)0].num() > 0 && acc["count"].i() == (int)in1.size() + 1);
+    // Posed between its keys, the node is where it was (the key added was the value there)
+    std::vector<float> t1(doc.anims.size(), -1.0f);
+    t1[1] = between;
+    std::vector<GltfMat> before, after;
+    Gltf_Pose(doc, t1, before);
+    Gltf_Pose(added, t1, after);
+    int node1 = c1.node;
+    float diff = 0;
+    for (int k = 0; k < 16; k++) diff = std::max(diff, std::fabs(before[node1][k] - after[node1][k]));
+    CHECK(diff < 1e-4f);
     DeleteFileA(tmp.c_str());
     DeleteFileA((tmp + ".bak").c_str());
 

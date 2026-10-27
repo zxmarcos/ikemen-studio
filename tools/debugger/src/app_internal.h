@@ -532,6 +532,7 @@ void ReloadStage(SourceFile &sf, bool fromText);
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the
 // Game window its nodes outlined and picked
 void OnModel(const Json &j);
+void OnModelKeys(const Json &j); // an animation's keys (ikdbg.modelKeys)
 void ModelSection(bool stageHasModel);
 void ModelWindow();
 std::string ModelFileInUse();                 // the model file of the stage in the match, as the game names it; "" none

@@ -225,22 +225,67 @@ void EulerToQuat(const float e[3], float q[4]) {
 }
 
 // ---------------------------------------------------------------------------
+// Animations' keys: of the model from disk, its document's channels; of the match's, asked from
+// the game for each animation shown (debugModelAnimKeys). Channels sharing a sampler share its keys.
+// ---------------------------------------------------------------------------
+
+using Channel = GltfAnim::Channel;
+
+struct LiveKeys {
+    bool known = false;
+    double asked = -100;
+    std::vector<Channel> channels;
+};
+std::vector<LiveKeys> g_liveKeys; // by animation of the match's model
+int g_keysAnim = -1;              // the animation whose keys are shown
+struct KeySel {
+    int anim = -1, sampler = -1, key = -1;
+} g_key; // the key selected
+
+// The channels moving nodes in an animation of the model shown; nullptr while the game is asked
+std::vector<Channel> *KeysOf(int a) {
+    if (g_view != &g_live) return a >= 0 && a < (int)g_disk.doc.anims.size() ? &g_disk.doc.anims[a].channels : nullptr;
+    if (a < 0 || a >= (int)g_live.anims.size()) return nullptr;
+    if (g_liveKeys.size() != g_live.anims.size()) g_liveKeys.assign(g_live.anims.size(), LiveKeys());
+    LiveKeys &k = g_liveKeys[a];
+    if (!k.known && ImGui::GetTime() - k.asked > 2) {
+        k.asked = ImGui::GetTime();
+        SendRaw("ikdbg.modelKeys(" + std::to_string(a) + ")");
+    }
+    return k.known ? &k.channels : nullptr;
+}
+
+Channel *ChannelOf(int a, int sampler) {
+    std::vector<Channel> *chs = KeysOf(a);
+    if (chs)
+        for (Channel &c : *chs)
+            if (c.sampler == sampler) return &c;
+    return nullptr;
+}
+
+int PerKey(const Channel &c) { return (c.path == 1 ? 4 : 3) * (c.interp == 2 ? 3 : 1); }
+
+// A key's value (a cubic spline's: the middle of in-tangent, value, out-tangent)
+float *KeyValue(Channel &c, int k) { return &c.out[(size_t)k * PerKey(c) + (c.interp == 2 ? (c.path == 1 ? 4 : 3) : 0)]; }
+
+// ---------------------------------------------------------------------------
 // Undo and redo of the model's changes (the def's placement is the def's text): each gesture is
 // a step, a field or a node dragged from the press to the release. One history for the match's
 // model, one for the model from disk.
 // ---------------------------------------------------------------------------
 
-enum EditKind { eTRS, eProps, eMaterial, eLight };
+enum EditKind { eTRS, eProps, eMaterial, eLight, eKeys };
 
 struct Values {
     ModelView::Node node;
     ModelView::Material material;
     ModelView::Light light;
+    Channel keys;
 };
 
 struct Change {
     EditKind kind;
-    int i;
+    int i, j; // the node, material, light; the animation and its sampler
     Values before, after;
 };
 
@@ -259,19 +304,20 @@ bool g_replaying; // an undo or redo puts values back: not recorded
 
 History &HistoryOf(const ModelView *v) { return v == &g_live ? g_histLive : g_histDisk; }
 
-bool InRange(const std::vector<ModelView::Node> &nodes, const std::vector<ModelView::Material> &materials,
-             const std::vector<ModelView::Light> &lights, EditKind k, int i) {
+// The values of a thing now (in the model v, or in the history's copy); false when it is not there
+bool GetValues(const std::vector<ModelView::Node> &nodes, const std::vector<ModelView::Material> &materials,
+               const std::vector<ModelView::Light> &lights, EditKind k, int i, int j, Values &out) {
+    if (k == eKeys) {
+        const Channel *c = ChannelOf(i, j);
+        if (c) out.keys = *c;
+        return c != nullptr;
+    }
     size_t n = k == eMaterial ? materials.size() : k == eLight ? lights.size() : nodes.size();
-    return i >= 0 && i < (int)n;
-}
-
-Values Get(const std::vector<ModelView::Node> &nodes, const std::vector<ModelView::Material> &materials,
-           const std::vector<ModelView::Light> &lights, EditKind k, int i) {
-    Values v;
-    if (k == eMaterial) v.material = materials[i];
-    else if (k == eLight) v.light = lights[i];
-    else v.node = nodes[i];
-    return v;
+    if (i < 0 || i >= (int)n) return false;
+    if (k == eMaterial) out.material = materials[i];
+    else if (k == eLight) out.light = lights[i];
+    else out.node = nodes[i];
+    return true;
 }
 
 bool Same(EditKind k, const Values &a, const Values &b) {
@@ -290,22 +336,35 @@ bool Same(EditKind k, const Values &a, const Values &b) {
                x.metallic == y.metallic && x.roughness == y.roughness && x.ao == y.ao && x.cutoff == y.cutoff &&
                x.alpha == y.alpha && x.doubleSided == y.doubleSided && x.unlit == y.unlit;
     }
+    if (k == eKeys) return a.keys.interp == b.keys.interp && a.keys.in == b.keys.in && a.keys.out == b.keys.out;
     const auto &x = a.light, &y = b.light;
     return !memcmp(x.rgb, y.rgb, sizeof(x.rgb)) && x.intensity == y.intensity && x.range == y.range && x.inner == y.inner &&
            x.outer == y.outer;
 }
 
+bool IsOpen(const History &h, EditKind k, int i, int j) {
+    for (const Change &c : h.open)
+        if (c.kind == k && c.i == i && c.j == j) return true;
+    return false;
+}
+
 // A change about to be sent: the gesture's first one of that thing keeps its value before
 void Record(EditKind k, int i) {
-    if (g_replaying) return;
     History &h = HistoryOf(g_view);
-    for (const Change &c : h.open)
-        if (c.kind == k && c.i == i) return;
+    if (g_replaying || IsOpen(h, k, i, -1)) return;
     ModelView &v = View();
-    Change c{k, i, {}, {}};
-    c.before = InRange(h.nodes, h.materials, h.lights, k, i) ? Get(h.nodes, h.materials, h.lights, k, i)
-                                                              : Get(v.nodes, v.materials, v.lights, k, i);
+    Change c{k, i, -1, {}, {}};
+    if (!GetValues(h.nodes, h.materials, h.lights, k, i, -1, c.before) && !GetValues(v.nodes, v.materials, v.lights, k, i, -1, c.before))
+        return;
     h.open.push_back(c);
+}
+
+// A sampler's keys about to change (called before they do)
+void RecordKeys(int a, int sampler) {
+    History &h = HistoryOf(g_view);
+    if (g_replaying || IsOpen(h, eKeys, a, sampler)) return;
+    Change c{eKeys, a, sampler, {}, {}};
+    if (GetValues(h.nodes, h.materials, h.lights, eKeys, a, sampler, c.before)) h.open.push_back(c);
 }
 
 // Once a frame: the gesture ended (no field active, the mouse let go) becomes a step
@@ -317,12 +376,16 @@ void HistoryTick(ModelView &v) {
     h.frame = frame;
     bool busy = ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left);
     if (!h.open.empty() && !busy) {
+        // The keys are the model shown's
+        struct Restore {
+            ModelView *view = g_view;
+            ~Restore() { g_view = view; }
+        } restore;
+        g_view = &v;
         std::vector<Change> step;
-        for (Change &c : h.open) {
-            if (!InRange(v.nodes, v.materials, v.lights, c.kind, c.i)) continue;
-            c.after = Get(v.nodes, v.materials, v.lights, c.kind, c.i);
-            if (!Same(c.kind, c.before, c.after)) step.push_back(c);
-        }
+        for (Change &c : h.open)
+            if (GetValues(v.nodes, v.materials, v.lights, c.kind, c.i, c.j, c.after) && !Same(c.kind, c.before, c.after))
+                step.push_back(c);
         h.open.clear();
         if (!step.empty()) {
             h.undo.push_back(std::move(step));
@@ -340,7 +403,7 @@ void HistoryTick(ModelView &v) {
 void SendLiveTRS(int i, const ModelView::Node &n) {
     Record(eTRS, i);
     char lua[320];
-    snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)", i, n.t[0], n.t[1], n.t[2],
+    snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g)", i, n.t[0], n.t[1], n.t[2],
              n.r[0], n.r[1], n.r[2], n.r[3], n.s[0], n.s[1], n.s[2]);
     SendRaw(lua);
     g_modelAsked = ImGui::GetTime();
@@ -621,6 +684,41 @@ const char *PartHint(int mode, int part) {
                            : "Drag right or up: scale it, the three together";
 }
 
+void SendKeys(int a, int sampler);
+int AddKey(Channel &c, float t);
+int KeyAt(const Channel &c, float t);
+void DeleteKey(Channel &c, int k);
+std::string AnimName(int i);
+
+// A drag of a node changing a key instead of its place at rest: the animation whose keys are
+// shown, on, moves the node that way (Move: its position, Turn: its rotation, Scale: its scale);
+// the key at the animation's time, or one added there at the first move
+struct KeyEdit {
+    int anim = -1, sampler = -1, key = -1; // key -1: to be added
+    bool added = false;
+    float time = 0, orig[4] = {0, 0, 0, 1}; // its value at the press
+};
+
+bool g_animsTab; // the Animations tab is in front: the inspector shows the keys of the one picked
+
+bool DragKey(int node, int mode, KeyEdit &out) {
+    out = KeyEdit();
+    int a = g_keysAnim;
+    if (!g_animsTab || a < 0 || a >= (int)View().anims.size() || !View().anims[a].enabled) return false;
+    std::vector<Channel> *chs = KeysOf(a);
+    if (!chs) return false;
+    int path = mode == kMove ? 0 : mode == kTurn ? 1 : 2;
+    for (Channel &c : *chs)
+        if (c.node == node && c.path == path) {
+            out.anim = a, out.sampler = c.sampler, out.time = View().anims[a].time;
+            out.key = KeyAt(c, out.time);
+            if (out.key >= 0) memcpy(out.orig, KeyValue(c, out.key), (path == 1 ? 4 : 3) * sizeof(float));
+            else Gltf_Sample(c, out.time, out.orig);
+            return true;
+        }
+    return false;
+}
+
 struct NodeDrag {
     int node = -1;      // pressed on, the left button still down
     int part = kBody, mode = kMove;
@@ -633,16 +731,28 @@ struct NodeDrag {
     GltfMat parentWorld, world;
     Picture pic;
     Gizmo gizmo; // as it was at the press
+    KeyEdit key; // a key changed instead of the place at rest
 };
 
+// The value the drag changes now: the key's, or the place at rest's
+const float *DragValue(const NodeDrag &g, const ModelView::Node &n) {
+    if (g.key.anim >= 0) {
+        if (g.key.key < 0) return g.key.orig;
+        if (Channel *c = ChannelOf(g.key.anim, g.key.sampler)) return KeyValue(*c, g.key.key);
+    }
+    return g.mode == kMove ? n.t : g.mode == kTurn ? n.r : n.s;
+}
+
 void BeginDrag(NodeDrag &g, int node, const ModelView &v, const Picture &pic, const GltfMat &parentWorld, const GltfMat &world,
-               int part) {
+               int part, bool keys) {
     g = NodeDrag();
     g.node = node, g.part = part, g.mode = g_dragMode;
     g.from = ImGui::GetMousePos();
     const ModelView::Node &n = v.nodes[node];
     memcpy(g.t0, n.t, sizeof(g.t0)), memcpy(g.r0, n.r, sizeof(g.r0)), memcpy(g.s0, n.s, sizeof(g.s0));
     memcpy(g.ot, n.t, sizeof(g.ot)), memcpy(g.orr, n.r, sizeof(g.orr)), memcpy(g.os, n.s, sizeof(g.os));
+    if (keys && DragKey(node, g.mode, g.key))
+        memcpy(g.mode == kMove ? g.t0 : g.mode == kTurn ? g.r0 : g.s0, g.key.orig, (g.mode == kTurn ? 4 : 3) * sizeof(float));
     g.pic = pic, g.parentWorld = parentWorld, g.world = world;
     g.gizmo = MakeGizmo(pic, parentWorld, world, g.mode);
     g.depth = ImGui::GetIO().KeyShift;
@@ -672,7 +782,13 @@ bool StepDrag(NodeDrag &g, ModelView &v, const std::function<void(int)> &send) {
     if (g.node < 0 || g.node >= (int)v.nodes.size()) return g.node = -1, false;
     ModelView::Node &n = v.nodes[g.node];
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (g.moving) {
+        Channel *c = g.key.anim >= 0 && g.key.key >= 0 ? ChannelOf(g.key.anim, g.key.sampler) : nullptr;
+        if (c) {
+            // The key as it was, or gone when the drag added it
+            if (g.key.added) DeleteKey(*c, g.key.key), g_key.key = -1;
+            else memcpy(KeyValue(*c, g.key.key), g.key.orig, (c->path == 1 ? 4 : 3) * sizeof(float));
+            SendKeys(g.key.anim, g.key.sampler);
+        } else if (g.moving && g.key.anim < 0) {
             memcpy(n.t, g.ot, sizeof(n.t)), memcpy(n.r, g.orr, sizeof(n.r)), memcpy(n.s, g.os, sizeof(n.s));
             send(g.node);
         }
@@ -694,17 +810,17 @@ bool StepDrag(NodeDrag &g, ModelView &v, const std::function<void(int)> &send) {
         if (depth != g.depth) {
             // Another way of moving: from here
             g.depth = depth, g.from = m;
-            memcpy(g.t0, n.t, sizeof(g.t0));
+            memcpy(g.t0, DragValue(g, n), sizeof(g.t0));
             return true;
         }
         float a[2], b[2];
         ToNdc(g.pic, g.from, a), ToNdc(g.pic, m, b);
-        if (!DragTranslation(g.pic.viewProj, g.parentWorld, g.t0, a, b, depth, t)) memcpy(t, n.t, sizeof(t));
+        if (!DragTranslation(g.pic.viewProj, g.parentWorld, g.t0, a, b, depth, t)) memcpy(t, DragValue(g, n), sizeof(t));
         snprintf(what, sizeof(what), "%.3f, %.3f, %.3f", t[0], t[1], t[2]);
     } else if (g.mode == kMove) {
         float d[3] = {g.parentWorld[k * 4], g.parentWorld[k * 4 + 1], g.parentWorld[k * 4 + 2]}, at;
         if (LineParam(g.pic, m, gz.origin, d, at)) t[k] = g.t0[k] + at - g.line0;
-        else t[k] = n.t[k];
+        else t[k] = DragValue(g, n)[k];
         snprintf(what, sizeof(what), "%c %.3f", "XYZ"[k], t[k]);
     } else if (g.mode == kTurn) {
         // About one of the parent's axes, or the one coming out of the screen (in the parent's space)
@@ -737,21 +853,37 @@ bool StepDrag(NodeDrag &g, ModelView &v, const std::function<void(int)> &send) {
         for (int a = 0; a < 3; a++) s[a] = g.s0[a] * f;
         snprintf(what, sizeof(what), "x%.3f", f);
     }
-    if (memcmp(t, n.t, sizeof(t)) || memcmp(r, n.r, sizeof(r)) || memcmp(s, n.s, sizeof(s))) {
+    std::string note = AnimatedNote(n);
+    if (g.key.anim >= 0) {
+        // The key at the animation's time, added at the first move when there was none
+        int path = g.mode == kMove ? 0 : g.mode == kTurn ? 1 : 2, nv = path == 1 ? 4 : 3;
+        const float *val = path == 0 ? t : path == 1 ? r : s;
+        Channel *c = ChannelOf(g.key.anim, g.key.sampler);
+        if (c && (g.key.key < 0 || memcmp(KeyValue(*c, g.key.key), val, nv * sizeof(float)))) {
+            RecordKeys(g.key.anim, g.key.sampler);
+            if (g.key.key < 0) g.key.key = AddKey(*c, g.key.time), g.key.added = true;
+            memcpy(KeyValue(*c, g.key.key), val, nv * sizeof(float));
+            g_key = {g.key.anim, g.key.sampler, g.key.key};
+            SendKeys(g.key.anim, g.key.sampler);
+        }
+        char buf[160];
+        snprintf(buf, sizeof(buf), "\nIts key at %.2f s of %s%s", g.key.time, AnimName(g.key.anim).c_str(), g.key.added ? " (added)" : "");
+        note = buf;
+    } else if (memcmp(t, n.t, sizeof(t)) || memcmp(r, n.r, sizeof(r)) || memcmp(s, n.s, sizeof(s))) {
         memcpy(n.t, t, sizeof(t)), memcpy(n.r, r, sizeof(r)), memcpy(n.s, s, sizeof(s));
         send(g.node);
     }
     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     ImGui::SetTooltip("%s: %s\n%sright button: back where it was%s", NodeName(g.node).c_str(), what,
                       g.mode == kMove && !axis ? "Shift: nearer or farther; " : g.mode == kTurn ? "Ctrl: by 15 degrees; " : "",
-                      AnimatedNote(n));
+                      note.c_str());
     return true;
 }
 
 // The node's handles on a picture, and a press on them or on the node starting a drag. node: the
 // one selected (-1 none); hover: the one under the mouse. True when the mouse is theirs.
 bool NodeHandles(NodeDrag &drag, ModelView &v, ImDrawList *draw, const Picture &pic, int node, int hover, const GltfMat &parentWorld,
-                 const GltfMat &world, bool hovered, bool pressed, const std::function<void(int)> &send) {
+                 const GltfMat &world, bool hovered, bool pressed, bool keys, const std::function<void(int)> &send) {
     if (drag.node >= 0) {
         if (StepDrag(drag, v, send)) {
             DrawGizmo(draw, MakeGizmo(pic, parentWorld, world, drag.mode), drag.mode, drag.part);
@@ -765,11 +897,19 @@ bool NodeHandles(NodeDrag &drag, ModelView &v, ImDrawList *draw, const Picture &
     if (hot < 0 && hovered && hover == node) hot = kBody;
     if (hot < 0) return false;
     if (pressed) {
-        BeginDrag(drag, node, v, pic, parentWorld, world, hot);
+        BeginDrag(drag, node, v, pic, parentWorld, world, hot, keys);
         return true;
     }
     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-    ImGui::SetTooltip("%s\n%s%s", NodeLabel(node).c_str(), PartHint(g_dragMode, hot), AnimatedNote(v.nodes[node]));
+    KeyEdit probe;
+    std::string note = AnimatedNote(v.nodes[node]);
+    if (keys && DragKey(node, g_dragMode, probe)) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "\nIt changes its key at %.2f s of %s%s", probe.time, AnimName(probe.anim).c_str(),
+                 probe.key < 0 ? " (one added there)" : "");
+        note = buf;
+    }
+    ImGui::SetTooltip("%s\n%s%s", NodeLabel(node).c_str(), PartHint(g_dragMode, hot), note.c_str());
     return true;
 }
 
@@ -805,7 +945,7 @@ void SendProps(int i) {
         return;
     }
     char lua[200];
-    snprintf(lua, sizeof(lua), "debugModelNodeProps(%d, %d, %s, %s, %s, %s, %g)", i, n.trans,
+    snprintf(lua, sizeof(lua), "debugModelNodeProps(%d, %d, %s, %s, %s, %s, %.9g)", i, n.trans,
              n.hasLayer ? std::to_string(n.layer).c_str() : "nil", n.shadow ? "true" : "false",
              n.ztest ? "true" : "false", n.zwrite ? "true" : "false", n.outline);
     SendRaw(lua);
@@ -824,7 +964,7 @@ void SendMaterial(int i) {
         return;
     }
     char lua[400];
-    snprintf(lua, sizeof(lua), "debugModelMaterial(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %d, %g, %s, %s)", i,
+    snprintf(lua, sizeof(lua), "debugModelMaterial(%d, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %d, %.9g, %s, %s)", i,
              m.color[0], m.color[1], m.color[2], m.color[3], m.emission[0], m.emission[1], m.emission[2], m.metallic,
              m.roughness, m.ao, m.alpha, m.cutoff, m.doubleSided ? "true" : "false", m.unlit ? "true" : "false");
     SendRaw(lua);
@@ -842,32 +982,67 @@ void SendLight(int i) {
         return;
     }
     char lua[220];
-    snprintf(lua, sizeof(lua), "debugModelLight(%d, %g, %g, %g, %g, %g, %g, %g)", i, l.rgb[0], l.rgb[1], l.rgb[2],
+    snprintf(lua, sizeof(lua), "debugModelLight(%d, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g)", i, l.rgb[0], l.rgb[1], l.rgb[2],
              l.intensity, l.range, l.inner, l.outer);
     SendRaw(lua);
     g_modelAsked = ImGui::GetTime();
 }
 
+// A sampler's keys (changed in one of its channels) given to the other channels sharing it, and
+// sent: into the model read (what Save writes), or to the game
+void SendKeys(int a, int sampler) {
+    std::vector<Channel> *chs = KeysOf(a);
+    Channel *c = ChannelOf(a, sampler);
+    if (!chs || !c) return;
+    for (Channel &o : *chs)
+        if (&o != c && o.sampler == sampler) o.in = c->in, o.out = c->out, o.interp = c->interp;
+    if (g_view != &g_live) {
+        float duration = 0;
+        for (const Channel &o : *chs)
+            if (!o.in.empty()) duration = std::max(duration, o.in.back());
+        g_disk.doc.anims[a].duration = duration;
+        if (a < (int)View().anims.size()) View().anims[a].duration = duration;
+        g_disk.doc.keys.insert({a, sampler});
+        return;
+    }
+    std::string lua = "local ok, err = debugModelAnimSampler(" + std::to_string(a) + ", " + std::to_string(sampler) + ", " +
+                      std::to_string(c->interp) + ", {";
+    char num[32];
+    for (size_t k = 0; k < c->in.size(); k++) snprintf(num, sizeof(num), k ? ",%.9g" : "%.9g", c->in[k]), lua += num;
+    lua += "}, {";
+    for (size_t k = 0; k < c->out.size(); k++) snprintf(num, sizeof(num), k ? ",%.9g" : "%.9g", c->out[k]), lua += num;
+    lua += "}) if not ok then error(err, 0) end";
+    Exec(lua);
+    g_modelAsked = ImGui::GetTime();
+}
+
 // A change's values put back into the model shown, and sent
-void Put(EditKind k, int i, const Values &x) {
+void Put(const Change &c, const Values &x) {
     ModelView &v = View();
-    if (!InRange(v.nodes, v.materials, v.lights, k, i)) return;
-    if (k == eTRS) {
+    Values now;
+    if (!GetValues(v.nodes, v.materials, v.lights, c.kind, c.i, c.j, now)) return;
+    int i = c.i;
+    if (c.kind == eTRS) {
         ModelView::Node &n = v.nodes[i];
         memcpy(n.t, x.node.t, sizeof(n.t)), memcpy(n.r, x.node.r, sizeof(n.r)), memcpy(n.s, x.node.s, sizeof(n.s));
         SendTRS(i);
-    } else if (k == eProps) {
+    } else if (c.kind == eProps) {
         ModelView::Node &n = v.nodes[i];
         n.trans = x.node.trans, n.hasLayer = x.node.hasLayer, n.layer = x.node.layer;
         n.shadow = x.node.shadow, n.ztest = x.node.ztest, n.zwrite = x.node.zwrite, n.outline = x.node.outline;
         SendProps(i);
-    } else if (k == eMaterial) {
+    } else if (c.kind == eMaterial) {
         std::string name = v.materials[i].name;
         int tex = v.materials[i].tex;
         bool animated = v.materials[i].animated;
         v.materials[i] = x.material;
         v.materials[i].name = name, v.materials[i].tex = tex, v.materials[i].animated = animated;
         SendMaterial(i);
+    } else if (c.kind == eKeys) {
+        Channel *ch = ChannelOf(c.i, c.j);
+        ch->in = x.keys.in, ch->out = x.keys.out, ch->interp = x.keys.interp;
+        if (g_key.anim == c.i && g_key.sampler == c.j && g_key.key >= (int)ch->in.size()) g_key.key = (int)ch->in.size() - 1;
+        SendKeys(c.i, c.j);
     } else {
         ModelView::Light &l = v.lights[i];
         memcpy(l.rgb, x.light.rgb, sizeof(l.rgb));
@@ -876,12 +1051,19 @@ void Put(EditKind k, int i, const Values &x) {
     }
 }
 
+std::string AnimName(int i) {
+    if (i < 0 || i >= (int)View().anims.size()) return "?";
+    const auto &a = View().anims[i];
+    return a.name.empty() ? "animation " + std::to_string(i) : a.name;
+}
+
 std::string StepLabel(const std::vector<Change> &step) {
     if (step.empty()) return "";
     const Change &c = step[0];
     std::string what = c.kind == eTRS      ? "the place of " + NodeName(c.i)
                        : c.kind == eProps    ? "the drawing of " + NodeName(c.i)
                        : c.kind == eMaterial ? "material " + MaterialName(c.i)
+                       : c.kind == eKeys     ? "keys of " + AnimName(c.i)
                                              : "light " + LightName(c.i);
     if (step.size() > 1) what += " and " + std::to_string(step.size() - 1) + " more";
     return what;
@@ -898,12 +1080,13 @@ void UndoStep(bool redo) {
     g_replaying = true;
     for (size_t k = 0; k < step.size(); k++) {
         const Change &c = redo ? step[k] : step[step.size() - 1 - k];
-        Put(c.kind, c.i, redo ? c.after : c.before);
+        Put(c, redo ? c.after : c.before);
     }
     g_replaying = false;
     // What it changed, selected
     const Change &c = step[0];
     if (c.kind == eTRS || c.kind == eProps) SelectNode(c.i, true);
+    else if (c.kind == eKeys) g_keysAnim = c.i, g_tab = 2;
     else Select(c.kind == eMaterial ? kMaterial : kLight, c.i), g_tab = c.kind == eMaterial ? 1 : 3;
     ModelView &v = View();
     h.nodes = v.nodes, h.materials = v.materials, h.lights = v.lights;
@@ -1026,7 +1209,281 @@ void MaterialsTab() {
     ImGui::EndChild();
 }
 
+void Row(const char *label, float labelWidth);
+
+const char *const kPaths[] = {"position", "rotation", "scale"};
+const char *const kInterps[] = {"linear", "step", "cubic spline"};
+
+// The key at a time (within a quarter of a tick), -1 none
+int KeyAt(const Channel &c, float t) {
+    for (size_t k = 0; k < c.in.size(); k++)
+        if (std::fabs(c.in[k] - t) < 0.25f / 60) return (int)k;
+    return -1;
+}
+
+// A key added at a time, its value what the channel has there (a cubic spline's tangents flat);
+// the index it got
+int AddKey(Channel &c, float t) {
+    int n = c.path == 1 ? 4 : 3, per = PerKey(c);
+    float v[4] = {0, 0, 0, 1};
+    Gltf_Sample(c, t, v);
+    size_t k = std::upper_bound(c.in.begin(), c.in.end(), t) - c.in.begin();
+    c.in.insert(c.in.begin() + k, t);
+    std::vector<float> key(per, 0.0f);
+    memcpy(&key[c.interp == 2 ? n : 0], v, n * sizeof(float));
+    c.out.insert(c.out.begin() + k * per, key.begin(), key.end());
+    return (int)k;
+}
+
+void DeleteKey(Channel &c, int k) {
+    size_t per = PerKey(c);
+    c.in.erase(c.in.begin() + k);
+    c.out.erase(c.out.begin() + k * per, c.out.begin() + (k + 1) * per);
+}
+
+// Another way of interpolating: a cubic spline's tangents dropped, or flat ones added
+void SetInterp(Channel &c, int interp) {
+    int n = c.path == 1 ? 4 : 3;
+    if ((c.interp == 2) != (interp == 2)) {
+        std::vector<float> out;
+        for (size_t k = 0; k < c.in.size(); k++) {
+            const float *v = KeyValue(c, (int)k);
+            if (interp == 2) out.insert(out.end(), n, 0.0f);
+            out.insert(out.end(), v, v + n);
+            if (interp == 2) out.insert(out.end(), n, 0.0f);
+        }
+        c.out = std::move(out);
+    }
+    c.interp = interp;
+}
+
+// The animation put at a key's time, the preview paused there
+void GoToKey(int a, const Channel &c, int k) {
+    g_key = {a, c.sampler, k};
+    SetAnimTime(a, c.in[k]);
+    if (!g_isLive) g_disk.playing = false;
+}
+
+// The key selected: its time, value, the channel's interpolation; the ones before and after it
+void KeyInspector(int a, float lw) {
+    if (g_key.anim != a) return;
+    Channel *c = ChannelOf(a, g_key.sampler);
+    if (!c || g_key.key < 0 || g_key.key >= (int)c->in.size()) return;
+    int k = g_key.key, n = c->path == 1 ? 4 : 3;
+    ImGui::SeparatorText(("Key " + std::to_string(k + 1) + " of " + std::to_string(c->in.size()) + ": " + NodeName(c->node) + " " +
+                          kPaths[std::clamp(c->path, 0, 2)])
+                             .c_str());
+    ImGui::BeginDisabled(k == 0);
+    if (ImGui::ArrowButton("##prev", ImGuiDir_Left)) GoToKey(a, *c, k - 1);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("The key before");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(k + 1 >= (int)c->in.size());
+    if (ImGui::ArrowButton("##next", ImGuiDir_Right)) GoToKey(a, *c, k + 1);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("The key after");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Go to it")) GoToKey(a, *c, k);
+    ImGui::SetItemTooltip("The animation put at its time");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(c->in.size() < 2);
+    bool del = ImGui::SmallButton("Delete");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("A channel keeps one key at least");
+    if (del) {
+        RecordKeys(a, c->sampler);
+        DeleteKey(*c, k);
+        g_key.key = std::min(k, (int)c->in.size() - 1);
+        SendKeys(a, c->sampler);
+        return;
+    }
+
+    float lo = k > 0 ? c->in[k - 1] + 0.001f : 0, hi = k + 1 < (int)c->in.size() ? c->in[k + 1] - 0.001f : FLT_MAX, t = c->in[k];
+    Row("time", lw);
+    if (ImGui::DragFloat("##kt", &t, 0.002f, lo, hi, "%.3f s", ImGuiSliderFlags_AlwaysClamp) && t != c->in[k]) {
+        RecordKeys(a, c->sampler);
+        c->in[k] = std::clamp(t, lo, hi);
+        SendKeys(a, c->sampler);
+        SetAnimTime(a, c->in[k]);
+    }
+    ImGui::SetItemTooltip("Between the keys before and after it");
+    float *v = KeyValue(*c, k);
+    if (c->path == 1) {
+        // As angles, kept while they are dragged (they would jump through the quaternion)
+        static float euler[3], eulerQ[4];
+        static KeySel eulerKey;
+        bool same = eulerKey.anim == a && eulerKey.sampler == c->sampler && eulerKey.key == k;
+        for (int q = 0; q < 4; q++) same = same && std::fabs(eulerQ[q] - v[q]) < 1e-5f;
+        if (!same) QuatToEuler(v, euler), memcpy(eulerQ, v, sizeof(eulerQ)), eulerKey = g_key;
+        Row("rotation", lw);
+        if (ImGui::DragFloat3("##kr", euler, 0.5f, -360, 360, "%.1f deg")) {
+            float q[4];
+            EulerToQuat(euler, q);
+            RecordKeys(a, c->sampler);
+            memcpy(KeyValue(*c, k), q, sizeof(q)), memcpy(eulerQ, q, sizeof(q));
+            SendKeys(a, c->sampler);
+        }
+        ImGui::SetItemTooltip("Degrees about X, then Y, then Z (Y is up)");
+    } else {
+        float tmp[3] = {v[0], v[1], v[2]};
+        Row(kPaths[c->path], lw);
+        if (ImGui::DragFloat3("##kv", tmp, c->path == 0 ? 0.01f : 0.005f, -FLT_MAX, FLT_MAX, "%.3f")) {
+            RecordKeys(a, c->sampler);
+            memcpy(KeyValue(*c, k), tmp, sizeof(tmp));
+            SendKeys(a, c->sampler);
+        }
+    }
+    (void)n;
+    int interp = c->interp;
+    Row("between keys", lw);
+    if (ImGui::Combo("##interp", &interp, kInterps, 3) && interp != c->interp) {
+        RecordKeys(a, c->sampler);
+        SetInterp(*c, interp);
+        SendKeys(a, c->sampler);
+    }
+    ImGui::SetItemTooltip("How the channel goes from one key to the next (all of its keys);\n"
+                          "a cubic spline made from the others gets flat tangents.");
+}
+
+// An animation's keys: a line for each channel moving a node, its keys on it and the animation's
+// time; a key clicked puts the animation there, dragged moves it in time
+void KeysPanel(int a, float lw) {
+    ModelView &m = View();
+    std::vector<Channel> *chs = KeysOf(a);
+    if (!chs) {
+        ImGui::TextDisabled("Asking the game for its keys...");
+        return;
+    }
+    if (chs->empty()) {
+        ImGui::TextDisabled("None of its channels moves a node.");
+        return;
+    }
+    ModelView::Anim &an = m.anims[a];
+    float em = ImGui::GetFontSize(), dur = std::max(an.duration, 1e-3f);
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    int selNode = g_selKind == kNode ? g_sel : -1;
+    // A key's time dragged: its channel's sampler, the key, where it was grabbed
+    static int dragSampler = -1, dragKey = -1;
+    static float grab;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) dragSampler = dragKey = -1;
+    // Keys for the node selected at the animation's time
+    bool any = false;
+    for (const Channel &c : *chs) any = any || c.node == selNode;
+    if (any) {
+        char label[96];
+        snprintf(label, sizeof(label), "Key %s at %.2f s", NodeName(selNode).c_str(), an.time);
+        if (ImGui::SmallButton(label))
+            for (Channel &c : *chs)
+                if (c.node == selNode && KeyAt(c, an.time) < 0) {
+                    RecordKeys(a, c.sampler);
+                    g_key = {a, c.sampler, AddKey(c, an.time)};
+                    SendKeys(a, c.sampler);
+                }
+        ImGui::SetItemTooltip("A key on each of its channels where the animation is, with the value it has there\n"
+                              "(the handles on the game or the preview then change it).");
+    }
+    for (int ci = 0; ci < (int)chs->size(); ci++) {
+        Channel &c = (*chs)[ci];
+        ImGui::PushID(ci);
+        std::string label = NodeName(c.node) + " " + kPaths[std::clamp(c.path, 0, 2)];
+        bool mine = c.node == selNode;
+        if (mine) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kYellow));
+        if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(ImGui::CalcTextSize(label.c_str()).x, 0))) SelectNode(c.node, false);
+        if (mine) ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("Click: select the node");
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu keys, %s", c.in.size(), kInterps[std::clamp(c.interp, 0, 2)]);
+        ImVec2 p0 = ImGui::GetCursorScreenPos();
+        float w = std::max(em * 4, ImGui::GetContentRegionAvail().x), h = ImGui::GetTextLineHeight();
+        ImGui::InvisibleButton("strip", ImVec2(w, h), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+        bool hov = ImGui::IsItemHovered(), act = ImGui::IsItemActive();
+        dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), ImGui::GetColorU32(ImGuiCol_FrameBg), 3);
+        float pad = h * 0.4f;
+        auto xOf = [&](float t) { return p0.x + pad + (w - 2 * pad) * t / dur; };
+        auto tOf = [&](float x) { return std::clamp((x - p0.x - pad) / (w - 2 * pad) * dur, 0.0f, dur); };
+        float mid = p0.y + h / 2, r = h * 0.32f;
+        bool dense = c.in.size() * 6 > w;
+        ImVec2 mp = ImGui::GetMousePos();
+        int hot = -1;
+        float best = std::max(4.0f, em * 0.35f);
+        ImU32 ink = ImGui::GetColorU32(ImGuiCol_Text), yellow = IM_COL32(255, 210, 50, 255);
+        for (int k = 0; k < (int)c.in.size(); k++) {
+            float x = xOf(c.in[k]);
+            if (hov && std::fabs(mp.x - x) < best) best = std::fabs(mp.x - x), hot = k;
+            if (dense) dl->AddLine(ImVec2(x, mid - r), ImVec2(x, mid + r), ink & 0x80FFFFFF);
+            else dl->AddQuadFilled(ImVec2(x, mid - r), ImVec2(x + r, mid), ImVec2(x, mid + r), ImVec2(x - r, mid), ink);
+        }
+        if (g_key.anim == a && g_key.sampler == c.sampler && g_key.key >= 0 && g_key.key < (int)c.in.size()) {
+            float x = xOf(c.in[g_key.key]), rr = r * 1.3f;
+            dl->AddQuadFilled(ImVec2(x, mid - rr), ImVec2(x + rr, mid), ImVec2(x, mid + rr), ImVec2(x - rr, mid), yellow);
+        }
+        if (hot >= 0 && !dense) {
+            float x = xOf(c.in[hot]), rr = r * 1.3f;
+            dl->AddQuad(ImVec2(x, mid - rr), ImVec2(x + rr, mid), ImVec2(x, mid + rr), ImVec2(x - rr, mid), yellow);
+        }
+        float tx = xOf(std::min(an.time, dur));
+        dl->AddLine(ImVec2(tx, p0.y), ImVec2(tx, p0.y + h), IM_COL32(255, 80, 80, 255), std::max(1.0f, em / 10));
+        // A press on a key selects it (and can drag its time); elsewhere it puts the animation there
+        if (hov && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (hot >= 0) {
+                GoToKey(a, c, hot);
+                dragSampler = c.sampler, dragKey = hot, grab = mp.x - xOf(c.in[hot]);
+            } else {
+                SetAnimTime(a, tOf(mp.x));
+                if (!g_isLive) g_disk.playing = false;
+            }
+        }
+        if (act && dragSampler == c.sampler && dragKey >= 0 && dragKey < (int)c.in.size()) {
+            if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2)) {
+                float lo = dragKey > 0 ? c.in[dragKey - 1] + 0.001f : 0;
+                float hi = dragKey + 1 < (int)c.in.size() ? c.in[dragKey + 1] - 0.001f : dur;
+                float t = tOf(mp.x - grab);
+                if (ImGui::GetIO().KeyCtrl) t = std::round(t * 60) / 60;
+                t = std::clamp(t, lo, std::max(lo, hi));
+                if (t != c.in[dragKey]) {
+                    RecordKeys(a, c.sampler);
+                    c.in[dragKey] = t;
+                    SendKeys(a, c.sampler);
+                    SetAnimTime(a, t);
+                }
+                ImGui::SetTooltip("%.3f s", t);
+            }
+        } else if (act && ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::GetIO().MouseDelta.x != 0) {
+            SetAnimTime(a, tOf(mp.x));
+        }
+        if (hov && hot < 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            RecordKeys(a, c.sampler);
+            g_key = {a, c.sampler, AddKey(c, tOf(mp.x))};
+            SendKeys(a, c.sampler);
+        }
+        if (hov && hot >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            g_key = {a, c.sampler, hot};
+            ImGui::OpenPopup("key");
+        }
+        if (ImGui::BeginPopup("key")) {
+            if (ImGui::MenuItem("Delete the key", nullptr, false, c.in.size() > 1 && g_key.key < (int)c.in.size())) {
+                RecordKeys(a, c.sampler);
+                DeleteKey(c, g_key.key);
+                g_key.key = std::min(g_key.key, (int)c.in.size() - 1);
+                SendKeys(a, c.sampler);
+            }
+            ImGui::EndPopup();
+        }
+        if (hov && dragKey < 0 && !ImGui::IsPopupOpen("key")) {
+            if (hot >= 0)
+                ImGui::SetTooltip("Key %d of %zu at %.3f s\nClick: go to it; drag: move it in time (Ctrl: by ticks);\n"
+                                  "right button: delete it",
+                                  hot + 1, c.in.size(), c.in[hot]);
+            else
+                ImGui::SetTooltip("%.3f s\nClick: put the animation there; double click: a key there", tOf(mp.x));
+        }
+        ImGui::PopID();
+    }
+    KeyInspector(a, lw);
+}
+
 void AnimationsTab() {
+    g_animsTab = true;
     ModelView &m = View();
     float em = ImGui::GetFontSize();
     if (m.anims.empty()) {
@@ -1037,7 +1494,8 @@ void AnimationsTab() {
         ImGui::EndChild();
         return;
     }
-    // Each one: on or off, its name and loops, then where it is (dragged to put it there)
+    // Each one: on or off, its name and loops, then where it is (dragged to put it there); its
+    // name clicked shows its keys
     for (int i = 0; i < (int)m.anims.size(); i++) {
         ModelView::Anim &a = m.anims[i];
         ImGui::PushID(i);
@@ -1046,9 +1504,13 @@ void AnimationsTab() {
         if (ImGui::Checkbox("##on", &on)) SetAnimOn(i, on);
         ImGui::SetItemTooltip("On: it starts again from its start. Off: what it moves goes back to rest.");
         ImGui::SameLine();
-        ImGui::TextUnformatted(a.name.empty() ? ("animation " + std::to_string(i)).c_str() : a.name.c_str());
+        std::string name = AnimName(i);
+        bool shown = g_keysAnim == i;
+        if (ImGui::Selectable(name.c_str(), shown, 0, ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0)))
+            g_keysAnim = shown ? -1 : i;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%d channels%s", a.channels, a.id ? (", id " + std::to_string(a.id)).c_str() : "");
+            ImGui::SetTooltip("%d channels%s\nClick: %s its keys (beside or below the list)", a.channels,
+                              a.id ? (", id " + std::to_string(a.id)).c_str() : "", shown ? "hide" : "show");
         std::string loops = a.loopCount < 0 ? "loop " + std::to_string(a.loop + 1)
                                             : "loop " + std::to_string(std::min(a.loop + 1, a.loopCount)) + " of " + std::to_string(a.loopCount);
         float w = ImGui::CalcTextSize(loops.c_str()).x;
@@ -1427,6 +1889,11 @@ void OnModel(const Json &j) {
         g_selKind = kNone, g_sel = -1;
         SendRaw("debugModelSelect(-1)");
     }
+    // Another model: its keys asked again
+    if (file != m.file || j["anims"].items.size() != m.anims.size()) {
+        g_liveKeys.clear();
+        if (g_isLive) g_keysAnim = -1, g_key = KeySel();
+    }
     m.file = file;
     m.dirty = j["dirty"].truthy();
     m.anims.clear();
@@ -1518,6 +1985,33 @@ void OnModel(const Json &j) {
     if (g_selKind == kNode && g_sel >= (int)m.nodes.size()) g_selKind = kNone;
     if (g_selKind == kMaterial && g_sel >= (int)m.materials.size()) g_selKind = kNone;
     if (g_selKind == kLight && g_sel >= (int)m.lights.size()) g_selKind = kNone;
+}
+
+void OnModelKeys(const Json &j) {
+    int a = j["anim"].i(-1);
+    if (g_liveKeys.size() != g_live.anims.size()) g_liveKeys.assign(g_live.anims.size(), LiveKeys());
+    if (a < 0 || a >= (int)g_liveKeys.size()) return;
+    LiveKeys &k = g_liveKeys[a];
+    k.known = true;
+    k.channels.clear();
+    // Numbers apart by spaces, each read back as the float32 it was
+    auto floats = [](const std::string &s) {
+        std::vector<float> v;
+        const char *p = s.c_str();
+        for (char *end;; p = end) {
+            float f = strtof(p, &end);
+            if (end == p) break;
+            v.push_back(f);
+        }
+        return v;
+    };
+    for (const Json &c : j["channels"].items) {
+        Channel ch;
+        ch.node = c["node"].i(-1), ch.path = c["path"].i(), ch.sampler = c["sampler"].i(-1), ch.interp = c["interp"].i();
+        ch.in = floats(c["times"].str()), ch.out = floats(c["values"].str());
+        if (ch.node < 0 || ch.in.empty() || ch.out.size() != ch.in.size() * PerKey(ch)) continue;
+        k.channels.push_back(std::move(ch));
+    }
 }
 
 void ReadModelGeometry(const Json &mdl) {
@@ -1619,7 +2113,7 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     pic.size = ImVec2(p1.x - pic.p0.x, p1.y - pic.p0.y);
     bool handles = f.mats && f.sel >= 0 && f.sel < (int)g_live.nodes.size() && pic.size.x > 0 && pic.size.y > 0;
     bool mine = (handles || drag.node >= 0) &&
-                NodeHandles(drag, g_live, draw, pic, handles ? f.sel : -1, f.hover, f.parentWorld, f.world, hovered, clicked,
+                NodeHandles(drag, g_live, draw, pic, handles ? f.sel : -1, f.hover, f.parentWorld, f.world, hovered, clicked, g_isLive,
                             [](int i) { SendLiveTRS(i, g_live.nodes[i]); });
     if (drag.node >= 0) return true;
 
@@ -1741,6 +2235,7 @@ void DiskLoad(const std::string &path, const std::string &def) {
     FillDiskView();
     g_selKind = kNone, g_sel = -1;
     g_histDisk = History();
+    g_keysAnim = -1, g_key = KeySel();
 }
 
 // The model read again when its file changed on disk (and nothing was changed here)
@@ -1956,7 +2451,7 @@ void Preview() {
     bool wasDragging = drag.node >= 0; // its release does not pick the node under the mouse
     bool mine = (sel >= 0 || drag.node >= 0) &&
                 NodeHandles(drag, v, draw, pic, sel, d.hover, parentWorld, sel >= 0 ? d.world[sel] : Gltf_Identity(), hovered,
-                            hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left), [](int i) { SendTRS(i); });
+                            hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left), true, [](int i) { SendTRS(i); });
     draw->PopClipRect();
     if (drag.node >= 0 || wasDragging) {
         d.hover = -1;
@@ -2010,6 +2505,7 @@ void ListsAndInspector(float lw) {
                 if (t == 0) NodesTab();
                 if (t == 1) MaterialsTab();
                 if (t == 2) AnimationsTab();
+                else g_animsTab = false;
                 if (t == 3) LightsTab();
                 ImGui::EndTabItem();
             }
@@ -2018,7 +2514,12 @@ void ListsAndInspector(float lw) {
         }
     };
     auto inspector = [&]() {
-        if (g_selKind == kNode && g_sel >= 0 && g_sel < (int)m.nodes.size()) NodeInspector(g_sel, lw);
+        if (g_animsTab && g_keysAnim >= 0 && g_keysAnim < (int)m.anims.size()) {
+            ImGui::Text("Keys of %s", AnimName(g_keysAnim).c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("%.2f / %.2f s", m.anims[g_keysAnim].time, m.anims[g_keysAnim].duration);
+            KeysPanel(g_keysAnim, lw);
+        } else if (g_selKind == kNode && g_sel >= 0 && g_sel < (int)m.nodes.size()) NodeInspector(g_sel, lw);
         else if (g_selKind == kMaterial && g_sel >= 0 && g_sel < (int)m.materials.size()) MaterialInspector(g_sel, lw);
         else if (g_selKind == kLight && g_sel >= 0 && g_sel < (int)m.lights.size()) LightInspector(g_sel, lw);
         else
@@ -2101,7 +2602,7 @@ void ModelWindow() {
         def = !g_stageDef.empty() ? g_stageDef : SettingsStageDef();
         path = ModelOfDef(def);
     }
-    if (live != g_isLive) g_selKind = kNone, g_sel = -1;
+    if (live != g_isLive) g_selKind = kNone, g_sel = -1, g_keysAnim = -1, g_key = KeySel();
     g_isLive = live;
     g_view = live ? &g_live : &g_diskView;
     if (!live) {
@@ -2165,6 +2666,7 @@ void ModelWindow() {
             SendRaw("debugModelRevert()");
             if (sf) ReloadStage(*sf, true);
             g_histLive = History();
+            g_liveKeys.clear();
         } else {
             DiskLoad(g_disk.path, g_disk.def);
         }

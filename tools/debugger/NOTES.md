@@ -834,6 +834,40 @@ turned 90 degrees by the green circle and by the white one, scaled by 2
 along X, each undone and done again (buttons and Ctrl+Z). Not tested: Ctrl's
 15 degrees and Shift (the test script cannot hold them during a drag).
 
+Then animation keys. The engine keeps a sampler's times in
+`Model.animationTimeStamps` by the input accessor's index (samplers may share
+them) and its values in the sampler: `debugModelAnimKeys(i)` gives an
+animation's channels moving nodes (node, path, sampler, interpolation, times,
+values; the numbers as strings of the shortest float32 text, since the mod's
+JSON writes 6 digits), `debugModelAnimSampler` gives a sampler other keys (its
+times under a key of its own, 0x80000000 | anim << 16 | sampler, so the ones it
+shared stay; the duration found again; the animation posed again at its time
+when on), remembered in `edModel.samplers`. Save (`editorWriteKeys`): an
+accessor holding the same numbers is kept, one used by this sampler only and
+of the same size is written over (float, not sparse), else a new one goes at
+the end of the binary buffer (`modeler.WriteAccessor`; an input's min and
+max set). `gltf.cpp` does the same without the game (`WriteKeys`, its JSON
+and `doc.bin`; `GltfAnim::Channel` now knows its sampler; `doc.keys`). A
+`.gltf` whose buffers are files of their own cannot have its keys written
+(neither side writes those files). The app: `ikdbg.modelKeys(i)` answers
+`@IKMKEYS` (`OnModelKeys`), asked when an animation's keys are first shown;
+from disk the document's channels are used as they are. The keys show in the
+inspector's column while the Animations tab is in front (the list's column was
+too narrow). Undo knows keys too (`eKeys`: `RecordKeys` before a sampler's
+keys change). With the Animations tab in front, the animation shown on and a
+channel of it moving the node selected the mode's way, the handles change the
+key at the animation's time (`DragKey`; added at the first move when there is
+none; the right button takes it back) instead of the place at rest. Numbers
+sent to the game for a node, material or light now have 9 digits (`%g` gave
+6, so a save from the game rounded them). Tested on stage3d (6 animations,
+250 keys a channel, baked): from disk, a key picked (the preview paused at
+it), the gong dragged at it, undone; live, the keys asked from the game, the
+gong dragged at key 36 on the Game window (the key's x 0 to 2.166), saved
+(written over), read back from disk; a key added from Lua and saved (the
+channel's accessors new, 251 keys read back); `tests/gltf_test.cpp` changes a
+value (the binary chunk the same size) and adds a key (posed between keys, the
+node where it was). The release's file restored after.
+
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
 #707, as posted but for the colours renamed since (TabActive, NavHighlight:

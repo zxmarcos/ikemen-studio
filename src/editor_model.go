@@ -12,6 +12,7 @@ import (
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"github.com/qmuntal/gltf"
+	"github.com/qmuntal/gltf/modeler"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -65,6 +66,7 @@ type editorModelState struct {
 	props     map[int]bool
 	materials map[int]bool
 	lights    map[int]bool
+	samplers  map[[2]int]bool // animation, sampler: its keys
 }
 
 var edModel = editorModelState{sel: -1, hover: -1}
@@ -73,10 +75,143 @@ var edModel = editorModelState{sel: -1, hover: -1}
 func editorModelRead() {
 	e := &edModel
 	e.trs, e.props, e.materials, e.lights = map[int]bool{}, map[int]bool{}, map[int]bool{}, map[int]bool{}
+	e.samplers = map[[2]int]bool{}
 }
 
 func (e *editorModelState) dirty() bool {
-	return len(e.trs)+len(e.props)+len(e.materials)+len(e.lights) > 0
+	return len(e.trs)+len(e.props)+len(e.materials)+len(e.lights)+len(e.samplers) > 0
+}
+
+// An animation put at a time (turning it on): Model.step moves every animation on by a tick, so
+// only this one, from a tick before; the others keep where they are.
+func editorModelAnimAt(m *Model, i int, t float32) {
+	a := m.animations[i]
+	t = Clamp(t, 0, Max(0, a.duration-1e-4))
+	enabled := make([]bool, len(m.animations))
+	for k, o := range m.animations {
+		enabled[k] = o.enabled
+		o.enabled = k == i
+	}
+	loop := a.loop
+	a.time = Max(0, t-1.0/60)
+	m.step()
+	a.time, a.loop = t, loop
+	for k, o := range m.animations {
+		o.enabled = enabled[k] || k == i
+	}
+}
+
+// A channel moving a node: 0 translation, 1 rotation, 2 scale; -1 another kind
+func editorChannelPath(c *GLTFAnimationChannel) int {
+	if c.nodeIndex == nil {
+		return -1
+	}
+	switch c.targetType {
+	case TRSTranslation:
+		return 0
+	case TRSRotation:
+		return 1
+	case TRSScale:
+		return 2
+	}
+	return -1
+}
+
+// The values an accessor holds, flat
+func editorAccessorFloats(doc *gltf.Document, i uint32) ([]float32, bool) {
+	if int(i) >= len(doc.Accessors) {
+		return nil, false
+	}
+	v, err := modeler.ReadAccessor(doc, doc.Accessors[i], nil)
+	if err != nil {
+		return nil, false
+	}
+	switch d := v.(type) {
+	case []float32:
+		return d, true
+	case [][3]float32:
+		out := make([]float32, 0, len(d)*3)
+		for _, e := range d {
+			out = append(out, e[:]...)
+		}
+		return out, true
+	case [][4]float32:
+		out := make([]float32, 0, len(d)*4)
+		for _, e := range d {
+			out = append(out, e[:]...)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// An animation sampler's times or values written into the document: the accessor kept when it
+// holds them already, written over when only this sampler uses it and its size is the same,
+// else a new one at the end of the binary buffer. n: numbers per element (1, 3 or 4).
+func editorWriteKeys(doc *gltf.Document, acc uint32, data []float32, n int, shared bool) (uint32, error) {
+	if cur, ok := editorAccessorFloats(doc, acc); ok && len(cur) == len(data) {
+		same := true
+		for k := range cur {
+			same = same && cur[k] == data[k]
+		}
+		if same {
+			return acc, nil
+		}
+	}
+	minMax := func(a *gltf.Accessor) {
+		if n == 1 && len(data) > 0 {
+			a.Min, a.Max = []float32{data[0]}, []float32{data[len(data)-1]}
+		} else if a.Min != nil || a.Max != nil {
+			a.Min, a.Max = nil, nil
+		}
+	}
+	if int(acc) < len(doc.Accessors) && !shared {
+		a := doc.Accessors[acc]
+		if a.BufferView != nil && a.Sparse == nil && a.ComponentType == gltf.ComponentFloat &&
+			int(a.Count)*n == len(data) && int(*a.BufferView) < len(doc.BufferViews) {
+			bv := doc.BufferViews[*a.BufferView]
+			stride := int(bv.ByteStride)
+			if stride == 0 {
+				stride = 4 * n
+			}
+			if int(bv.Buffer) < len(doc.Buffers) {
+				buf := doc.Buffers[bv.Buffer].Data
+				at := int(bv.ByteOffset + a.ByteOffset)
+				if len(data) == 0 || at+(len(data)/n-1)*stride+4*n <= len(buf) {
+					for e := 0; e < len(data)/n; e++ {
+						for c := 0; c < n; c++ {
+							binary.LittleEndian.PutUint32(buf[at+e*stride+4*c:], math.Float32bits(data[e*n+c]))
+						}
+					}
+					minMax(a)
+					return acc, nil
+				}
+			}
+		}
+	}
+	if len(doc.Buffers) == 0 || doc.Buffers[len(doc.Buffers)-1].URI != "" && !doc.Buffers[len(doc.Buffers)-1].IsEmbeddedResource() {
+		return acc, fmt.Errorf("its buffers are files of their own: animation keys are written into a .glb only")
+	}
+	var typed interface{}
+	switch n {
+	case 3:
+		v := make([][3]float32, len(data)/3)
+		for e := range v {
+			copy(v[e][:], data[e*3:])
+		}
+		typed = v
+	case 4:
+		v := make([][4]float32, len(data)/4)
+		for e := range v {
+			copy(v[e][:], data[e*4:])
+		}
+		typed = v
+	default:
+		typed = append([]float32(nil), data...)
+	}
+	i := modeler.WriteAccessor(doc, gltf.TargetNone, typed)
+	minMax(doc.Accessors[i])
+	return i, nil
 }
 
 // editorModelDrawn runs in Stage.drawModel with the matrices the model is drawn with.
@@ -530,6 +665,36 @@ func editorModelSave() error {
 		}
 		doc.Extensions["KHR_lights_punctual"] = json.RawMessage(out)
 	}
+	// Animations' keys: each sampler changed, its times and values (and how it interpolates)
+	uses := map[uint32]int{}
+	for _, a := range doc.Animations {
+		for _, s := range a.Samplers {
+			uses[s.Input]++
+			uses[s.Output]++
+		}
+	}
+	for as := range e.samplers {
+		a, s := as[0], as[1]
+		if a >= len(doc.Animations) || a >= len(m.animations) || s >= len(doc.Animations[a].Samplers) ||
+			s >= len(m.animations[a].samplers) {
+			return fmt.Errorf("%v: its animations changed since it was read", file)
+		}
+		ds, ms := doc.Animations[a].Samplers[s], m.animations[a].samplers[s]
+		n := 3
+		if int(ds.Output) < len(doc.Accessors) {
+			n = int(doc.Accessors[ds.Output].Type.Components())
+		}
+		in, err := editorWriteKeys(doc, ds.Input, m.animationTimeStamps[ms.inputIndex], 1, uses[ds.Input] > 1)
+		if err != nil {
+			return fmt.Errorf("%v: %v", file, err)
+		}
+		out, err := editorWriteKeys(doc, ds.Output, ms.output, n, uses[ds.Output] > 1)
+		if err != nil {
+			return fmt.Errorf("%v: %v", file, err)
+		}
+		ds.Input, ds.Output = in, out
+		ds.Interpolation = gltf.Interpolation(ms.interpolation)
+	}
 
 	var w bytes.Buffer
 	enc := gltf.NewEncoder(&w) // without a file system: external buffers are not written again
@@ -788,22 +953,122 @@ func editorModelFunctions(l *lua.LState) {
 		if m == nil || !debuggerAttached() || i < 0 || i >= len(m.animations) {
 			return 0
 		}
-		a := m.animations[i]
-		t := Clamp(float32(numArg(l, 2)), 0, Max(0, a.duration-1e-4))
-		// Model.step moves every animation on by a tick: only this one, from a tick before
-		enabled := make([]bool, len(m.animations))
-		for k, o := range m.animations {
-			enabled[k] = o.enabled
-			o.enabled = k == i
-		}
-		loop := a.loop
-		a.time = Max(0, t-1.0/60)
-		m.step()
-		a.time, a.loop = t, loop
-		for k, o := range m.animations {
-			o.enabled = enabled[k] || k == i
-		}
+		editorModelAnimAt(m, i, float32(numArg(l, 2)))
 		return 0
+	})
+	luaRegister(l, "debugModelAnimKeys", func(l *lua.LState) int {
+		/*The keys of an animation of the stage's model, for its channels moving nodes.
+		@function debugModelAnimKeys
+		@tparam int32 index 0-based.
+		@treturn table {anim, duration, channels = array of {node, path (0 translation, 1 rotation,
+		2 scale), sampler (0-based), interp (0 linear, 1 step, 2 cubic spline), times, values (3 or 4
+		numbers a key; a cubic spline's in-tangent, value, out-tangent)}}; nil without it. Times and
+		values are strings of numbers apart by spaces, each the shortest that reads back the same
+		float32 (JSON's 6 digits would round them).*/
+		m, _ := editorStageModelNow()
+		i := int(numArg(l, 1))
+		if m == nil || !debuggerAttached() || i < 0 || i >= len(m.animations) {
+			l.Push(lua.LNil)
+			return 1
+		}
+		nums := func(v []float32) lua.LString {
+			b := make([]byte, 0, len(v)*10)
+			for k, f := range v {
+				if k > 0 {
+					b = append(b, ' ')
+				}
+				b = strconv.AppendFloat(b, float64(f), 'g', -1, 32)
+			}
+			return lua.LString(b)
+		}
+		a := m.animations[i]
+		t := l.NewTable()
+		t.RawSetString("anim", lua.LNumber(i))
+		t.RawSetString("duration", lua.LNumber(a.duration))
+		channels := array()
+		for _, c := range a.channels {
+			path := editorChannelPath(c)
+			if path < 0 || int(c.samplerIndex) >= len(a.samplers) {
+				continue
+			}
+			s := a.samplers[c.samplerIndex]
+			ct := l.NewTable()
+			ct.RawSetString("node", lua.LNumber(*c.nodeIndex))
+			ct.RawSetString("path", lua.LNumber(path))
+			ct.RawSetString("sampler", lua.LNumber(c.samplerIndex))
+			ct.RawSetString("interp", lua.LNumber(s.interpolation))
+			ct.RawSetString("times", nums(m.animationTimeStamps[s.inputIndex]))
+			ct.RawSetString("values", nums(s.output))
+			channels.Append(ct)
+		}
+		t.RawSetString("channels", channels)
+		l.Push(t)
+		return 1
+	})
+	luaRegister(l, "debugModelAnimSampler", func(l *lua.LState) int {
+		/*Give a sampler of an animation of the stage's model other keys (a sampler moving nodes).
+		@function debugModelAnimSampler
+		@tparam int32 anim 0-based.
+		@tparam int32 sampler 0-based.
+		@tparam int32 interp 0 linear, 1 step, 2 cubic spline.
+		@tparam table times In seconds, rising.
+		@tparam table values 3 or 4 numbers a key (a cubic spline: in-tangent, value, out-tangent).
+		@treturn boolean ok
+		@treturn string error*/
+		m, _ := editorStageModelNow()
+		ai, si := int(numArg(l, 1)), int(numArg(l, 2))
+		if m == nil || !debuggerAttached() || ai < 0 || ai >= len(m.animations) || si < 0 || si >= len(m.animations[ai].samplers) {
+			return result(l, fmt.Errorf("no such sampler"))
+		}
+		a := m.animations[ai]
+		n := 0
+		for _, c := range a.channels {
+			if int(c.samplerIndex) == si {
+				switch editorChannelPath(c) {
+				case 0, 2:
+					n = 3
+				case 1:
+					n = 4
+				}
+			}
+		}
+		interp := int(numArg(l, 3))
+		floats := func(t *lua.LTable) []float32 {
+			var out []float32
+			for k := 1; k <= t.Len(); k++ {
+				out = append(out, float32(lua.LVAsNumber(t.RawGetInt(k))))
+			}
+			return out
+		}
+		times, values := floats(l.CheckTable(4)), floats(l.CheckTable(5))
+		per := n
+		if interp == InterpolationCubicSpline {
+			per *= 3
+		}
+		if n == 0 || interp < 0 || interp > 2 || len(times) == 0 || len(values) != len(times)*per {
+			return result(l, fmt.Errorf("keys that do not fit the sampler"))
+		}
+		for k := 1; k < len(times); k++ {
+			if times[k] <= times[k-1] {
+				return result(l, fmt.Errorf("times that do not rise"))
+			}
+		}
+		// Times of its own: others may share the ones it had
+		s := a.samplers[si]
+		key := uint32(0x80000000) | uint32(ai)<<16 | uint32(si)
+		m.animationTimeStamps[key] = times
+		s.inputIndex, s.output, s.interpolation = key, values, GLTFAnimationInterpolation(interp)
+		a.duration = 0
+		for _, o := range a.samplers {
+			if ts := m.animationTimeStamps[o.inputIndex]; len(ts) > 0 && ts[len(ts)-1] > a.duration {
+				a.duration = ts[len(ts)-1]
+			}
+		}
+		if a.enabled {
+			editorModelAnimAt(m, ai, a.time)
+		}
+		edModel.samplers[[2]int{ai, si}] = true
+		return result(l, nil)
 	})
 	luaRegister(l, "debugModelNode", func(l *lua.LState) int {
 		/*Show or hide a node of the stage's model (its mesh), until the round starts again.

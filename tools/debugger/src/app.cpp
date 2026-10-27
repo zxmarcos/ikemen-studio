@@ -477,6 +477,8 @@ void OnLine(const Bridge::Line &line) {
         OnFiles(j);
     } else if (tag == "@IKMODEL") {
         OnModel(j);
+    } else if (tag == "@IKMKEYS") {
+        OnModelKeys(j);
     } else if (tag == "@IKPERF") {
         OnPerf(j);
     } else if (tag == "@IKRES") {

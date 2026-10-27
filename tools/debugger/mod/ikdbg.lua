@@ -283,6 +283,12 @@ function ikdbg.model()
 	send('@IKMODEL', m or {none = true})
 end
 
+-- The keys of one of its animations (debugModelAnimKeys).
+function ikdbg.modelKeys(i)
+	local k = debugModelAnimKeys ~= nil and debugModelAnimKeys(i) or nil
+	send('@IKMKEYS', k or {anim = i, none = true})
+end
+
 -- The frames' timings since the last call (it starts the measures).
 function ikdbg.perf()
 	send('@IKPERF', debugPerf ~= nil and debugPerf() or {none = true})

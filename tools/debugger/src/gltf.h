@@ -73,8 +73,9 @@ struct GltfAnim {
     float duration = 0;
     struct Channel {
         int node = -1, path = 0; // 0 translation, 1 rotation, 2 scale
+        int sampler = -1;        // its animation's sampler (others may share it)
         int interp = 0;          // 0 linear, 1 step, 2 cubic spline
-        std::vector<float> in, out;
+        std::vector<float> in, out; // times; values (a cubic spline's: in-tangent, value, out-tangent)
     };
     std::vector<Channel> channels;
 };
@@ -107,9 +108,10 @@ struct GltfDoc {
     std::vector<GltfTexture> textures;
     std::vector<GltfAnim> anims;
     std::vector<GltfLight> lights;
-    // Changed since it was read: what Save writes
+    // Changed since it was read: what Save writes (keys: animation and sampler, its channels' keys)
     std::set<int> trs, props, mats, lightsChanged;
-    bool Dirty() const { return !trs.empty() || !props.empty() || !mats.empty() || !lightsChanged.empty(); }
+    std::set<std::pair<int, int>> keys;
+    bool Dirty() const { return !trs.empty() || !props.empty() || !mats.empty() || !lightsChanged.empty() || !keys.empty(); }
 };
 
 // Reads a model (images decoded when a decoder is given); false with doc.error set
@@ -122,5 +124,8 @@ int Gltf_Pick(const GltfDoc &doc, const std::vector<GltfMat> &world, const std::
 // A node's box in the world, as 8 corners (its mesh's box turned with it, else the box of the
 // meshes under it); false without any
 bool Gltf_Corners(const GltfDoc &doc, const std::vector<GltfMat> &world, int node, float corners[8][3]);
-// Writes the changes into the file (a .bak of it first, once); false with *error set
+// A channel's value at a time (3 numbers, or 4 for a rotation)
+void Gltf_Sample(const GltfAnim::Channel &c, float time, float *out);
+// Writes the changes into the file (a .bak of it first, once); false with *error set. Animation
+// keys are written into a .glb only (over their data, or at the end of its binary chunk).
 bool Gltf_Save(GltfDoc &doc, std::string *error);
