@@ -164,10 +164,18 @@ before it in a trigger; the model of the character the file is of,
 Outline. Opening a file to keep it, going to a line and a result clicked
 give the editor the keyboard (`g_codeFocus`). Outline and Search are in the
 default arrangements, not in ones saved before (Windows menu, or Workspace >
-Restore). Next: D, the visual
-editors as documents (an `.air` in Animation, an `.sff` in Sprites as tabs),
-a Problems panel gathering Lint, stage checks, Apply errors and the engine
-log, run configurations.
+Restore). Stage D, done: Problems (`app_problems.cpp`: Lint
+(`LintProblems`), the stage's checks (`StageProblems`, `StageChecks` kept
+apart from the Stage window), Apply's error lines, the engine's `WARNING:`
+and `Error:` lines kept by `Log` through `EngineLine`, their file a name the
+players' files resolve), counted on the status bar (gathered at most every
+0.3 s: the Lint's model hashes the character's files). Animation works on a
+character from disk (`GetAnimTarget` with `WorkPn() == kDiskPn`), with a
+preview drawn by itself (`AnimPreview`: the element's sprite and boxes, the
+action played). F5 launches, Shift+F5 stops, Ctrl+Shift+F5 restarts;
+matches saved by name (`Match=` lines). Launch no longer empties `g_files`:
+changes made with the game not running stay. Not done: the Sprites window's
+files as tabs (an SFF opened from Explorer shows; one at a time).
 
 ## Where things are
 
@@ -206,6 +214,7 @@ tools/debugger/
   src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
   src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
   src/app_navigate.cpp   Search (find in files, a state's references) and Outline windows
+  src/app_problems.cpp   Problems window: Lint, stage checks, Apply, the engine's warnings
   src/app_perf.cpp       Performance window: the game's frames by phase (debugPerf), this program's frame
   src/app_theme.cpp      the Theme menu: the themes, Ink() (status colours by theme), the editor's palette
   src/app_internal.h     what the app_*.cpp files share (state, each file's functions)

@@ -2,6 +2,7 @@
 // action a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def).
 #include "app_internal.h"
 
+#include <cmath>
 #include <fstream>
 
 namespace app {
@@ -74,9 +75,14 @@ const FrameEntity *FindFrameEntity(int id) {
 
 AnimTarget GetAnimTarget() {
     AnimTarget t;
-    t.e = FindEntity(g_selId);
-    t.fe = FindFrameEntity(g_selId);
-    t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : t.e ? t.e->pn : 0;
+    if (WorkPn() == kDiskPn) {
+        // A character picked in Explorer, not in the match: its AIR file from disk
+        t.pn = kDiskPn;
+    } else {
+        t.e = FindEntity(g_selId);
+        t.fe = FindFrameEntity(g_selId);
+        t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : t.e ? t.e->pn : 0;
+    }
     if (t.pn <= 0) return t;
     std::string path = AirPath(t.pn);
     if (path.empty()) return t;
@@ -138,6 +144,96 @@ int SharedBy(const AirAction &act, int g, int header) {
     return n;
 }
 
+// The action drawn here, without the game: each element's sprite at its offset from the axis,
+// its Clsn2 (blue) and Clsn1 (red) boxes; played at the game's 60 ticks a second, looping from
+// its loop start, or the element selected.
+void AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes) {
+    static bool playing = false;
+    static double started;
+    static const AirAction *forAct;
+    float em = ImGui::GetFontSize();
+    if (ImGui::SmallButton(playing ? "Stop" : "Play")) {
+        playing = !playing;
+        started = ImGui::GetTime();
+    }
+    ImGui::SetItemTooltip("Plays the action at the game's speed (60 ticks a second), from its loop start after the end");
+    const AirAction &act = *t.act;
+    // The element shown: the one selected, or the one playing
+    int shown = t.elem - 1;
+    if (playing) {
+        if (forAct != &act) started = ImGui::GetTime();
+        long tick = (long)((ImGui::GetTime() - started) * 60), at = 0;
+        int loop = act.loopStart >= 0 ? act.loopStart : 0;
+        long total = 0, loopTotal = 0;
+        bool endless = false;
+        for (size_t i = 0; i < act.elems.size(); i++) {
+            if (act.elems[i].time < 0) endless = true;
+            total += std::max(1, act.elems[i].time);
+            if ((int)i >= loop) loopTotal += std::max(1, act.elems[i].time);
+        }
+        if (!endless && tick >= total && loopTotal > 0) tick = total - loopTotal + (tick - total) % loopTotal;
+        for (shown = 0; shown < (int)act.elems.size(); shown++) {
+            const AirElem &e = act.elems[shown];
+            if (e.time < 0 || tick < at + std::max(1, e.time)) break;
+            at += std::max(1, e.time);
+        }
+        shown = std::min(shown, (int)act.elems.size() - 1);
+        ImGui::SameLine();
+        ImGui::TextDisabled("element %d of %zu", shown + 1, act.elems.size());
+    }
+    forAct = &act;
+    // The box of every element (sprites and boxes, from the axis), to fit them all
+    float minX = -10, minY = -10, maxX = 10, maxY = 10;
+    auto grow = [&](float x1, float y1, float x2, float y2) {
+        minX = std::min(minX, std::min(x1, x2)), maxX = std::max(maxX, std::max(x1, x2));
+        minY = std::min(minY, std::min(y1, y2)), maxY = std::max(maxY, std::max(y1, y2));
+    };
+    for (const AirElem &e : act.elems) {
+        int i = spf ? Sff_FindSprite(spf->doc, e.group, e.image) : -1;
+        if (i >= 0) {
+            const SffSprite &s = spf->doc.sprites[i];
+            grow((float)(e.x - s.x), (float)(e.y - s.y), (float)(e.x - s.x + s.w), (float)(e.y - s.y + s.h));
+        }
+        if (boxes)
+            for (const auto &g : e.clsn)
+                for (const AirBox &b : g) grow((float)b.x1, (float)b.y1, (float)b.x2, (float)b.y2);
+    }
+    if (!ImGui::BeginChild("preview", ImVec2(0, em * 14), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY)) {
+        ImGui::EndChild();
+        return;
+    }
+    ImVec2 p0 = ImGui::GetCursorScreenPos(), size = ImGui::GetContentRegionAvail();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    Checkerboard(draw, p0, ImVec2(p0.x + size.x, p0.y + size.y));
+    float pad = em;
+    float k = std::min((size.x - pad * 2) / (maxX - minX), (size.y - pad * 2) / (maxY - minY));
+    k = k >= 1 ? floorf(k) : std::max(k, 0.1f); // whole pixels when it can
+    ImVec2 axis(p0.x + (size.x - (maxX - minX) * k) * 0.5f - minX * k, p0.y + (size.y - (maxY - minY) * k) * 0.5f - minY * k);
+    auto at = [&](float x, float y) { return ImVec2(floorf(axis.x + x * k), floorf(axis.y + y * k)); };
+    const AirElem &el = act.elems[std::clamp(shown, 0, (int)act.elems.size() - 1)];
+    int si = spf ? Sff_FindSprite(spf->doc, el.group, el.image) : -1;
+    if (si >= 0) {
+        const SffSprite &s = spf->doc.sprites[si];
+        if (GLuint tex = SpriteTexture(*spf, si))
+            draw->AddImage(TexRef(tex), at((float)(el.x - s.x), (float)(el.y - s.y)),
+                           at((float)(el.x - s.x + s.w), (float)(el.y - s.y + s.h)));
+    } else if (el.group >= 0) {
+        ImGui::TextColored(Ink(kRed), " sprite %d, %d is not in the SFF", el.group, el.image);
+    }
+    if (boxes)
+        for (int g = 1; g >= 0; g--)
+            for (const AirBox &b : el.clsn[g]) {
+                ImU32 col = g ? IM_COL32(60, 120, 255, 255) : IM_COL32(255, 60, 60, 255);
+                draw->AddRectFilled(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), (col & 0x00FFFFFF) | 0x30000000);
+                draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), col);
+            }
+    // The axis
+    draw->AddLine(ImVec2(axis.x - em * 0.6f, axis.y), ImVec2(axis.x + em * 0.6f, axis.y), IM_COL32(255, 230, 80, 255));
+    draw->AddLine(ImVec2(axis.x, axis.y - em * 0.6f), ImVec2(axis.x, axis.y + em * 0.6f), IM_COL32(255, 230, 80, 255));
+    ImGui::Dummy(size);
+    ImGui::EndChild();
+}
+
 // The action a screen's element shows, as a target: the def is its file.
 static AnimTarget ScreenAnimTarget(const ScreenAnim &sa) {
     AnimTarget t;
@@ -173,21 +269,45 @@ void AnimationWindow() {
             ApplyAnims(s);
         }
     };
-    if (!screen && !t.e) {
-        ImGui::TextDisabled("Pick a player in the Game or Players window, or an animated element of a screen\n"
-                           "(Fight screen, Motif, Storyboard).");
+    bool disk = !screen && t.pn == kDiskPn; // a character not in the match, from disk: no game to show it
+    if (!screen && !t.e && !disk) {
+        ImGui::TextDisabled("Pick a player in the Game or Players window, a character in Explorer, or an animated\n"
+                           "element of a screen (Fight screen, Motif, Storyboard).");
         ImGui::End();
         return;
     }
     if (screen)
         ImGui::TextUnformatted(sa.label.c_str());
+    else if (disk)
+        ImGui::Text("%s  (not in the match: from disk)", CharFile(kDiskPn, "def").c_str());
     else
         ImGui::Text("%s  %s", Who(t.e->pn, t.e->helper, t.e->id).c_str(), t.e->name.c_str());
+    ImGui::BeginDisabled(disk);
     ImGui::Checkbox(screen ? "Follow the element" : "Follow the player", &g_animFollow);
+    ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
     if (ImGui::InputInt("Action", &g_animAction, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue)) g_animFollow = false;
-    if (screen) {
+    // The action before or after in the file's numbers
+    if (t.sf) {
+        const AirFile &air = AirOf(*t.sf);
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("##prevact", ImGuiDir_Left)) {
+            auto it = air.actions.lower_bound(g_animAction);
+            if (it != air.actions.begin()) g_animAction = std::prev(it)->first, g_animElem = 1, g_animFollow = false;
+        }
+        ImGui::SameLine(0, 2);
+        if (ImGui::ArrowButton("##nextact", ImGuiDir_Right)) {
+            auto it = air.actions.upper_bound(g_animAction);
+            if (it != air.actions.end()) g_animAction = it->first, g_animElem = 1, g_animFollow = false;
+        }
+        ImGui::SetItemTooltip("The action before, the one after");
+    }
+    if (disk) {
+        ImGui::SameLine();
+        HelpMarker("A character picked in Explorer that is not in the match: its AIR file edited from disk, the "
+                   "action drawn below. Save writes it; put the character in the match to see it on the game.");
+    } else if (screen) {
         ImGui::SameLine();
         HelpMarker("The action this element of the screen shows, in its def ([Begin Action]). Every change goes to "
                    "the game at once (the def is loaded again); Save writes the def, which its window edits too.");
@@ -233,7 +353,7 @@ void AnimationWindow() {
 
     // The action: show it on the player, copy, renumber, delete
     static int newNo;
-    if (!screen) {
+    if (!screen && t.e) {
         if (ImGui::Button("Show on the player")) {
             ExecOn(t.e->id, "changeAnim(" + std::to_string(g_animAction) + ")");
             g_animFollow = true;
@@ -345,6 +465,9 @@ void AnimationWindow() {
         ImGui::End();
         return; // the lines changed
     }
+
+    ImGui::SeparatorText("Preview");
+    AnimPreview(t, screen ? sa.sprites : SpritesOf(t.pn), !screen);
 
     const AirElem &el = t.act->elems[t.elem - 1];
     ImGui::SeparatorText("Element");

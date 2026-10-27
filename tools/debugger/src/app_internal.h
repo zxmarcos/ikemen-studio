@@ -4,6 +4,7 @@
 //   app_explorer.cpp Explorer: the projects' files from disk, a file opened in its window
 //   app_palette.cpp  the palette (go to a file, a command, a line, a section) and the File menu
 //   app_navigate.cpp Search (find in files, references) and Outline
+//   app_problems.cpp Problems: Lint, the stage's checks, Apply, the engine's warnings
 //   app_game.cpp     Game: the game's frames, the players' boxes over them, keys to the game
 //   app_anim.cpp     Animation: the AIR element of the selected player
 //   app_sprites.cpp  Sprites: the SFF file
@@ -404,6 +405,22 @@ void OutlineWindow();
 // False (logged) when nothing.
 bool GoToDefinition(const std::string &file, size_t at, bool references);
 
+// Problems (app_problems.cpp): Lint, the stage's checks, Apply's error, the engine's warnings
+struct Problem {
+    int level;          // 0 error, 1 warning, 2 note
+    const char *source; // "Lint", "Stage", "Apply", "Engine"
+    std::string file;   // "" none (the engine's: maybe a name alone, found among the players' files)
+    int line = 0;
+    std::string text;
+    int count = 1;      // the engine's: times logged
+};
+void EngineLine(const std::string &text); // a line of the engine's log: kept when a warning or an error
+void ClearEngineProblems();
+void LintProblems(std::vector<Problem> &out);  // app_check.cpp: the character worked on
+void StageProblems(std::vector<Problem> &out); // app_stage.cpp: the match's stage, or the toolbar's
+void ProblemCounts(int count[3]);              // errors, warnings, notes
+void ProblemsWindow();
+
 // The palette (Ctrl+P files, Ctrl+Shift+P commands, Ctrl+G a line, Ctrl+Shift+O a section) and
 // the File menu (app_palette.cpp)
 void FileMenu();
@@ -530,6 +547,8 @@ void FontsWindow();
 
 // Session, Control, Players, Inspector, Frame data, Trace, Breakpoints, Console
 void Toolbar(); // above the windows: launch, the match, pause and steps, the game's state
+void MatchSettingsLine(const std::string &key, const std::string &value); // the matches saved by name
+void MatchSettingsWrite(ImGuiTextBuffer *buf);
 void PlayersWindow();
 void InspectorWindow();
 void FrameDataWindow();

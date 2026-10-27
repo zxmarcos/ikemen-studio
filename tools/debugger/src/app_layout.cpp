@@ -29,6 +29,7 @@ ToolWindow g_windows[] = {
     {"Code", "Files", "Console|Trace"},
     {"Outline", "Files", "Explorer|Players"},
     {"Search", "Files", "Analysis|Console|Trace"},
+    {"Problems", "Files", "Search|Analysis|Console|Trace"},
     {"Players", "Debugging", "Watch|Breakpoints|Roster|Analysis"},
     {"Breakpoints", "Debugging", "Watch|Players"},
     {"Watch", "Debugging", "Breakpoints|Players"},
@@ -67,20 +68,20 @@ struct Workspace {
 Workspace g_spaces[] = {
     {"Debug", "A fight tick by tick: the players, their states, what ran, the code.",
      "X0.19(Y0.5(L:Players,Explorer,Outline)(L:Watch,Breakpoints))"
-     "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance,Search)(L:Code)))", kFollow},
+     "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance,Search,Problems)(L:Code)))", kFollow},
     {"Code", "Writing a character: the files and the outline, the editor in the middle, the Lint, the state graph "
              "and the search below it.",
-     "X0.16(Y0.6(L:Explorer)(L:Outline))(X0.68(Y0.68(L:Code)(L:Analysis,Search,Console,Trace))(Y0.45(L:Game)(L:Inspector)))",
+     "X0.16(Y0.6(L:Explorer)(L:Outline))(X0.68(Y0.68(L:Code)(L:Problems,Analysis,Search,Console,Trace))(Y0.45(L:Game)(L:Inspector)))",
      kFollow},
     {"Character", "A character's animations, sprites, sounds and commands; new moves and characters.",
      "X0.16(Y0.5(L:Explorer)(L:Players,Outline))"
-     "(X0.62(Y0.66(L:Animation)(L:Code,Console,Search))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
+     "(X0.62(Y0.66(L:Animation)(L:Code,Console,Search,Problems))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
      kFollow},
     {"Stage", "The stage on the game, its def's sections and fields, its checks and 3D model.",
-     "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Performance)))(L:Stage))", kStageDef},
+     "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Problems,Performance)))(L:Stage))", kStageDef},
     {"Screenpack", "The fight screen, the motif's screens, storyboards, the roster and fonts.",
      "X0.17(Y0.4(L:Explorer)(L:Roster,Fonts))"
-     "(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console)))(L:Fight screen,Motif,Storyboard))",
+     "(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console,Problems)))(L:Fight screen,Motif,Storyboard))",
      kFightDef},
 };
 
@@ -370,6 +371,15 @@ void StatusBar() {
             const char *tip;
         };
         std::vector<Item> right;
+        int problems[3];
+        ProblemCounts(problems);
+        auto showProblems = [] { ShowWindow("Problems"); };
+        const char *problemsTip = "Lint, the stage's checks, Apply, the engine's warnings (Problems)";
+        if (problems[0]) right.push_back({std::to_string(problems[0]) + (problems[0] == 1 ? " error" : " errors"), Ink(kRed), showProblems, problemsTip});
+        if (problems[1])
+            right.push_back({std::to_string(problems[1]) + (problems[1] == 1 ? " warning" : " warnings"), Ink(kYellow), showProblems, problemsTip});
+        if (!problems[0] && !problems[1])
+            right.push_back({"No problems", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), showProblems, problemsTip});
         std::string file;
         int line, col;
         if (CodeCursor(&file, &line, &col)) {

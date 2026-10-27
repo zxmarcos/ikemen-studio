@@ -12,6 +12,74 @@
 
 namespace app {
 
+// Matches saved by name (the toolbar's Matches): what Launch starts with
+struct SavedMatch {
+    std::string name, p1, p2, stage;
+    bool ai1 = false, ai2 = true;
+};
+std::vector<SavedMatch> g_matches;
+
+void MatchSettingsLine(const std::string &key, const std::string &value) {
+    if (key != "Match") return;
+    // name|p1|p2|stage|ai1|ai2
+    std::vector<std::string> f;
+    for (size_t at = 0;;) {
+        size_t bar = value.find('|', at);
+        f.push_back(value.substr(at, bar - at));
+        if (bar == std::string::npos) break;
+        at = bar + 1;
+    }
+    if (f.size() == 6) g_matches.push_back({f[0], f[1], f[2], f[3], f[4] == "1", f[5] == "1"});
+}
+
+void MatchSettingsWrite(ImGuiTextBuffer *buf) {
+    for (const SavedMatch &m : g_matches)
+        buf->appendf("Match=%s|%s|%s|%s|%d|%d\n", m.name.c_str(), m.p1.c_str(), m.p2.c_str(), m.stage.c_str(), m.ai1, m.ai2);
+}
+
+// The popup of the toolbar's Matches: a saved match picked, the one set saved
+void MatchesPopup() {
+    Settings &s = g_settings;
+    float em = ImGui::GetFontSize();
+    static std::string name;
+    if (ImGui::IsWindowAppearing()) name = s.p1 + " vs " + s.p2 + (s.stage.empty() ? "" : ", " + s.stage);
+    if (g_matches.empty()) ImGui::TextDisabled("No match saved yet.");
+    for (size_t i = 0; i < g_matches.size(); i++) {
+        const SavedMatch &m = g_matches[i];
+        ImGui::PushID((int)i);
+        bool current = m.p1 == s.p1 && m.p2 == s.p2 && m.stage == s.stage && m.ai1 == s.ai1 && m.ai2 == s.ai2;
+        if (ImGui::Selectable(m.name.c_str(), current, ImGuiSelectableFlags_AllowOverlap, ImVec2(em * 16, 0))) {
+            s.p1 = m.p1, s.p2 = m.p2, s.stage = m.stage, s.ai1 = m.ai1, s.ai2 = m.ai2;
+            ImGui::MarkIniSettingsDirty();
+        }
+        ImGui::SetItemTooltip("P1 %s%s, P2 %s%s, stage %s", m.p1.c_str(), m.ai1 ? " (AI)" : "", m.p2.c_str(),
+                              m.ai2 ? " (AI)" : "", m.stage.c_str());
+        ImGui::SameLine();
+        bool del = ImGui::SmallButton("x");
+        ImGui::SetItemTooltip("Forget it");
+        ImGui::PopID();
+        if (del) {
+            g_matches.erase(g_matches.begin() + i);
+            ImGui::MarkIniSettingsDirty();
+            break;
+        }
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(em * 14);
+    ImGui::InputText("##name", &name);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(name.empty() || name.find('|') != std::string::npos);
+    if (ImGui::Button("Save this match")) {
+        bool replaced = false;
+        for (SavedMatch &m : g_matches)
+            if (m.name == name) m = {name, s.p1, s.p2, s.stage, s.ai1, s.ai2}, replaced = true;
+        if (!replaced) g_matches.push_back({name, s.p1, s.p2, s.stage, s.ai1, s.ai2});
+        ImGui::MarkIniSettingsDirty();
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("The toolbar's P1, P2, AI and stage, under that name (the same name: replaced)");
+}
+
 // The toolbar above the windows: the game started and stopped, the match it starts with, its
 // time (pause, steps, speed) and state; the rest of the session in Settings.
 void Toolbar() {
@@ -19,9 +87,20 @@ void Toolbar() {
     bool running = g_bridge.Running(), live = Connected();
     ImGuiIO &io = ImGui::GetIO();
     if (live && !io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && !io.KeyShift && !io.KeyCtrl)
+            SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
         if (ImGui::IsKeyPressed(ImGuiKey_F10)) SendRaw("ikdbg.step(1)");
         if (ImGui::IsKeyPressed(ImGuiKey_F11)) SendRaw("ikdbg.step(10)");
+    }
+    // As an IDE runs: F5 starts the game (then pauses and continues it), Shift+F5 stops it,
+    // Ctrl+Shift+F5 starts it again
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+        if (!running && !io.KeyShift) Launch();
+        else if (running && io.KeyShift && io.KeyCtrl) Launch();
+        else if (running && io.KeyShift) {
+            g_bridge.Stop();
+            Log(LogLine::Info, "Stopped the game.");
+        }
     }
     float em = ImGui::GetFontSize();
     // On the same line while there is room
@@ -30,18 +109,20 @@ void Toolbar() {
         if (ImGui::GetContentRegionAvail().x < width) ImGui::NewLine();
     };
 
-    if (ImGui::Button(running ? "Restart" : "Launch")) Launch();
-    ImGui::SetItemTooltip(running ? "Starts the game again with the match below." : "Starts the game with the match below.");
+    if (ImGui::Button(running ? "Restart" : "Launch (F5)")) Launch();
+    ImGui::SetItemTooltip(running ? "Starts the game again with the match beside (Ctrl+Shift+F5)."
+                                  : "Starts the game with the match beside (F5).");
     ImGui::SameLine();
     ImGui::BeginDisabled(!running);
     if (ImGui::Button("Stop")) {
         g_bridge.Stop();
         Log(LogLine::Info, "Stopped the game.");
     }
+    ImGui::SetItemTooltip("Shift+F5");
     ImGui::EndDisabled();
 
     // The match it starts with
-    flow(em * 30);
+    flow(em * 35);
     auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(label);
@@ -60,8 +141,15 @@ void Toolbar() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 7);
     ImGui::InputText("##stage", &s.stage);
+    ImGui::SameLine();
+    if (ImGui::Button("Matches")) ImGui::OpenPopup("matches");
+    ImGui::SetItemTooltip("Matches saved by name: pick one, or save the one set");
+    if (ImGui::BeginPopup("matches")) {
+        MatchesPopup();
+        ImGui::EndPopup();
+    }
     HelpMarker("The match the game starts with (Launch, Restart). Leave P1 or P2 empty to start at the title "
-               "screen. AI: that side plays by itself.");
+               "screen. AI: that side plays by itself. Explorer's menu on a character or a stage sets them too.");
 
     // The game's time
     flow(em * 26);

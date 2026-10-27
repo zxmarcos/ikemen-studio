@@ -412,24 +412,57 @@ std::string StageFile(const std::string &def, const std::string &name) {
     return "";
 }
 
-void ChecksSection(SourceFile &sf, const IniFile &ini) {
-    static std::string text;
+// The checks of a stage's def, again when its text or its SFF changes; *sffRead: its SFF was read
+const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini, bool *sffRead = nullptr) {
+    static std::string path, text;
     static unsigned sffVersion;
     static std::vector<StageFinding> found;
-    static bool done;
+    static bool done, read;
     // The SFF, as the Sprites window has it (its edits count)
     const SpriteFile *spr = nullptr;
     for (const IniSection &s : ini.sections)
         if (s.lower == "bgdef")
             if (const IniField *f = s.Field("spr"))
-                if (std::string path = StageFile(sf.path, f->value); !path.empty()) spr = &SpriteFileAt(path);
+                if (std::string p = StageFile(sf.path, f->value); !p.empty()) spr = &SpriteFileAt(p);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
-    if (!done || text != sf.text || sffVersion != (spr ? spr->version : 0)) {
+    if (!done || path != sf.path || text != sf.text || sffVersion != (spr ? spr->version : 0)) {
+        path = sf.path;
         text = sf.text;
         sffVersion = spr ? spr->version : 0;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
         done = true;
+        read = sff != nullptr;
     }
+    if (sffRead) *sffRead = read;
+    return found;
+}
+
+// The stage in the match, else the toolbar's
+void StageProblems(std::vector<Problem> &out) {
+    std::string def = g_stageDef;
+    if (def.empty()) {
+        const std::string &s = g_settings.stage;
+        if (s.empty()) return;
+        def = s.find('/') == std::string::npos && s.find('\\') == std::string::npos ? "stages/" + s : s;
+        if (NormPath(def).size() < 4 || NormPath(def).compare(NormPath(def).size() - 4, 4, ".def") != 0) def += ".def";
+        if (!GameFileExists(def)) return;
+    }
+    SourceFile &sf = LoadSource(def);
+    static IniFile ini;
+    static std::string parsed;
+    static bool once;
+    if (!once || parsed != sf.text) {
+        parsed = sf.text;
+        ini = IniFile();
+        Ini_Parse(parsed, ini);
+        once = true;
+    }
+    for (const StageFinding &f : StageChecks(sf, ini)) out.push_back({(int)f.level, "Stage", sf.path, f.line, f.text});
+}
+
+void ChecksSection(SourceFile &sf, const IniFile &ini) {
+    bool sffRead = false;
+    const std::vector<StageFinding> &found = StageChecks(sf, ini, &sffRead);
     int count[3] = {};
     for (const auto &f : found) count[f.level]++;
     char header[96];
@@ -437,7 +470,7 @@ void ChecksSection(SourceFile &sf, const IniFile &ini) {
              count[2]);
     if (!ImGui::CollapsingHeader(header)) return;
     if (found.empty()) ImGui::TextDisabled("Nothing found.");
-    if (!sff) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: its sprites are not checked.");
+    if (!sffRead) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: its sprites are not checked.");
     const char *names[3] = {"error", "warning", "note"};
     const ImVec4 colors[3] = {Ink(kRed), Ink(kYellow), Ink(kBlue)};
     if (ImGui::BeginTable("checks", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY,

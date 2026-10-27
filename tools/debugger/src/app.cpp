@@ -70,6 +70,7 @@ void Log(LogLine::Kind kind, const std::string &text) {
     }
     g_log.push_back({kind, text});
     while (g_log.size() > kLog) g_log.pop_front();
+    if (kind == LogLine::Engine) EngineLine(text);
     g_logScroll = true;
 }
 
@@ -242,7 +243,14 @@ void Launch() {
     g_breakText.clear();
     g_sources.assign(1, Source());
     g_ran.clear();
-    g_files.clear();
+    // The files open stay (with their changes, made with the game not running too); only the
+    // last Apply's error goes
+    for (auto &kv : g_files) {
+        kv.second.errorLine = 0;
+        dbg::Editor_SetErrorLine(kv.second.ed, 0, nullptr);
+    }
+    g_applyError.clear();
+    ClearEngineProblems();
     g_selTick = -1;
     g_frameLink.Close();
     g_frameEnts.clear();
@@ -551,6 +559,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         LayoutSettingsLine(key, value);
         ThemeSettingsLine(key, value);
         CodeSettingsLine(key, value);
+        MatchSettingsLine(key, value);
     }
 }
 
@@ -570,6 +579,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     LayoutSettingsWrite(buf);
     ThemeSettingsWrite(buf);
     CodeSettingsWrite(buf);
+    MatchSettingsWrite(buf);
     buf->append("\n");
 }
 
@@ -643,6 +653,7 @@ void App_Frame() {
     ExplorerWindow();
     OutlineWindow();
     SearchWindow();
+    ProblemsWindow();
     PaletteFrame();
     StatusBar();
     if (g_autoLaunch) {

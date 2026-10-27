@@ -928,6 +928,14 @@ void GraphTab(Model &m, const Entity *e) {
 
 } // namespace
 
+void LintProblems(std::vector<Problem> &out) {
+    int pn = WorkPn();
+    if (!pn || (pn != kDiskPn && !g_canTrace)) return;
+    Model *m = ModelOf(pn);
+    if (!m) return;
+    for (const Finding &f : m->findings) out.push_back({f.level, "Lint", m->files[f.file].path, f.line, f.text});
+}
+
 std::string VarName(const std::string &def, char kind, int index) {
     auto it = g_varNames.find(VarKey(def, kind, index));
     return it == g_varNames.end() ? "" : it->second;

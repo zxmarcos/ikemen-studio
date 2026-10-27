@@ -288,6 +288,11 @@ void ShowInFolder(const std::string &path) {
 
 void FileMenuItems(const std::string &path, const std::string &pal) {
     if (ImGui::MenuItem("Open")) OpenPath(path, true, pal);
+    // A character's AIR file: its actions drawn and edited (the character is the one worked on)
+    if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
+        WorkOn(g_rowChar);
+        ShowWindow("Animation");
+    }
     if (ImGui::MenuItem("Show in folder")) ShowInFolder(path);
     if (ImGui::MenuItem("Copy path")) ImGui::SetClipboardText(path.c_str());
 }
