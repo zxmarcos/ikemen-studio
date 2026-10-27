@@ -53,6 +53,7 @@ func editorStageModel(filename string) (*Model, error) {
 	m, err := loadglTFModel(filename)
 	if err == nil {
 		e.model, e.modelFile, e.modelTime = m, filename, mtime
+		editorModelRead()
 	}
 	return m, err
 }
@@ -203,7 +204,8 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 //	  "time": the stage's time, "ranAt": the stage time of its last step,
 //	  "bgc": [[ran on that step, starttime, endtime, looptime, [BG indices]], ...] the BGCtrls
 //	    (the def's [BGCtrl ...] sections, in order),
-//	  "bg": [[index, x, y, w, h, kx, ky, layer, tiled], ...]}
+//	  "bg": [[index, x, y, w, h, kx, ky, layer, tiled], ...],
+//	  "mdl": its 3D model's nodes outlined (editorModelGeometry)}
 func editorStageGeometry(b []byte) []byte {
 	s := sys.stage
 	if s == nil {
@@ -297,7 +299,9 @@ func editorStageGeometry(b []byte) []byte {
 		}
 	}
 	edStage.drawn = edStage.drawn[:0]
-	return append(b, "]}"...)
+	b = append(b, ']')
+	b = editorModelGeometry(b)
+	return append(b, '}')
 }
 
 // editorMoveStageBg moves a BG (0-based index) by stage units, and the BGs positionlinked to it.

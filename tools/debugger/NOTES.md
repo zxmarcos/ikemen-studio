@@ -206,7 +206,7 @@ src/editor_select.go     engine side: select.def's characters and stages emptied
 src/editor_font.go       engine side: every font loaded, a font's file read again in place
 src/editor_objects.go    engine side: a character's explods and projectiles (debugObjects)
 src/editor_lab.go        engine side: a player's keys held, recorded, played; a character swapped
-src/editor_model.go      engine side: the stage's 3D model (animations, nodes, lights), the glTF names kept
+src/editor_model.go      engine side: the stage's 3D model (nodes, materials, animations, lights), the glTF names kept, nodes outlined and picked, Save
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe
   src/main.cpp           Win32 + OpenGL2 window and input for ImGui, DPI aware; test hooks (below)
@@ -241,7 +241,7 @@ tools/debugger/
   src/stagecheck.cpp/.h  a stage def's checks (Stage window): files, sprites, actions, ids, bounds, keys
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
   src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
-  src/app_model.cpp      the Stage window's 3D model: animations, nodes, lights
+  src/app_model.cpp      Model window: the stage's 3D model, its placement, its nodes on the Game window
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make, stagecheck _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
@@ -724,6 +724,40 @@ not unlit, deleted after. A stage put in the match (`debugSwapStage`, or a
 reload whose model file changed) now sends its model's vertices to the GPU
 (the engine does it when a round starts, `handleStageSwap`) and swapping
 restarts the camera (`cam.Init`); the fight's aspect stays the match's.
+
+The 3D model then became a window of its own (Model, `app_model.cpp`, next
+to Stage in the Stage workspace). `debugModel` gives the scenes (their
+roots), every node's rest translation, rotation and scale and Ikemen extras,
+the meshes' primitives, the materials and the lights' cones; changes go
+through `debugModelNodeTRS`, `debugModelNodeProps`, `debugModelMaterial`,
+`debugModelLight` and `debugModelAnimTime` (an animation put at a time: the
+others held, `Model.step` from a tick before), each one remembered in
+`edModel` for Save. Changing a rest value changes nothing while an animation
+moves it (`GLTFAnimatableProperty`). The cached model shares its nodes with
+the stage's copy (`*s.model = *model`), so the changes survive the def's
+reloads. On the Game window: `editorModelDrawn` (one line in
+`Stage.drawModel`) keeps proj * view; the selected and hovered nodes' boxes
+(their mesh's box in their space, else the world box of the meshes under
+them, else their position) go into the frame geometry's `stage.mdl` as
+segments in picture pixels, cut at w = 0.001 so a box around the camera
+still draws. `debugModelPick(x, y)` casts the ray from the near plane to the
+far one (its parameter is the same in every node's space), tests each
+visible mesh node of a scene, box first, then its triangles (positions at
+`vertexBufferOffset + 4 * numVertices`, the element buffer per primitive;
+skins and morph targets at rest). Save (`editorModelSave`) decodes the file
+again with qmuntal/gltf without a file system (external buffers are neither
+read nor written), sets the nodes' TRS (matrix dropped), extras (`trans`,
+`layerNumber`, `castShadow` "0", `disableZTest`/`disableZWrite` "1",
+`meshOutline`, as `loadglTFModel` reads them: a JSON false would count as
+true), materials (unlit through `KHR_materials_unlit`) and lights (the raw
+`KHR_lights_punctual` JSON), and writes it (glb kept glb; a .bak first), its
+time then taken as the cache's. Revert zeroes that time and reloads the
+stage. Placement edits the def's `[Model]` and `[Camera]` (a missing section
+is added before `[BGdef]`). Tested on stage3d (kept and restored): picking
+(the sky sphere, the gong stand), a node moved, a material tinted, an
+animation scrubbed, Save then a fresh launch with the saved file, Revert,
+`trans = "ADD"` written to the node's extras, fov dragged. Not tested: lights
+(no model at hand has them), `.gltf` files with external buffers.
 
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue

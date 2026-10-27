@@ -192,6 +192,7 @@ void PollFrames() {
         g_frameBgs.push_back({b[size_t(0)].i(),
                               ImVec4((float)b[1].num(), (float)b[2].num(), (float)b[3].num(), (float)b[4].num()),
                               ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy()});
+    ReadModelGeometry(stage["mdl"]);
     ReadScreenGeometry(j);
     UpdateInputHistory();
     const Json &tg = j["tg"];
@@ -389,6 +390,7 @@ void GameWindow() {
     ImGui::SameLine();
     if (ImGui::Checkbox("Screenpack", &g_screenPick) && g_screenPick) g_stagePick = false;
     ImGui::SetItemTooltip("The mouse picks and drags the fight screen's elements (lifebars, time...) and the motif's\n(menus, select screen...) instead of the players (windows Fight screen, Motif).");
+    ModelPickToggle();
     if (g_frameTex) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
@@ -487,6 +489,8 @@ void GameWindow() {
         hovered = false;
         clicked = false;
     }
+    // The stage model's nodes: in pick mode they take the mouse
+    if (ModelOverlay(draw, hovered && !boxMouse, clicked, toScreen, toPicture)) hovered = clicked = false;
     // The stage's BGs: in pick mode they take the mouse instead of the players
     if (StageOverlay(draw, hovered && !boxMouse, clicked, toScreen, ImVec2(kx, ky))) {
         hovered = false;

@@ -45,6 +45,7 @@ ToolWindow g_windows[] = {
     {"Sounds", "Character", "Sprites|Commands|Inspector"},
     {"Commands", "Character", "Sprites|Sounds|Inspector"},
     {"Stage", "Stage and screens", "Fight screen|Motif|Inspector"},
+    {"Model", "Stage and screens", "Stage|Fight screen|Inspector"},
     {"Fight screen", "Stage and screens", "Motif|Storyboard|Stage|Inspector"},
     {"Motif", "Stage and screens", "Fight screen|Storyboard|Stage|Inspector"},
     {"Storyboard", "Stage and screens", "Motif|Fight screen|Stage|Inspector"},
@@ -78,7 +79,7 @@ Workspace g_spaces[] = {
      "(X0.62(Y0.66(L:Animation)(L:Code,Console,Search,Problems))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
      kFollow},
     {"Stage", "The stage on the game, its def's sections and fields, its checks and 3D model.",
-     "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Problems,Performance)))(L:Stage))", kStageDef},
+     "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Problems,Performance)))(L:Stage,Model))", kStageDef},
     {"Screenpack", "The fight screen, the motif's screens, storyboards, the roster and fonts.",
      "X0.17(Y0.4(L:Explorer)(L:Roster,Fonts))"
      "(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console,Problems)))(L:Fight screen,Motif,Storyboard))",

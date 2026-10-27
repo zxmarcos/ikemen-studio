@@ -2391,6 +2391,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, layerNumber
 	view = view.Mul4(mgl.HomogRotate3DY(rotation[1]))
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
+	editorModelDrawn(proj, view)
 
 	if layerNumber == -1 {
 		s.model.calculateTextureTransform()

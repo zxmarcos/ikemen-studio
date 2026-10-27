@@ -12,6 +12,7 @@
 //   app_code.cpp     Code: the source files, Apply
 //   app_cmd.cpp      Commands: input, the commands under way, the CMD file
 //   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
+//   app_model.cpp    Model: the stage's 3D model, its nodes outlined and picked on the Game window
 //   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
 //   app_roster.cpp   Roster: select.def's characters in the select screen's grid, its stages
 //   app_lab.cpp      Lab: a dummy, takes of input, characters swapped
@@ -520,9 +521,20 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 // window's own zoom and pan stay put). pictureAt: a screen point to the game picture's pixels.
 bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt);
 void StageWindow();
-// The stage's 3D model (app_model.cpp), in the Stage window
+SourceFile *StageSource();                   // the stage's def, nullptr when not known
+const IniFile &StageIni(const SourceFile &sf); // parsed, again when its text changes
+void StageEdited(SourceFile &sf);             // after an edit of its text: the game shows it
+void ReloadStage(SourceFile &sf, bool fromText);
+// The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the
+// Game window its nodes outlined and picked
 void OnModel(const Json &j);
 void ModelSection(bool stageHasModel);
+void ModelWindow();
+void ReadModelGeometry(const Json &mdl); // the frame geometry's stage "mdl"
+extern bool g_modelPick;                 // the Game window picks the model's nodes, not the players
+void ModelPickToggle();                  // its checkbox on the Game window's toolbar
+bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
+                  const std::function<ImVec2(ImVec2)> &toPicture);
 
 // Fight screen and Motif: where each element of their defs (fight.def, system.def) was drawn in
 // the last frame (editor_fight.go, editor_motif.go)

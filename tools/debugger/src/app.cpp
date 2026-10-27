@@ -635,6 +635,7 @@ void App_Frame() {
     SoundsWindow();
     CommandsWindow();
     StageWindow();
+    ModelWindow();
     ScreenWindows();
     RosterWindow();
     FontsWindow();
