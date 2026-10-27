@@ -54,6 +54,10 @@ int  Editor_MarkClicked(const CodeEditor *ed);
 void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> note_of);
 /* The colours of every editor: dark (the default) or light, for a light theme. */
 void Editor_SetLight(bool light);
+/* The text size of every editor, a factor of the font's (1: as the rest; 0.5 to 3). Ctrl+Wheel over an editor
+   changes it, Ctrl+0 sets it back to 1. */
+void  Editor_SetZoom(float zoom);
+float Editor_Zoom();
 
 } // namespace dbg
 

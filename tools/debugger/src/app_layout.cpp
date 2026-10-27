@@ -388,6 +388,10 @@ void StatusBar() {
             right.push_back({file.substr(file.find_last_of("\\/") + 1) + where, ImGui::GetStyleColorVec4(ImGuiCol_Text),
                              [] { ShowWindow("Code"); }, "The file shown in Code"});
         }
+        if (float zoom = dbg::Editor_Zoom(); zoom != 1.0f)
+            right.push_back({std::to_string((int)(zoom * 100 + 0.5f)) + "%", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),
+                             [] { dbg::Editor_SetZoom(1.0f); },
+                             "The code editor's text size (Ctrl+Wheel over it); a click, or Ctrl+0 in it: 100%"});
         int dirty = 0;
         for (const auto &kv : g_files) dirty += kv.second.Dirty();
         if (g_applying) right.push_back({"applying...", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), nullptr, nullptr});

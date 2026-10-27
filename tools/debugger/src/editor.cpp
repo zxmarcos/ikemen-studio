@@ -506,6 +506,18 @@ void Editor_SetLight(bool light)
     pal = light ? &kLight : &kDark;
 }
 
+static float zoom = 1.0f;  /* the text size of every editor, a factor of the font's */
+
+void Editor_SetZoom(float z)
+{
+    zoom = std::max(0.5f, std::min(3.0f, z));
+}
+
+float Editor_Zoom()
+{
+    return zoom;
+}
+
 static bool IsBlank(char c)
 {
     return c == ' ' || c == '\t' || c == '\r';
@@ -1660,6 +1672,8 @@ static void HandleKeys(CodeEditor *ed, const Metrics &m, float view_h)
     } else if (ctrl && key(ImGuiKey_D)) {
         DuplicateLines(ed);
         CloseCompletion(ed);
+    } else if (ctrl && (key(ImGuiKey_0) || key(ImGuiKey_Keypad0))) {
+        Editor_SetZoom(1.0f);   /* the text size back to the font's */
     } else if (ctrl && shift && key(ImGuiKey_K)) {
         DeleteLines(ed, m);
         CloseCompletion(ed);
@@ -1906,6 +1920,8 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
         CloseCompletion(ed);
     }
 
+    /* the editors' own text size (popped before each return) */
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * zoom);
     Metrics m;
     InitMetrics(&m);
     if (ed->measured_size != m.size) {
@@ -1934,6 +1950,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
     ImRect area = win->InnerClipRect;
     if (!visible || area.GetWidth() <= 0.0f || area.GetHeight() <= 0.0f) {
         ImGui::EndChild();
+        ImGui::PopFont();
         return false;
     }
     float text_w = area.GetWidth() - gutter - kMargin;
@@ -1942,6 +1959,25 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
 
     ImGui::ItemAdd(area, wid);
     bool hovered = ImGui::ItemHoverable(area, wid, ImGuiItemFlags_None);
+
+    /*
+     * Ctrl+Wheel: the text size. While Ctrl is held over the text the wheel is ours, so that
+     * it does not scroll too (taken a frame ahead: ImGui scrolls at the start of the frame).
+     */
+    /* (the mouse over the text: not hovered, which keyboard navigation turns off until the mouse moves) */
+    bool zooming = io.KeyCtrl && g.HoveredWindow == win && ImGui::IsMouseHoveringRect(area.Min, area.Max);
+    if (zooming) {
+        ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, wid);
+        if (io.MouseWheel != 0.0f) {
+            /* the same lines in view: the scroll grows with the text */
+            float before = zoom;
+            Editor_SetZoom(zoom * powf(1.1f, io.MouseWheel));
+            win->Scroll.x = floorf(win->Scroll.x * zoom / before);
+            win->Scroll.y = floorf(win->Scroll.y * zoom / before);
+        }
+    } else if (ImGui::GetKeyOwner(ImGuiKey_MouseWheelY) == wid) {
+        ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, ImGuiKeyOwner_NoOwner);
+    }
 
     /*
      * The focus. Our own scrollbars take the active id while dragged: the
@@ -2250,6 +2286,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
     if (ed->comp_open && active && !ed->comp_items.empty()) {
         DrawCompletion(ed);
     }
+    ImGui::PopFont();
     if (ed->changed) {
         version++;
         ed->seen_version = version;

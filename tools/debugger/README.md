@@ -87,7 +87,9 @@ file in Code; Ctrl+Shift+O a section of it (`[Statedef 200]`,
 `[Begin Action 0]`); Ctrl+Shift+F text in files (Search). **File**: Open...
 (any file), Save and apply, Close the tab (Ctrl+W).
 
-In Code: **Ctrl+F** finds in the file (every match on a background; Enter or
+In Code: **Ctrl+Wheel** over the text makes it bigger or smaller (every
+editor; kept with the settings, shown on the status bar when not 100%),
+**Ctrl+0** sets it back. **Ctrl+F** finds in the file (every match on a background; Enter or
 F3 the next, Shift the one before; case, whole words), **Ctrl+H** replaces
 (one, or all as one step of undo). **F12** or **Ctrl+click** goes to what a
 number or a name stands for, read from the character's files as the engine

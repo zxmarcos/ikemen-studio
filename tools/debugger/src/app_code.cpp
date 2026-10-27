@@ -546,6 +546,7 @@ void FindBar(SourceFile &sf, bool windowFocused) {
 void CodeSettingsLine(const std::string &key, const std::string &value) {
     if (key == "CodeDoc") g_docs.push_back({value, false});
     else if (key == "CodeFile") g_codeFile = value;
+    else if (key == "EditorZoom") dbg::Editor_SetZoom((float)atof(value.c_str()));
 }
 
 void CodeSettingsWrite(ImGuiTextBuffer *buf) {
@@ -553,6 +554,7 @@ void CodeSettingsWrite(ImGuiTextBuffer *buf) {
         if (!d.preview) buf->appendf("CodeDoc=%s\n", d.path.c_str());
     if (!g_codeFile.empty() && FindDoc(g_codeFile) >= 0 && !g_docs[FindDoc(g_codeFile)].preview)
         buf->appendf("CodeFile=%s\n", g_codeFile.c_str());
+    if (dbg::Editor_Zoom() != 1.0f) buf->appendf("EditorZoom=%.3f\n", dbg::Editor_Zoom());
 }
 
 void CodeWindow() {
