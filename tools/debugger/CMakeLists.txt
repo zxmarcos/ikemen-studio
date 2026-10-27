@@ -49,6 +49,8 @@ add_executable(ikemen-debugger WIN32
   src/app_perf.cpp
   src/app_create.cpp
   src/app_model.cpp
+  src/app_modelview.cpp
+  src/gltf.cpp
   src/app_check.cpp
   src/app_explorer.cpp
   src/app_palette.cpp
@@ -76,7 +78,7 @@ else()
   # wWinMain, and no MSYS2 DLLs needed next to the exe
   target_link_options(ikemen-debugger PRIVATE -municode -static)
 endif()
-target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32 shell32 winmm)
+target_link_libraries(ikemen-debugger PRIVATE imgui lodepng opengl32 user32 gdi32 comdlg32 shell32 winmm ole32 windowscodecs uuid)
 # No per-configuration folder: the exe looks for ikdbg.lua next to itself.
 set_target_properties(ikemen-debugger PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}>")
 
@@ -112,3 +114,5 @@ target_include_directories(make-test PRIVATE src)
 add_executable(stagecheck-test tests/stagecheck_test.cpp src/stagecheck.cpp src/ini.cpp src/air.cpp src/sff.cpp)
 target_include_directories(stagecheck-test PRIVATE src)
 target_link_libraries(stagecheck-test PRIVATE lodepng)
+add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp)
+target_include_directories(gltf-test PRIVATE src)

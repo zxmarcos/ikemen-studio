@@ -472,14 +472,7 @@ const std::map<std::string, std::vector<std::string>> *FilesFor(int pn) {
 void OpenPath(const std::string &path, bool keep, const std::string &pal) {
     std::string ext = ExtOf(path);
     if (ext == "glb" || ext == "gltf") {
-        ShowWindow("Model");
-        // The game may name it from another folder: the same file when one path ends the other
-        std::string inUse = NormPath(ModelFileInUse()), p = NormPath(path);
-        auto ends = [](const std::string &a, const std::string &b) {
-            return a.size() >= b.size() && a.compare(a.size() - b.size(), b.size(), b) == 0;
-        };
-        if (!inUse.empty() && !ends(inUse, p) && !ends(p, inUse))
-            Log(LogLine::Info, "Model shows the 3D model of the stage in the match (" + ModelFileInUse() + ").");
+        ModelOpenFile(path);
         return;
     }
     if (!IsBinary(path)) {
@@ -499,6 +492,14 @@ void OpenPath(const std::string &path, bool keep, const std::string &pal) {
         return;
     }
     Log(LogLine::Info, "No window edits ." + ext + " files (" + path + "); Show in folder opens its folder.");
+}
+
+std::string StageDefOfModel(const std::string &model) {
+    Scan(false);
+    for (const Project &p : g_stages)
+        for (const DefEntry &f : DefFiles(p.def))
+            if (f.key == "model" && NormPath(f.path) == NormPath(model)) return p.def;
+    return "";
 }
 
 void ProjectFiles(std::vector<std::string> &out) {

@@ -13,6 +13,7 @@
 //   app_cmd.cpp      Commands: input, the commands under way, the CMD file
 //   app_stage.cpp    Stage: the stage's def, its BGs picked and dragged on the Game window
 //   app_model.cpp    Model: the stage's 3D model, its nodes outlined and picked on the Game window
+//   app_modelview.cpp the Model window's preview of a model read from disk (gltf.cpp)
 //   app_screen.cpp   Fight screen, Motif: their defs, their elements picked and dragged on the Game window
 //   app_roster.cpp   Roster: select.def's characters in the select screen's grid, its stages
 //   app_lab.cpp      Lab: a dummy, takes of input, characters swapped
@@ -34,6 +35,7 @@
 #include "sff.h"
 #include "snd.h"
 #include "ini.h"
+#include "gltf.h"
 #include "editor.hpp"
 #include <GL/gl.h>
 #include "imgui.h"
@@ -530,7 +532,25 @@ void ReloadStage(SourceFile &sf, bool fromText);
 void OnModel(const Json &j);
 void ModelSection(bool stageHasModel);
 void ModelWindow();
-std::string ModelFileInUse(); // the model file of the stage in the match, as the game names it; "" none
+std::string ModelFileInUse();                 // the model file of the stage in the match, as the game names it; "" none
+void ModelOpenFile(const std::string &path);  // a .glb or .gltf shown in the Model window (from disk unless the match's)
+std::string StageFile(const std::string &def, const std::string &name); // a file a stage's def names, found; "" none
+std::string SettingsStageDef();               // the toolbar's stage as a def path; "" none
+std::string StageDefOfModel(const std::string &model); // the stage's def naming that model, "" none (Explorer)
+// The Model window's preview of a model from disk (app_modelview.cpp)
+bool DecodeImage(const unsigned char *data, size_t size, int &w, int &h, std::vector<unsigned char> &rgba); // WIC
+GltfMat Perspective(float fovy, float aspect, float zNear, float zFar);
+GltfMat LookAt(const float eye[3], const float at[3]);
+struct ModelPreviewArgs {
+    const GltfDoc *doc = nullptr;
+    unsigned version = 0; // the doc's read: its textures are uploaded again when it changes
+    const std::vector<GltfMat> *world = nullptr;
+    const std::vector<char> *visible = nullptr;
+    GltfMat proj{}, view{};
+    int w = 0, h = 0, selected = -1, hover = -1;
+    int lighting = 0; // 0 unlit, 1 the model's lights, 2 an environment map (and the lights)
+};
+unsigned DrawModelPreview(const ModelPreviewArgs &a); // the picture's texture, 0 when it cannot be drawn
 void ReadModelGeometry(const Json &mdl); // the frame geometry's stage "mdl"
 extern bool g_modelPick;                 // the Game window picks the model's nodes, not the players
 void ModelPickToggle();                  // its checkbox on the Game window's toolbar

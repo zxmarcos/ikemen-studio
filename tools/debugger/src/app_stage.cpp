@@ -437,16 +437,19 @@ const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini,
     return found;
 }
 
+std::string SettingsStageDef() {
+    const std::string &s = g_settings.stage;
+    if (s.empty()) return "";
+    std::string def = s.find('/') == std::string::npos && s.find('\\') == std::string::npos ? "stages/" + s : s;
+    if (NormPath(def).size() < 4 || NormPath(def).compare(NormPath(def).size() - 4, 4, ".def") != 0) def += ".def";
+    return GameFileExists(def) ? def : "";
+}
+
 // The stage in the match, else the toolbar's
 void StageProblems(std::vector<Problem> &out) {
     std::string def = g_stageDef;
-    if (def.empty()) {
-        const std::string &s = g_settings.stage;
-        if (s.empty()) return;
-        def = s.find('/') == std::string::npos && s.find('\\') == std::string::npos ? "stages/" + s : s;
-        if (NormPath(def).size() < 4 || NormPath(def).compare(NormPath(def).size() - 4, 4, ".def") != 0) def += ".def";
-        if (!GameFileExists(def)) return;
-    }
+    if (def.empty()) def = SettingsStageDef();
+    if (def.empty()) return;
     SourceFile &sf = LoadSource(def);
     static IniFile ini;
     static std::string parsed;

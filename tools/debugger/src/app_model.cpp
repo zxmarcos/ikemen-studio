@@ -65,8 +65,29 @@ struct ModelView {
     std::vector<Material> materials;
     std::vector<Light> lights;
 };
-ModelView g_model;
+ModelView g_live, g_diskView; // the model in the match, and one read from disk
+ModelView *g_view = &g_live;    // the one the window shows
+bool g_isLive = true;
+ModelView &View() { return *g_view; }
 double g_modelAsked = -1;
+
+// A model read from disk (the game not running, or another file than the one in the match):
+// shown by the debugger itself (app_modelview.cpp), changed in memory, saved by Gltf_Save
+struct DiskModel {
+    GltfDoc doc;
+    std::string path;     // as the game names it
+    std::string def;      // the stage's def naming it, "" when not known
+    unsigned version = 0; // bumped at each read (the preview's textures)
+    FILETIME mtime{};
+    double checked = -100;
+    std::vector<GltfMat> world;
+    bool playing = true;
+    // The preview's camera: as the game's at its start (from the def), or turning around a point
+    bool gameCamera = true, orbitSet = false;
+    float target[3] = {0, 0, 0}, dist = 10, yaw = 0, pitch = 0.3f;
+    int hover = -1;
+};
+DiskModel g_disk;
 
 // The frame geometry's "mdl" (editorModelGeometry)
 struct ModelFrame {
@@ -92,38 +113,74 @@ void SelectNode(int i, bool reveal) {
     g_sel = i;
     g_reveal = reveal;
     if (reveal) g_tab = 0;
-    SendRaw("debugModelSelect(" + std::to_string(i) + ")");
+    if (g_isLive) SendRaw("debugModelSelect(" + std::to_string(i) + ")");
 }
 
 void Select(SelKind kind, int i) {
     g_selKind = kind;
     g_sel = i;
-    SendRaw("debugModelSelect(-1)");
+    if (g_isLive) SendRaw("debugModelSelect(-1)");
+}
+
+// A node shown or hidden (and its children), until the round starts again; not saved
+void SetVisible(int i, bool visible, bool children) {
+    ModelView &m = View();
+    if (g_isLive) {
+        SendRaw("debugModelNode(" + std::to_string(i) + ", " + (visible ? "true" : "false") + (children ? ", true)" : ")"));
+        if (i >= 0 && i < (int)m.nodes.size()) m.nodes[i].visible = visible; // until the next answer
+        return;
+    }
+    std::function<void(int, int)> set = [&](int n, int depth) {
+        if (n < 0 || n >= (int)m.nodes.size() || depth > 256) return;
+        m.nodes[n].visible = visible;
+        if (children)
+            for (int c : m.nodes[n].children) set(c, depth + 1);
+    };
+    set(i, 0);
+}
+
+// An animation on (from its start) or off
+void SetAnimOn(int i, bool on) {
+    ModelView::Anim &a = View().anims[i];
+    a.enabled = on;
+    if (on) a.time = 0, a.loop = 0;
+    if (g_isLive) SendRaw("debugModelAnim(" + std::to_string(i) + ", " + (on ? "true)" : "false)"));
+}
+
+void SetAnimTime(int i, float t) {
+    ModelView::Anim &a = View().anims[i];
+    a.time = t;
+    a.enabled = true;
+    if (!g_isLive) return;
+    char lua[96];
+    snprintf(lua, sizeof(lua), "debugModelAnimTime(%d, %g)", i, t);
+    SendRaw(lua);
+    g_modelAsked = ImGui::GetTime();
 }
 
 std::string NodeName(int i) {
-    if (i < 0 || i >= (int)g_model.nodes.size()) return "?";
-    const auto &n = g_model.nodes[i];
+    if (i < 0 || i >= (int)View().nodes.size()) return "?";
+    const auto &n = View().nodes[i];
     return n.name.empty() ? "node " + std::to_string(i) : n.name;
 }
 
 std::string MaterialName(int i) {
-    if (i < 0 || i >= (int)g_model.materials.size()) return "no material";
-    const auto &m = g_model.materials[i];
+    if (i < 0 || i >= (int)View().materials.size()) return "no material";
+    const auto &m = View().materials[i];
     return m.name.empty() ? "material " + std::to_string(i) : m.name;
 }
 
 std::string LightName(int i) {
-    if (i < 0 || i >= (int)g_model.lights.size()) return "?";
-    const auto &l = g_model.lights[i];
+    if (i < 0 || i >= (int)View().lights.size()) return "?";
+    const auto &l = View().lights[i];
     return l.name.empty() ? "light " + std::to_string(i) : l.name;
 }
 
 std::string NodeLabel(int i) {
-    const auto &n = g_model.nodes[i];
+    const auto &n = View().nodes[i];
     std::string label = NodeName(i);
-    if (n.mesh >= 0 && n.mesh < (int)g_model.meshes.size()) {
-        const auto &m = g_model.meshes[n.mesh];
+    if (n.mesh >= 0 && n.mesh < (int)View().meshes.size()) {
+        const auto &m = View().meshes[n.mesh];
         label += "  [" + (m.name.empty() ? "mesh " + std::to_string(n.mesh) : m.name) + "]";
     }
     if (n.light >= 0) label += "  [" + LightName(n.light) + "]";
@@ -136,8 +193,8 @@ bool Matches(int i, const std::string &filter, int depth = 0) {
     std::string low = NodeLabel(i);
     std::transform(low.begin(), low.end(), low.begin(), ::tolower);
     if (low.find(filter) != std::string::npos) return true;
-    for (int c : g_model.nodes[i].children)
-        if (c >= 0 && c < (int)g_model.nodes.size() && Matches(c, filter, depth + 1)) return true;
+    for (int c : View().nodes[i].children)
+        if (c >= 0 && c < (int)View().nodes.size() && Matches(c, filter, depth + 1)) return true;
     return false;
 }
 
@@ -168,8 +225,15 @@ void EulerToQuat(const float e[3], float q[4]) {
 // Changes sent to the game
 // ---------------------------------------------------------------------------
 
+// From disk: into the model read (what Save writes), the preview showing it at once
 void SendTRS(int i) {
-    const auto &n = g_model.nodes[i];
+    const auto &n = View().nodes[i];
+    if (!g_isLive) {
+        GltfNode &d = g_disk.doc.nodes[i];
+        memcpy(d.t, n.t, sizeof(d.t)), memcpy(d.r, n.r, sizeof(d.r)), memcpy(d.s, n.s, sizeof(d.s));
+        g_disk.doc.trs.insert(i);
+        return;
+    }
     char lua[320];
     snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)", i, n.t[0], n.t[1], n.t[2],
              n.r[0], n.r[1], n.r[2], n.r[3], n.s[0], n.s[1], n.s[2]);
@@ -178,7 +242,14 @@ void SendTRS(int i) {
 }
 
 void SendProps(int i) {
-    const auto &n = g_model.nodes[i];
+    const auto &n = View().nodes[i];
+    if (!g_isLive) {
+        GltfNode &d = g_disk.doc.nodes[i];
+        d.trans = n.trans, d.hasLayer = n.hasLayer, d.layer = n.layer;
+        d.shadow = n.shadow, d.ztest = n.ztest, d.zwrite = n.zwrite, d.outline = n.outline;
+        g_disk.doc.props.insert(i);
+        return;
+    }
     char lua[200];
     snprintf(lua, sizeof(lua), "debugModelNodeProps(%d, %d, %s, %s, %s, %s, %g)", i, n.trans,
              n.hasLayer ? std::to_string(n.layer).c_str() : "nil", n.shadow ? "true" : "false",
@@ -188,7 +259,15 @@ void SendProps(int i) {
 }
 
 void SendMaterial(int i) {
-    const auto &m = g_model.materials[i];
+    const auto &m = View().materials[i];
+    if (!g_isLive) {
+        GltfMaterial &d = g_disk.doc.materials[i];
+        memcpy(d.color, m.color, sizeof(d.color)), memcpy(d.emission, m.emission, sizeof(d.emission));
+        d.metallic = m.metallic, d.roughness = m.roughness, d.ao = m.ao, d.alpha = m.alpha, d.cutoff = m.cutoff;
+        d.doubleSided = m.doubleSided, d.unlit = m.unlit;
+        g_disk.doc.mats.insert(i);
+        return;
+    }
     char lua[400];
     snprintf(lua, sizeof(lua), "debugModelMaterial(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %d, %g, %s, %s)", i,
              m.color[0], m.color[1], m.color[2], m.color[3], m.emission[0], m.emission[1], m.emission[2], m.metallic,
@@ -198,7 +277,14 @@ void SendMaterial(int i) {
 }
 
 void SendLight(int i) {
-    const auto &l = g_model.lights[i];
+    const auto &l = View().lights[i];
+    if (!g_isLive) {
+        GltfLight &d = g_disk.doc.lights[i];
+        memcpy(d.rgb, l.rgb, sizeof(d.rgb));
+        d.intensity = l.intensity, d.range = l.range, d.inner = l.inner, d.outer = l.outer;
+        g_disk.doc.lightsChanged.insert(i);
+        return;
+    }
     char lua[220];
     snprintf(lua, sizeof(lua), "debugModelLight(%d, %g, %g, %g, %g, %g, %g, %g)", i, l.rgb[0], l.rgb[1], l.rgb[2],
              l.intensity, l.range, l.inner, l.outer);
@@ -211,16 +297,12 @@ void SendLight(int i) {
 // ---------------------------------------------------------------------------
 
 void NodeTree(int i, const std::string &filter, const std::vector<char> &onPath, int depth = 0) {
-    ModelView::Node &n = g_model.nodes[i];
+    ModelView::Node &n = View().nodes[i];
     if (depth > 256) return;
     ImGui::PushID(i);
     bool visible = n.visible;
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x, 0));
-    if (ImGui::Checkbox("##v", &visible)) {
-        bool children = ImGui::GetIO().KeyShift;
-        SendRaw("debugModelNode(" + std::to_string(i) + ", " + (visible ? "true" : "false") + (children ? ", true)" : ")"));
-        n.visible = visible; // until the next answer
-    }
+    if (ImGui::Checkbox("##v", &visible)) SetVisible(i, visible, ImGui::GetIO().KeyShift);
     ImGui::PopStyleVar();
     ImGui::SetItemTooltip(n.mesh < 0 ? "Shown or hidden until the round starts again (no mesh of its own; Shift: its children too)"
                                      : "Shown or hidden until the round starts again (Shift: its children too)");
@@ -241,14 +323,14 @@ void NodeTree(int i, const std::string &filter, const std::vector<char> &onPath,
     }
     if (open) {
         for (int c : n.children)
-            if (c >= 0 && c < (int)g_model.nodes.size() && (filter.empty() || Matches(c, filter))) NodeTree(c, filter, onPath, depth + 1);
+            if (c >= 0 && c < (int)View().nodes.size() && (filter.empty() || Matches(c, filter))) NodeTree(c, filter, onPath, depth + 1);
         ImGui::TreePop();
     }
     ImGui::PopID();
 }
 
 void NodesTab() {
-    ModelView &m = g_model;
+    ModelView &m = View();
     float em = ImGui::GetFontSize();
     static std::string filter;
     ImGui::SetNextItemWidth(std::min(em * 12, ImGui::GetContentRegionAvail().x));
@@ -292,10 +374,10 @@ void NodesTab() {
 // The nodes whose mesh uses a material
 std::vector<int> NodesWithMaterial(int mat) {
     std::vector<int> out;
-    for (int i = 0; i < (int)g_model.nodes.size(); i++) {
-        int me = g_model.nodes[i].mesh;
-        if (me < 0 || me >= (int)g_model.meshes.size()) continue;
-        for (const auto &p : g_model.meshes[me].prims)
+    for (int i = 0; i < (int)View().nodes.size(); i++) {
+        int me = View().nodes[i].mesh;
+        if (me < 0 || me >= (int)View().meshes.size()) continue;
+        for (const auto &p : View().meshes[me].prims)
             if (p.material == mat) {
                 out.push_back(i);
                 break;
@@ -305,7 +387,7 @@ std::vector<int> NodesWithMaterial(int mat) {
 }
 
 void MaterialsTab() {
-    ModelView &m = g_model;
+    ModelView &m = View();
     if (m.materials.empty()) ImGui::TextDisabled("None.");
     if (!ImGui::BeginChild("materials")) {
         ImGui::EndChild();
@@ -327,7 +409,7 @@ void MaterialsTab() {
 }
 
 void AnimationsTab() {
-    ModelView &m = g_model;
+    ModelView &m = View();
     float em = ImGui::GetFontSize();
     if (m.anims.empty()) {
         ImGui::TextDisabled("None.");
@@ -342,8 +424,8 @@ void AnimationsTab() {
         ModelView::Anim &a = m.anims[i];
         ImGui::PushID(i);
         if (i > 0) ImGui::Spacing();
-        if (ImGui::Checkbox("##on", &a.enabled))
-            SendRaw("debugModelAnim(" + std::to_string(i) + ", " + (a.enabled ? "true)" : "false)"));
+        bool on = a.enabled;
+        if (ImGui::Checkbox("##on", &on)) SetAnimOn(i, on);
         ImGui::SetItemTooltip("On: it starts again from its start. Off: what it moves goes back to rest.");
         ImGui::SameLine();
         ImGui::TextUnformatted(a.name.empty() ? ("animation " + std::to_string(i)).c_str() : a.name.c_str());
@@ -363,22 +445,16 @@ void AnimationsTab() {
         float t = a.time;
         char fmt[48];
         snprintf(fmt, sizeof(fmt), "%%.2f / %.2f s", a.duration);
-        if (ImGui::SliderFloat("##t", &t, 0, std::max(a.duration, 0.01f), fmt)) {
-            a.time = t;
-            a.enabled = true;
-            char lua[96];
-            snprintf(lua, sizeof(lua), "debugModelAnimTime(%d, %g)", i, t);
-            SendRaw(lua);
-            g_modelAsked = ImGui::GetTime();
-        }
-        ImGui::SetItemTooltip("Drag to put the animation at a time (with the game paused it stays there).");
+        if (ImGui::SliderFloat("##t", &t, 0, std::max(a.duration, 0.01f), fmt)) SetAnimTime(i, t);
+        ImGui::SetItemTooltip(g_isLive ? "Drag to put the animation at a time (with the game paused it stays there)."
+                                       : "Drag to put the animation at a time (paused, it stays there).");
         ImGui::PopID();
     }
     ImGui::EndChild();
 }
 
 void LightsTab() {
-    ModelView &m = g_model;
+    ModelView &m = View();
     if (m.lights.empty()) {
         ImGui::TextDisabled("None (KHR_lights_punctual).");
         return;
@@ -405,7 +481,7 @@ void Row(const char *label, float labelWidth) {
 }
 
 void LightEditor(int i, float lw) {
-    ModelView::Light &l = g_model.lights[i];
+    ModelView::Light &l = View().lights[i];
     ImGui::PushID("light");
     ImGui::PushID(i);
     ImGui::TextDisabled("%s light%s", kLightTypes[std::clamp(l.type, 0, 2)], l.animated ? "; an animation changes it (it wins)" : "");
@@ -434,7 +510,7 @@ void LightEditor(int i, float lw) {
 }
 
 void NodeInspector(int i, float lw) {
-    ModelView &m = g_model;
+    ModelView &m = View();
     ModelView::Node &n = m.nodes[i];
     float em = ImGui::GetFontSize();
     ImGui::Text("%s", NodeName(i).c_str());
@@ -445,15 +521,11 @@ void NodeInspector(int i, float lw) {
         if (ImGui::SmallButton(("Parent: " + NodeName(n.parent)).c_str())) SelectNode(n.parent, true);
     }
     bool visible = n.visible;
-    if (ImGui::Checkbox("Visible", &visible)) {
-        SendRaw("debugModelNode(" + std::to_string(i) + ", " + (visible ? "true" : "false") + ")");
-        n.visible = visible;
-    }
-    ImGui::SetItemTooltip("Until the round starts again; not saved.");
+    if (ImGui::Checkbox("Visible", &visible)) SetVisible(i, visible, false);
+    ImGui::SetItemTooltip(g_isLive ? "Until the round starts again; not saved." : "In the preview; not saved.");
     if (!n.children.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(n.visible ? "Hide with its children" : "Show with its children"))
-            SendRaw("debugModelNode(" + std::to_string(i) + ", " + (n.visible ? "false" : "true") + ", true)");
+        if (ImGui::SmallButton(n.visible ? "Hide with its children" : "Show with its children")) SetVisible(i, !n.visible, true);
     }
 
     ImGui::SeparatorText("Transform");
@@ -557,7 +629,7 @@ void NodeInspector(int i, float lw) {
 }
 
 void MaterialInspector(int i, float lw) {
-    ModelView &m = g_model;
+    ModelView &m = View();
     ModelView::Material &mt = m.materials[i];
     ImGui::Text("%s", MaterialName(i).c_str());
     ImGui::SameLine();
@@ -612,8 +684,8 @@ void LightInspector(int i, float lw) {
     ImGui::SameLine();
     ImGui::TextDisabled("light %d", i);
     LightEditor(i, lw);
-    for (int n = 0; n < (int)g_model.nodes.size(); n++)
-        if (g_model.nodes[n].light == i) {
+    for (int n = 0; n < (int)View().nodes.size(); n++)
+        if (View().nodes[n].light == i) {
             ImGui::PushID(n);
             if (ImGui::SmallButton(("Its node: " + NodeName(n)).c_str())) SelectNode(n, true);
             ImGui::PopID();
@@ -655,8 +727,9 @@ void ReadFloats(const IniFile &ini, const char *section, const char *key, float 
         if (s.lower == section && s.Floats(key, v, count)) std::copy(v, v + count, out);
 }
 
-void PlacementSection(float lw) {
-    SourceFile *sf = StageSource();
+// sf: the def placing the model (live: the stage in the match, whose game shows each change;
+// from disk: its text changed only, the preview reading it)
+void PlacementSection(SourceFile *sf, float lw) {
     if (!sf) return;
     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     if (!ImGui::CollapsingHeader("Placement (the stage's def)")) return;
@@ -717,7 +790,8 @@ void PlacementSection(float lw) {
                 if (ImGui::DragFloat("##envi", &intensity, 0.01f, 0, FLT_MAX, "%.2f"))
                     changed = SetDefField(*sf, "model", "environmentintensity", rounded(&intensity, 1, 0.01f));
             }
-    if (changed) StageEdited(*sf);
+    if (changed && g_isLive) StageEdited(*sf);
+    else if (changed) sf->version++;
 }
 
 } // namespace
@@ -727,11 +801,11 @@ void PlacementSection(float lw) {
 // ---------------------------------------------------------------------------
 
 void OnModel(const Json &j) {
-    ModelView &m = g_model;
+    ModelView &m = g_live;
     m.known = true;
     m.has = !j["none"].truthy();
     std::string file = j["file"].str();
-    if (file != m.file && !m.file.empty()) {
+    if (file != m.file && !m.file.empty() && g_isLive) {
         g_selKind = kNone, g_sel = -1;
         SendRaw("debugModelSelect(-1)");
     }
@@ -751,7 +825,7 @@ void OnModel(const Json &j) {
         m.anims.push_back(v);
     }
     // While a value is dragged here, this window's values stay
-    if (ImGui::IsAnyItemActive() && j["nodes"].items.size() == m.nodes.size()) return;
+    if (g_isLive && ImGui::IsAnyItemActive() && j["nodes"].items.size() == m.nodes.size()) return;
     m.scenes.clear();
     for (const auto &s : j["scenes"].items) {
         ModelView::Scene v;
@@ -822,6 +896,7 @@ void OnModel(const Json &j) {
         v.animated = l["animated"].truthy();
         m.lights.push_back(v);
     }
+    if (!g_isLive) return;
     if (g_selKind == kNode && g_sel >= (int)m.nodes.size()) g_selKind = kNone;
     if (g_selKind == kMaterial && g_sel >= (int)m.materials.size()) g_selKind = kNone;
     if (g_selKind == kLight && g_sel >= (int)m.lights.size()) g_selKind = kNone;
@@ -844,7 +919,7 @@ void ReadModelGeometry(const Json &mdl) {
     floats(mdl["hp"], f.hp);
     // A node picked on the game: selected here
     if (f.ok && f.picked != g_pickedSeen) {
-        if (g_pickedSeen >= 0 && f.sel >= 0) {
+        if (g_pickedSeen >= 0 && f.sel >= 0 && g_isLive) {
             g_selKind = kNode;
             g_sel = f.sel;
             g_reveal = true;
@@ -877,6 +952,12 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
                   const std::function<ImVec2(ImVec2)> &toPicture) {
     const ModelFrame &f = g_mframe;
     if (!f.ok) return false;
+    // The names are the match's model's, whatever the window shows
+    struct Restore {
+        ModelView *view = g_view;
+        ~Restore() { g_view = view; }
+    } restore;
+    g_view = &g_live;
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
     auto drawBox = [&](const std::vector<float> &seg, const std::vector<float> &pt, ImU32 col, float t, int node) {
         float minX = FLT_MAX, minY = FLT_MAX;
@@ -891,7 +972,7 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             draw->AddQuad(ImVec2(p.x, p.y - r), ImVec2(p.x + r, p.y), ImVec2(p.x, p.y + r), ImVec2(p.x - r, p.y), col, t);
             minX = p.x + r, minY = p.y - r;
         }
-        if (minX < FLT_MAX && node >= 0 && node < (int)g_model.nodes.size())
+        if (minX < FLT_MAX && node >= 0 && node < (int)View().nodes.size())
             draw->AddText(ImVec2(minX + 4, minY + 2), col, NodeName(node).c_str());
     };
     if (g_modelPick && f.hover >= 0 && f.hover != f.sel) drawBox(f.hb, f.hp, IM_COL32(255, 255, 255, 200), thick, f.hover);
@@ -917,7 +998,7 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             askedAt = m;
             asked = ImGui::GetTime();
         }
-        if (f.hover >= 0 && f.hover < (int)g_model.nodes.size())
+        if (f.hover >= 0 && f.hover < (int)View().nodes.size())
             ImGui::SetTooltip("%s\nClick: select it (window Model)", NodeLabel(f.hover).c_str());
     } else if (wasHovered) {
         SendRaw("debugModelPick()");
@@ -928,81 +1009,324 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 }
 
 // ---------------------------------------------------------------------------
-// The windows
+// A model from disk: read, shown by the debugger, its animations played
 // ---------------------------------------------------------------------------
 
-std::string ModelFileInUse() { return g_model.known && g_model.has ? g_model.file : ""; }
+namespace {
 
-// In the Stage window: what the model is, and the way to the Model window
-void ModelSection(bool stageHasModel) {
-    if (!stageHasModel && !g_mframe.ok) return;
-    ImGui::AlignTextToFramePadding();
-    if (g_model.known && g_model.has)
-        ImGui::TextDisabled("3D model: %s, %zu nodes", g_model.file.c_str(), g_model.nodes.size());
-    else
-        ImGui::TextDisabled("3D model");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Open the Model window")) ShowWindow("Model");
+std::string g_wanted; // a model file opened from Explorer, "" for the stage's
+
+// The same file named from two folders: one path ends the other
+bool SameFile(const std::string &a, const std::string &b) {
+    std::string x = NormPath(a), y = NormPath(b);
+    if (x.size() < y.size()) std::swap(x, y);
+    return !y.empty() && x.compare(x.size() - y.size(), y.size(), y) == 0 &&
+           (x.size() == y.size() || x[x.size() - y.size() - 1] == '/');
 }
 
-void ModelWindow() {
-    if (!BeginTool("Model")) return;
-    ModelView &m = g_model;
-    float em = ImGui::GetFontSize();
-    // Asked again while it is shown
-    if (Connected() && g_canTrace && ImGui::GetTime() - g_modelAsked > 0.4) {
-        g_modelAsked = ImGui::GetTime();
-        SendRaw("ikdbg.model()");
-    }
-    if (!Connected() || !m.known) {
-        ImGui::TextDisabled(Connected() ? "Asking the game..." : "Launch the game (Launch, on the toolbar), in a match.");
-        ImGui::End();
-        return;
-    }
-    if (!m.has) {
-        ImGui::TextDisabled("The stage in use has no 3D model ([BGdef] model = file.glb).");
-        ImGui::End();
-        return;
-    }
-    SourceFile *sf = StageSource();
-    bool dirty = g_mframe.ok ? g_mframe.dirty : m.dirty;
-    bool defDirty = sf && sf->Dirty();
+// The model a stage's def names ([BGdef] model), as found next to it; "" without one
+std::string ModelOfDef(const std::string &def) {
+    static std::string lastDef, lastText, lastModel;
+    if (def.empty() || !GameFileExists(def)) return "";
+    SourceFile &sf = LoadSource(def);
+    if (def == lastDef && sf.text == lastText) return lastModel;
+    lastDef = def, lastText = sf.text, lastModel.clear();
+    IniFile ini;
+    Ini_Parse(sf.text, ini);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef")
+            if (const IniField *f = s.Field("model")) {
+                std::string v = f->value;
+                if (v.size() >= 2 && v.front() == '"' && v.back() == '"') v = v.substr(1, v.size() - 2);
+                lastModel = StageFile(def, v);
+            }
+    return lastModel;
+}
 
-    // Header: the file, Save, Revert, pick
-    std::string name = m.file.substr(m.file.find_last_of("/\\") + 1);
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%s%s", name.c_str(), dirty ? " *" : "");
-    ImGui::SetItemTooltip("%s\n%zu nodes, %zu meshes, %zu materials, %zu animations, %zu lights", m.file.c_str(),
-                          m.nodes.size(), m.meshes.size(), m.materials.size(), m.anims.size(), m.lights.size());
+void FillDiskView() {
+    const GltfDoc &d = g_disk.doc;
+    ModelView &v = g_diskView;
+    v = ModelView();
+    v.known = v.has = true;
+    v.file = g_disk.path;
+    for (const GltfScene &s : d.scenes) v.scenes.push_back({s.name, s.roots});
+    for (const GltfNode &n : d.nodes) {
+        ModelView::Node o;
+        o.name = n.name, o.mesh = n.mesh, o.light = n.light, o.parent = n.parent, o.children = n.children;
+        memcpy(o.t, n.t, sizeof(o.t)), memcpy(o.r, n.r, sizeof(o.r)), memcpy(o.s, n.s, sizeof(o.s));
+        o.trans = n.trans, o.hasLayer = n.hasLayer, o.layer = n.layer;
+        o.shadow = n.shadow, o.ztest = n.ztest, o.zwrite = n.zwrite, o.outline = n.outline;
+        v.nodes.push_back(o);
+    }
+    for (const GltfMesh &m : d.meshes) {
+        ModelView::Mesh o;
+        o.name = m.name;
+        for (const GltfPrim &p : m.prims) o.prims.push_back({p.material, (int)(p.pos.size() / 3), (int)p.idx.size(), p.mode});
+        v.meshes.push_back(o);
+    }
+    for (const GltfMaterial &m : d.materials) {
+        ModelView::Material o;
+        o.name = m.name;
+        memcpy(o.color, m.color, sizeof(o.color)), memcpy(o.emission, m.emission, sizeof(o.emission));
+        o.metallic = m.metallic, o.roughness = m.roughness, o.ao = m.ao, o.cutoff = m.cutoff;
+        o.alpha = m.alpha, o.tex = m.tex, o.doubleSided = m.doubleSided, o.unlit = m.unlit;
+        v.materials.push_back(o);
+    }
+    for (const GltfLight &l : d.lights) {
+        ModelView::Light o;
+        o.name = l.name, o.type = l.type, o.intensity = l.intensity, o.range = l.range, o.inner = l.inner, o.outer = l.outer;
+        memcpy(o.rgb, l.rgb, sizeof(o.rgb));
+        v.lights.push_back(o);
+    }
+    for (const GltfAnim &a : d.anims) {
+        ModelView::Anim o;
+        o.name = a.name, o.duration = a.duration, o.enabled = true, o.channels = (int)a.channels.size();
+        v.anims.push_back(o);
+    }
+}
+
+void DiskLoad(const std::string &path, const std::string &def) {
+    DiskModel &d = g_disk;
+    Gltf_Load(d.doc, GamePath(path), DecodeImage);
+    d.path = path, d.def = def;
+    d.version++;
+    d.mtime = FileTime(GamePath(path));
+    d.orbitSet = false;
+    d.gameCamera = !def.empty();
+    d.hover = -1;
+    FillDiskView();
+    g_selKind = kNone, g_sel = -1;
+}
+
+// The model read again when its file changed on disk (and nothing was changed here)
+void DiskEnsure(const std::string &path, const std::string &def) {
+    DiskModel &d = g_disk;
+    if (!SameFile(path, d.path) || d.path.empty()) {
+        DiskLoad(path, def);
+        return;
+    }
+    d.def = def;
+    if (ImGui::GetTime() - d.checked < 1) return;
+    d.checked = ImGui::GetTime();
+    FILETIME t = FileTime(GamePath(path));
+    if (CompareFileTime(&t, &d.mtime) != 0 && !d.doc.Dirty()) DiskLoad(path, def);
+}
+
+// The animations on move on; every node posed
+void DiskStep() {
+    DiskModel &d = g_disk;
+    ModelView &v = g_diskView;
+    float dt = ImGui::GetIO().DeltaTime;
+    std::vector<float> times(v.anims.size(), -1.0f);
+    for (size_t i = 0; i < v.anims.size(); i++) {
+        ModelView::Anim &a = v.anims[i];
+        if (!a.enabled) continue;
+        if (d.playing && !ImGui::IsAnyItemActive()) a.time += dt;
+        if (a.duration > 0 && a.time >= a.duration) a.time = fmodf(a.time, a.duration), a.loop++;
+        times[i] = a.time;
+    }
+    for (ModelView::Node &n : v.nodes) n.animated = false;
+    for (size_t i = 0; i < d.doc.anims.size() && i < v.anims.size(); i++)
+        if (v.anims[i].enabled)
+            for (const auto &c : d.doc.anims[i].channels)
+                if (c.node >= 0 && c.node < (int)v.nodes.size()) v.nodes[c.node].animated = true;
+    Gltf_Pose(d.doc, times, d.world);
+}
+
+// The def's placement of the model and its camera
+struct Placement {
+    float offset[3] = {0, 0, 0}, scale[3] = {1, 1, 1}, fov = 40, zNear = 0.1f, zFar = 10000;
+    bool environment = false;
+};
+
+Placement DefPlacement(const std::string &def) {
+    Placement p;
+    if (def.empty()) return p;
+    const IniFile &ini = StageIni(LoadSource(def));
+    ReadFloats(ini, "model", "offset", p.offset, 3);
+    ReadFloats(ini, "model", "scale", p.scale, 3);
+    ReadFloats(ini, "camera", "fov", &p.fov, 1);
+    ReadFloats(ini, "camera", "near", &p.zNear, 1);
+    ReadFloats(ini, "camera", "far", &p.zFar, 1);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "model" && s.Field("environment")) p.environment = true;
+    return p;
+}
+
+// The meshes' middle and size, without a node much bigger than the others (a sky around them)
+void SceneBounds(float centre[3], float &radius) {
+    const GltfDoc &doc = g_disk.doc;
+    struct Box {
+        float lo[3], hi[3], size;
+    };
+    std::vector<Box> boxes;
+    for (int i = 0; i < (int)doc.nodes.size(); i++) {
+        float c[8][3];
+        if (doc.nodes[i].mesh < 0 || !Gltf_Corners(doc, g_disk.world, i, c)) continue;
+        Box b{{FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX}, 0};
+        for (auto &p : c)
+            for (int a = 0; a < 3; a++) b.lo[a] = std::min(b.lo[a], p[a]), b.hi[a] = std::max(b.hi[a], p[a]);
+        b.size = std::hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]);
+        boxes.push_back(b);
+    }
+    centre[0] = centre[1] = centre[2] = 0;
+    radius = 1;
+    if (boxes.empty()) return;
+    std::vector<float> sizes;
+    for (const Box &b : boxes) sizes.push_back(b.size);
+    std::nth_element(sizes.begin(), sizes.begin() + sizes.size() / 2, sizes.end());
+    float median = sizes[sizes.size() / 2], lo[3] = {FLT_MAX, FLT_MAX, FLT_MAX}, hi[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+    for (const Box &b : boxes) {
+        if (boxes.size() > 2 && b.size > median * 5) continue;
+        for (int a = 0; a < 3; a++) lo[a] = std::min(lo[a], b.lo[a]), hi[a] = std::max(hi[a], b.hi[a]);
+    }
+    if (lo[0] > hi[0]) return;
+    for (int a = 0; a < 3; a++) centre[a] = (lo[a] + hi[a]) / 2;
+    radius = std::max(1e-3f, std::hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2);
+}
+
+void FitOrbit(float fov) {
+    DiskModel &d = g_disk;
+    float radius;
+    SceneBounds(d.target, radius);
+    d.dist = radius / std::max(0.05f, tanf(fov / kDeg / 2)) * 1.1f;
+    d.yaw = 0.5f, d.pitch = 0.35f;
+    d.orbitSet = true;
+    d.gameCamera = false;
+}
+
+// From the game's camera to turning around: from where it looks, at the model's depth
+void OrbitFromGameCamera(const Placement &p) {
+    DiskModel &d = g_disk;
+    float eye[3];
+    for (int a = 0; a < 3; a++) eye[a] = p.scale[a] != 0 ? -p.offset[a] / p.scale[a] : 0;
+    d.dist = p.scale[2] != 0 && p.offset[2] != 0 ? std::fabs(p.offset[2] / p.scale[2]) : 10;
+    d.target[0] = eye[0], d.target[1] = eye[1], d.target[2] = eye[2] - d.dist;
+    d.yaw = 0, d.pitch = 0;
+    d.orbitSet = true;
+    d.gameCamera = false;
+}
+
+void Matrices(const Placement &p, float aspect, GltfMat &proj, GltfMat &view) {
+    DiskModel &d = g_disk;
+    if (d.gameCamera) {
+        float none[4] = {0, 0, 0, 1};
+        view = Gltf_Compose(p.offset, none, p.scale);
+        proj = Perspective(p.fov / kDeg, aspect, std::max(1e-4f, p.zNear), std::max(p.zNear * 2, p.zFar));
+        return;
+    }
+    float cp = cosf(d.pitch);
+    float eye[3] = {d.target[0] + d.dist * cp * sinf(d.yaw), d.target[1] + d.dist * sinf(d.pitch), d.target[2] + d.dist * cp * cosf(d.yaw)};
+    view = LookAt(eye, d.target);
+    float c[3], radius;
+    SceneBounds(c, radius);
+    proj = Perspective(p.fov / kDeg, aspect, std::max(1e-3f, d.dist * 0.002f), d.dist * 20 + radius * 40);
+}
+
+// The preview: drawn by the debugger; the left button turns around (a click picks a node), the
+// right or middle one moves, the wheel comes nearer
+void Preview(float height) {
+    DiskModel &d = g_disk;
+    ModelView &v = g_diskView;
+    Placement p = DefPlacement(d.def);
+    if (!d.orbitSet && !d.gameCamera) FitOrbit(p.fov);
+
+    ImGui::BeginDisabled(d.def.empty());
+    if (ImGui::RadioButton("The game's camera", d.gameCamera)) d.gameCamera = true;
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(d.def.empty() ? "No stage's def names this model."
+                                        : "As the stage's camera sees the model at its start ([Model] offset and scale, fov)");
     ImGui::SameLine();
-    ImGui::BeginDisabled(!dirty && !defDirty);
-    bool save = ImGui::Button("Save");
+    if (ImGui::RadioButton("Around", !d.gameCamera)) {
+        if (d.gameCamera && !d.def.empty()) OrbitFromGameCamera(p);
+        d.gameCamera = false;
+    }
+    ImGui::SetItemTooltip("Drag: turn around; right or middle drag: move; wheel: nearer or farther; double click: all of it");
+    ImGui::SameLine();
+    if (ImGui::Button(d.playing ? "Pause" : "Play")) d.playing = !d.playing;
+    ImGui::SetItemTooltip("The animations that are on");
+    ImGui::SameLine();
+    if (ImGui::Button("Fit")) FitOrbit(p.fov);
+    int lighting = !d.doc.lights.empty() ? 1 : p.environment ? 2 : 0;
+    ImGui::SameLine();
+    ImGui::TextDisabled(lighting ? "(lights: a rough look)" : "(unlit, as the game draws it)");
+    ImGui::SetItemTooltip(lighting ? "The colours and lights as the debugger can show them; the game's shading is finer."
+                                   : "The stage has no light and no environment map: the game draws its colours as they are.");
+
+    ImVec2 size(ImGui::GetContentRegionAvail().x, std::max(height - ImGui::GetFrameHeightWithSpacing(), 32.0f));
+    GltfMat proj, view;
+    Matrices(p, size.x / std::max(1.0f, size.y), proj, view);
+    std::vector<char> visible;
+    for (const auto &n : v.nodes) visible.push_back(n.visible);
+    ModelPreviewArgs a;
+    a.doc = &d.doc, a.version = d.version, a.world = &d.world, a.visible = &visible;
+    a.proj = proj, a.view = view;
+    a.w = (int)size.x, a.h = (int)size.y;
+    a.selected = g_selKind == kNode ? g_sel : -1;
+    a.hover = d.hover;
+    a.lighting = lighting;
+    unsigned tex = DrawModelPreview(a);
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    if (!tex) {
+        ImGui::Dummy(size);
+        ImGui::GetWindowDrawList()->AddText(p0, ImGui::GetColorU32(ImGuiCol_TextDisabled), "This OpenGL has no framebuffers: no preview.");
+        return;
+    }
+    ImGui::Image(ImTextureRef((ImTextureID)(intptr_t)tex), size, ImVec2(0, 1), ImVec2(1, 0));
+    // A button over it takes the mouse (drags turn the camera, not the window)
+    ImGui::SetCursorScreenPos(p0);
+    ImGui::InvisibleButton("##view", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight |
+                                               ImGuiButtonFlags_MouseButtonMiddle);
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
+    bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
     ImGuiIO &io = ImGui::GetIO();
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
-        save = dirty || defDirty;
-    ImGui::SetItemTooltip("Writes the model's changes into its file (a .bak of it the first time),\n"
-                          "and the stage's def when its placement changed.");
-    if (save) {
-        if (dirty) Exec("local ok, err = debugModelSave() if not ok then error(err, 0) end");
-        if (defDirty) SaveSource(*sf);
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!dirty);
-    if (ImGui::Button("Revert")) {
-        SendRaw("debugModelRevert()");
-        if (sf) ReloadStage(*sf, true);
-    }
-    ImGui::SetItemTooltip("The game reads the model's file again (the changes not saved are lost).");
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Pick on the Game window", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
-    ImGui::SetItemTooltip("On the Game window the mouse shows the node under it; a click selects it.");
 
-    float lw = em * 6.5f;
-    PlacementSection(lw);
+    // The node under the mouse: the ray through it, in the world
+    GltfMat inv = Gltf_Invert(Gltf_Mul(proj, view));
+    auto pickAt = [&](ImVec2 m) {
+        float nx = (m.x - p0.x) / size.x * 2 - 1, ny = 1 - (m.y - p0.y) / size.y * 2;
+        float pts[2][3];
+        for (int k = 0; k < 2; k++) {
+            float z = k ? 1.0f : -1.0f, in[4] = {nx, ny, z, 1}, out[4] = {0, 0, 0, 0};
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++) out[r] += inv[c * 4 + r] * in[c];
+            for (int a2 = 0; a2 < 3; a2++) pts[k][a2] = out[3] != 0 ? out[a2] / out[3] : out[a2];
+        }
+        return Gltf_Pick(d.doc, d.world, visible, pts[0], pts[1]);
+    };
+    static bool dragged;
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) dragged = false;
+    if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)) dragged = true;
+    if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) FitOrbit(p.fov);
+    bool panning = active && (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 2) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 2));
+    bool moving = (dragged && active && ImGui::IsMouseDown(ImGuiMouseButton_Left)) || panning || (hovered && io.MouseWheel != 0);
+    if (moving && d.gameCamera) OrbitFromGameCamera(p);
+    if (moving) {
+        if (hovered && io.MouseWheel != 0) d.dist *= powf(0.85f, io.MouseWheel);
+        if (dragged && active && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            d.yaw -= io.MouseDelta.x * 0.01f;
+            d.pitch = std::clamp(d.pitch + io.MouseDelta.y * 0.01f, -1.55f, 1.55f);
+        }
+        if (panning) {
+            // Along the screen: the camera's right and up, as far as the mouse at the target's depth
+            float k = d.dist * 2 * tanf(p.fov / kDeg / 2) / size.y;
+            float right[3] = {view[0], view[4], view[8]}, up[3] = {view[1], view[5], view[9]};
+            for (int a2 = 0; a2 < 3; a2++) d.target[a2] += (-io.MouseDelta.x * right[a2] + io.MouseDelta.y * up[a2]) * k;
+        }
+    }
+    if (hovered && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) d.hover = pickAt(io.MousePos);
+    else if (!hovered) d.hover = -1;
+    if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !dragged) {
+        int hit = pickAt(io.MousePos);
+        if (hit >= 0) SelectNode(hit, true);
+    }
+    if (hovered && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) ImGui::SetTooltip("%s", NodeLabel(d.hover).c_str());
+}
 
-    // The lists, and the inspector beside them (under them when narrow)
+// The lists (nodes, materials, animations, lights) and the inspector beside them, or under them
+void ListsAndInspector(float lw) {
+    ModelView &m = View();
+    float em = ImGui::GetFontSize();
     bool wide = ImGui::GetContentRegionAvail().x > em * 34;
     float h = ImGui::GetContentRegionAvail().y;
     auto lists = [&]() {
@@ -1028,7 +1352,9 @@ void ModelWindow() {
         if (g_selKind == kNode && g_sel >= 0 && g_sel < (int)m.nodes.size()) NodeInspector(g_sel, lw);
         else if (g_selKind == kMaterial && g_sel >= 0 && g_sel < (int)m.materials.size()) MaterialInspector(g_sel, lw);
         else if (g_selKind == kLight && g_sel >= 0 && g_sel < (int)m.lights.size()) LightInspector(g_sel, lw);
-        else ImGui::TextDisabled("Pick a node, a material or a light in the lists, or a node on the Game window.");
+        else
+            ImGui::TextDisabled(g_isLive ? "Pick a node, a material or a light in the lists, or a node on the Game window."
+                                         : "Pick a node, a material or a light in the lists, or a node on the preview.");
     };
     if (wide) {
         if (ImGui::BeginTable("model", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImVec2(0, h))) {
@@ -1049,6 +1375,150 @@ void ModelWindow() {
         if (ImGui::BeginChild("inspector")) inspector();
         ImGui::EndChild();
     }
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// The windows
+// ---------------------------------------------------------------------------
+
+std::string ModelFileInUse() { return g_live.known && g_live.has ? g_live.file : ""; }
+
+void ModelOpenFile(const std::string &path) {
+    g_wanted = path;
+    ShowWindow("Model");
+}
+
+// In the Stage window: what the model is, and the way to the Model window
+void ModelSection(bool stageHasModel) {
+    if (!stageHasModel && !g_mframe.ok) return;
+    ImGui::AlignTextToFramePadding();
+    if (g_live.known && g_live.has)
+        ImGui::TextDisabled("3D model: %s, %zu nodes", g_live.file.c_str(), g_live.nodes.size());
+    else
+        ImGui::TextDisabled("3D model");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Open the Model window")) {
+        g_wanted.clear();
+        ShowWindow("Model");
+    }
+}
+
+void ModelWindow() {
+    if (!BeginTool("Model")) return;
+    float em = ImGui::GetFontSize(), lw = em * 6.5f;
+    // The match's model, asked again while the window is shown
+    if (Connected() && g_canTrace && ImGui::GetTime() - g_modelAsked > 0.4) {
+        g_modelAsked = ImGui::GetTime();
+        SendRaw("ikdbg.model()");
+    }
+    if (Connected() && g_canTrace && !g_live.known) {
+        ImGui::TextDisabled("Asking the game...");
+        ImGui::End();
+        return;
+    }
+    // Which model: the one opened from Explorer, else the stage's (the match's, else the toolbar's);
+    // live when it is the match's
+    bool liveHas = Connected() && g_live.known && g_live.has;
+    std::string path, def;
+    bool live = false;
+    if (!g_wanted.empty()) {
+        live = liveHas && SameFile(g_wanted, g_live.file);
+        if (!live) path = g_wanted, def = StageDefOfModel(g_wanted);
+    } else if (liveHas) {
+        live = true;
+    } else {
+        def = !g_stageDef.empty() ? g_stageDef : SettingsStageDef();
+        path = ModelOfDef(def);
+    }
+    if (live != g_isLive) g_selKind = kNone, g_sel = -1;
+    g_isLive = live;
+    g_view = live ? &g_live : &g_diskView;
+    if (!live) {
+        if (path.empty()) {
+            ImGui::TextDisabled("The stage (%s) has no 3D model ([BGdef] model = file.glb).", def.empty() ? "none" : def.c_str());
+            ImGui::TextDisabled("A .glb or .gltf file opened in Explorer is shown here.");
+            ImGui::End();
+            return;
+        }
+        DiskEnsure(path, def);
+        if (!g_disk.doc.error.empty() && g_disk.doc.nodes.empty()) {
+            ImGui::TextColored(Ink(kRed), "%s", g_disk.doc.error.c_str());
+            ImGui::End();
+            return;
+        }
+        DiskStep();
+    }
+    ModelView &m = View();
+    SourceFile *sf = live ? StageSource() : g_disk.def.empty() ? nullptr : &LoadSource(g_disk.def);
+    bool dirty = live ? (g_mframe.ok ? g_mframe.dirty : m.dirty) : g_disk.doc.Dirty();
+    bool defDirty = sf && sf->Dirty();
+
+    // Header: the file, where it comes from, Save, Revert, pick
+    std::string name = m.file.substr(m.file.find_last_of("/\\") + 1);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s%s", name.c_str(), dirty ? " *" : "");
+    ImGui::SetItemTooltip("%s\n%zu nodes, %zu meshes, %zu materials, %zu animations, %zu lights", m.file.c_str(),
+                          m.nodes.size(), m.meshes.size(), m.materials.size(), m.anims.size(), m.lights.size());
+    ImGui::SameLine();
+    ImGui::TextColored(live ? Ink(kGreen) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), live ? "in the match" : "from disk");
+    ImGui::SetItemTooltip(live ? "The game's model: every change shows on the game."
+                               : "Read from its file and drawn here; changes go to the file with Save.");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!dirty && !defDirty);
+    bool save = ImGui::Button("Save");
+    ImGuiIO &io = ImGui::GetIO();
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+        save = dirty || defDirty;
+    ImGui::SetItemTooltip("Writes the model's changes into its file (a .bak of it the first time),\n"
+                          "and the stage's def when its placement changed.");
+    if (save) {
+        if (dirty && live) Exec("local ok, err = debugModelSave() if not ok then error(err, 0) end");
+        if (dirty && !live) {
+            std::string error;
+            if (Gltf_Save(g_disk.doc, &error)) {
+                g_disk.mtime = FileTime(GamePath(g_disk.path));
+                Log(LogLine::Info, "Saved " + g_disk.path);
+            } else {
+                Log(LogLine::Error, g_disk.path + ": " + error);
+            }
+        }
+        if (defDirty) SaveSource(*sf);
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!dirty);
+    if (ImGui::Button("Revert")) {
+        if (live) {
+            SendRaw("debugModelRevert()");
+            if (sf) ReloadStage(*sf, true);
+        } else {
+            DiskLoad(g_disk.path, g_disk.def);
+        }
+    }
+    ImGui::SetItemTooltip(live ? "The game reads the model's file again (the changes not saved are lost)."
+                               : "The model read from its file again (the changes not saved are lost).");
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    if (live) {
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Pick on the Game window", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
+        ImGui::SetItemTooltip("On the Game window the mouse shows the node under it; a click selects it.");
+    }
+    if (!g_wanted.empty()) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("The stage's model")) g_wanted.clear();
+        ImGui::SetItemTooltip("Show the model of the stage (the match's, else the toolbar's) instead of this file");
+    }
+
+    PlacementSection(sf, lw);
+    if (!live) {
+        float h = ImGui::GetContentRegionAvail().y;
+        if (ImGui::BeginChild("preview", ImVec2(0, std::max(em * 12, h * 0.5f)), ImGuiChildFlags_ResizeY))
+            Preview(ImGui::GetContentRegionAvail().y);
+        ImGui::EndChild();
+    }
+    ListsAndInspector(lw);
     ImGui::End();
 }
 

@@ -1,6 +1,9 @@
-// A small JSON reader for the lines the ikdbg.lua bridge sends.
+// A small JSON reader for the lines the ikdbg.lua bridge sends; also edited and written again
+// (a glTF file's JSON: its fields keep their order, numbers read back as they were).
 #pragma once
 
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -44,7 +47,134 @@ struct Json {
         return *r.p == 0;
     }
 
+    // Editing: a field of an object (added, null, when missing; a non-object becomes one)
+    Json &at(const char *key) {
+        if (type != Object) *this = Json(), type = Object;
+        for (auto &f : fields)
+            if (f.first == key) return f.second;
+        fields.push_back({key, Json()});
+        return fields.back().second;
+    }
+    void erase(const char *key) {
+        for (size_t k = 0; k < fields.size(); k++)
+            if (fields[k].first == key) fields.erase(fields.begin() + k--);
+    }
+    bool has(const char *key) const { return !(*this)[key].isNull() || HasNull(key); }
+    static Json Num(double v) {
+        Json j;
+        j.type = Number;
+        j.n = v;
+        return j;
+    }
+    // A float as the shortest decimal that reads back as it (0.05f is written 0.05)
+    static Json Float(float f) {
+        char buf[32];
+        for (int digits = 6; digits <= 9; digits++) {
+            snprintf(buf, sizeof(buf), "%.*g", digits, f);
+            if ((float)strtod(buf, nullptr) == f) break;
+        }
+        return Num(strtod(buf, nullptr));
+    }
+    static Json Floats(const float *v, int count) {
+        Json j;
+        j.type = Array;
+        for (int k = 0; k < count; k++) j.items.push_back(Float(v[k]));
+        return j;
+    }
+    static Json Str(const std::string &s) {
+        Json j;
+        j.type = String;
+        j.s = s;
+        return j;
+    }
+    static Json Boolean(bool v) {
+        Json j;
+        j.type = Bool;
+        j.b = v;
+        return j;
+    }
+    static Json EmptyObject() {
+        Json j;
+        j.type = Object;
+        return j;
+    }
+
+    // As text: compact, or with an indent of that many spaces
+    std::string dump(int indent = -1) const {
+        std::string out;
+        write(out, indent, 0);
+        return out;
+    }
+
 private:
+    bool HasNull(const char *key) const {
+        for (const auto &f : fields)
+            if (f.first == key) return true;
+        return false;
+    }
+    static void quote(std::string &out, const std::string &s) {
+        out += '"';
+        for (unsigned char c : s) {
+            if (c == '"' || c == '\\') out += '\\', out += (char)c;
+            else if (c == '\n') out += "\\n";
+            else if (c == '\r') out += "\\r";
+            else if (c == '\t') out += "\\t";
+            else if (c < 0x20) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "\\u%04x", c);
+                out += buf;
+            } else out += (char)c;
+        }
+        out += '"';
+    }
+    // The shortest text that reads back as the same double
+    static void number(std::string &out, double v) {
+        char buf[40];
+        if (!std::isfinite(v)) v = 0;
+        if (v == std::floor(v) && std::fabs(v) < 1e15) snprintf(buf, sizeof(buf), "%.0f", v);
+        else
+            for (int digits = 15; digits <= 17; digits++) {
+                snprintf(buf, sizeof(buf), "%.*g", digits, v);
+                if (strtod(buf, nullptr) == v) break;
+            }
+        out += buf;
+    }
+    void write(std::string &out, int indent, int depth) const {
+        auto newline = [&](int d) {
+            if (indent < 0) return;
+            out += '\n';
+            out.append((size_t)(indent * d), ' ');
+        };
+        switch (type) {
+        case Null: out += "null"; break;
+        case Bool: out += b ? "true" : "false"; break;
+        case Number: number(out, n); break;
+        case String: quote(out, s); break;
+        case Array:
+            out += '[';
+            for (size_t k = 0; k < items.size(); k++) {
+                if (k) out += ',';
+                newline(depth + 1);
+                items[k].write(out, indent, depth + 1);
+            }
+            if (!items.empty()) newline(depth);
+            out += ']';
+            break;
+        case Object:
+            out += '{';
+            for (size_t k = 0; k < fields.size(); k++) {
+                if (k) out += ',';
+                newline(depth + 1);
+                quote(out, fields[k].first);
+                out += indent < 0 ? ":" : ": ";
+                fields[k].second.write(out, indent, depth + 1);
+            }
+            if (!fields.empty()) newline(depth);
+            out += '}';
+            break;
+        }
+    }
+
     struct Reader {
         const char *p;
 

@@ -241,9 +241,11 @@ tools/debugger/
   src/stagecheck.cpp/.h  a stage def's checks (Stage window): files, sprites, actions, ids, bounds, keys
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
   src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
-  src/app_model.cpp      Model window: the stage's 3D model, its placement, its nodes on the Game window
+  src/app_model.cpp      Model window: the stage's 3D model (the match's, or read from disk), its placement, its nodes on the Game window
+  src/app_modelview.cpp  the Model window's preview: a glTF drawn by OpenGL's fixed pipeline into a framebuffer, textures by WIC
+  src/gltf.cpp/.h        a glTF or glb read as model.go reads it, posed, picked, written back (its JSON edited)
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
-  tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make, stagecheck _test.cpp (scripts/build.ps1 test)
+  tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make, stagecheck, gltf _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
@@ -758,6 +760,37 @@ is added before `[BGdef]`). Tested on stage3d (kept and restored): picking
 animation scrubbed, Save then a fresh launch with the saved file, Revert,
 `trans = "ADD"` written to the node's extras, fov dragged. Not tested: lights
 (no model at hand has them), `.gltf` files with external buffers.
+
+Then the model without the game: `gltf.cpp` reads a .glb or .gltf with the
+app's own JSON reader (which can now edit and write: fields keep their
+order, numbers are written as the shortest text reading back the same, a
+float edited here as the shortest that reads back as that float), its
+accessors (any component type, normalized, strided; sparse ones read as
+zeros), strips and fans made lists, images decoded by WIC. It follows
+model.go: a node's `matrix` is not read, Ikemen's extras are compared as
+loadglTFModel compares them (`castShadow` "0"/"false" strings only;
+`disableZTest` set unless "0"/"false"). Gltf_Save writes the same changes as
+editorModelSave into the JSON tree and the file (a glb's binary chunk as it
+was; a .gltf indented by 2), the rest of the JSON untouched;
+`tests/gltf_test.cpp` checks that on a copy of stage3d.glb. The Model window
+is live when the model shown is the match's (the one opened in Explorer, or
+the stage's), else "from disk": the same lists and inspector work on a
+`ModelView` filled from the file (`g_diskView`; `g_view` points at the one
+shown) and their changes go into the `GltfDoc`. The preview
+(`app_modelview.cpp`): the debugger's context is OpenGL 2 compatibility
+(ImGui's OpenGL2 backend), so the fixed pipeline with client arrays, into a
+framebuffer (`glGenFramebuffers` and the rest from `wglGetProcAddress`),
+every attribute pushed and popped around it; base colour times its texture,
+emission, alpha mask and blend, Ikemen's add/sub/mul (`glBlendEquation`),
+depth test and write, both faces; lit by the model's lights (up to 4,
+directional, point, spot) only when it has some, else unlit as the engine
+draws a stage with no light and no environment map. "The game's camera" is
+the engine's matrices at the camera's start (view = translate(offset) *
+scale(scale), perspective fov, near, far), which with stage3d looks as the
+game does. Tested without the game: stage3d drawn as in the game, a node
+picked on the preview and outlined, turned around, a node rotated and
+saved; the game then loaded the saved file with that node turned (the file
+restored after).
 
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
