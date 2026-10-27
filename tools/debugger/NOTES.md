@@ -758,8 +758,8 @@ stage. Placement edits the def's `[Model]` and `[Camera]` (a missing section
 is added before `[BGdef]`). Tested on stage3d (kept and restored): picking
 (the sky sphere, the gong stand), a node moved, a material tinted, an
 animation scrubbed, Save then a fresh launch with the saved file, Revert,
-`trans = "ADD"` written to the node's extras, fov dragged. Not tested: lights
-(no model at hand has them), `.gltf` files with external buffers.
+`trans = "ADD"` written to the node's extras, fov dragged. Lights and `.gltf`
+files with external buffers were tested later (see the animation keys).
 
 Then the model without the game: `gltf.cpp` reads a .glb or .gltf with the
 app's own JSON reader (which can now edit and write: fields keep their
@@ -867,6 +867,18 @@ gong dragged at key 36 on the Game window (the key's x 0 to 2.166), saved
 channel's accessors new, 251 keys read back); `tests/gltf_test.cpp` changes a
 value (the binary chunk the same size) and adds a key (posed between keys, the
 node where it was). The release's file restored after.
+
+Lights and external buffers, on models made for the test from stage3d.glb
+(a script in a scratch folder, deleted after; none at hand has lights): one
+with three `KHR_lights_punctual` lights (directional, point, spot; the
+materials no longer unlit) and one as a `.gltf` with its buffer in a `.bin`,
+each with a copy of stage3d.def. Lights: the preview lit by them, the game
+too; the red lamp's intensity changed and its node moved, saved from disk
+(`Gltf_Save`) and from the game (`editorModelSave`), the file read back with
+the values. External buffers: the game and the debugger read it; a node moved
+and saved from disk and from the game, the `.bin` the same and the `uri` kept;
+a key deleted and saved from disk gave "its buffers are files of their own:
+animation keys are written into a .glb only", the file left as it was.
 
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
