@@ -376,28 +376,43 @@ void SpritesWindow() {
         return;
     }
 
-    // The preview: wheel zooms, a drag moves the axis
+    // The preview: wheel zooms at the mouse, a drag pans, Ctrl+drag moves the axis, a double click fits
     static float zoom = 2;
+    static ImVec2 pan;
     static int fitFor = -1;
     ImVec2 avail = ImGui::GetContentRegionAvail();
-    if (fitFor != sf.sel) {
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("preview", ImVec2(std::max(avail.x, 32.0f), std::max(avail.y, 32.0f)),
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+    bool hovered = ImGui::IsItemHovered();
+    ImGuiIO &io = ImGui::GetIO();
+    if (fitFor != sf.sel || (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
         // A new sprite: as large as fits (the axis is at two thirds of the height), at most 4x
         fitFor = sf.sel;
         float zx = avail.x * 0.9f / std::max(1, s.w), zy = avail.y * 0.6f / std::max(1, std::max(s.y, s.h - s.y) + 1);
         zoom = std::max(0.25f, std::min(4.0f, std::min(zx, zy)));
+        pan = ImVec2(0, 0);
     }
-    ImVec2 p0 = ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("preview", ImVec2(std::max(avail.x, 32.0f), std::max(avail.y, 32.0f)));
-    bool hovered = ImGui::IsItemHovered();
-    ImGuiIO &io = ImGui::GetIO();
-    if (hovered && io.MouseWheel != 0) zoom = std::max(0.25f, std::min(16.0f, zoom * powf(1.25f, io.MouseWheel)));
+    // The axis sits in the middle, at two thirds of the height, moved by the pan
+    ImVec2 home(floorf(p0.x + avail.x * 0.5f), floorf(p0.y + avail.y * 0.67f));
+    if (hovered && io.MouseWheel != 0) {
+        // The point under the mouse stays under it
+        float before = zoom;
+        zoom = std::max(0.25f, std::min(16.0f, zoom * powf(1.25f, io.MouseWheel)));
+        ImVec2 at(home.x + pan.x, home.y + pan.y);
+        pan.x = io.MousePos.x - (io.MousePos.x - at.x) * zoom / before - home.x;
+        pan.y = io.MousePos.y - (io.MousePos.y - at.y) * zoom / before - home.y;
+    }
+    bool dragging = ImGui::IsItemActive() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0));
+    bool movingAxis = dragging && io.KeyCtrl && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    if (dragging && !movingAxis) pan.x += io.MouseDelta.x, pan.y += io.MouseDelta.y;
+    if (dragging || (hovered && io.KeyCtrl)) ImGui::SetMouseCursor(movingAxis || !dragging ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
     ImDrawList *draw = ImGui::GetWindowDrawList();
     ImVec2 p1(p0.x + avail.x, p0.y + avail.y);
     draw->PushClipRect(p0, p1, true);
     Checkerboard(draw, p0, p1);
-    // The axis sits in the middle, at two thirds of the height
-    ImVec2 axisAt(floorf(p0.x + avail.x * 0.5f), floorf(p0.y + avail.y * 0.67f));
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0)) {
+    ImVec2 axisAt(floorf(home.x + pan.x), floorf(home.y + pan.y));
+    if (movingAxis) {
         static ImVec2 rest;
         rest.x += io.MouseDelta.x / zoom;
         rest.y += io.MouseDelta.y / zoom;
@@ -419,7 +434,7 @@ void SpritesWindow() {
     draw->AddLine(ImVec2(axisAt.x - r, axisAt.y), ImVec2(axisAt.x + r, axisAt.y), IM_COL32(255, 220, 60, 255));
     draw->AddLine(ImVec2(axisAt.x, axisAt.y - r), ImVec2(axisAt.x, axisAt.y + r), IM_COL32(255, 220, 60, 255));
     draw->PopClipRect();
-    if (hovered) ImGui::SetTooltip("Wheel: zoom (%.2gx). Drag: move the axis.", zoom);
+    if (hovered && !dragging) ImGui::SetTooltip("Wheel: zoom (%.2gx). Drag: pan. Ctrl+drag: move the axis. Double click: fit.", zoom);
     ImGui::EndGroup();
     ImGui::End();
 }
