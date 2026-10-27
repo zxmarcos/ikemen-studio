@@ -43,6 +43,14 @@ bool Sff_Decode(const SffSprite &s, std::vector<unsigned char> &px, int *bpp);
 // RGBA with the sprite's palette, or pal (an index in doc.pals) when not -1.
 void Sff_ToRgba(const SffDoc &doc, const SffSprite &s, const std::vector<unsigned char> &px, int bpp,
                 std::vector<unsigned char> &rgba, int pal = -1);
+// The same with any palette (256 RGBA colours; nullptr: grey levels).
+void Sff_ToRgbaWith(const SffSprite &s, const std::vector<unsigned char> &px, int bpp, std::vector<unsigned char> &rgba,
+                    const unsigned char *pal);
+
+// ACT palettes (a character's pal1..palN): 256 RGB colours, the last first. As 256 RGBA colours,
+// colour 0 transparent.
+bool Sff_ReadAct(const std::string &path, std::vector<unsigned char> &rgba);
+std::string Sff_ActBytes(const std::vector<unsigned char> &rgba);
 bool Sff_SavePng(const SffDoc &doc, const SffSprite &s, const std::string &path, std::string *error);
 
 // PNG images as sprites (group, number and axis left at 0). Shared: indexed against palette 1,1

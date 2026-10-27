@@ -82,9 +82,34 @@ static void RoundTrip(const std::string &path, const std::string &pal1) {
     }
 }
 
+// An ACT palette read, written and read again: the same colours, colour 0 transparent.
+static void ActRoundTrip(const std::string &path) {
+    if (!Exists(path)) {
+        printf("skipped (missing): %s\n", path.c_str());
+        return;
+    }
+    std::vector<unsigned char> rgba, back;
+    CHECK(Sff_ReadAct(path, rgba));
+    CHECK(rgba.size() == 1024 && rgba[3] == 0 && rgba[7] == 255);
+    std::string tmp = std::string(getenv("TEMP") ? getenv("TEMP") : ".") + "\\sff_test.act";
+    std::string bytes = Sff_ActBytes(rgba);
+    CHECK(bytes.size() == 768);
+    std::ofstream(tmp, std::ios::binary) << bytes;
+    CHECK(Sff_ReadAct(tmp, back));
+    CHECK(back == rgba);
+    std::string file;
+    {
+        std::ifstream in(path, std::ios::binary);
+        file.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    CHECK(file.substr(0, 768) == bytes); // written as it was read
+    printf("%s: ACT palette read and written\n", path.c_str());
+}
+
 int main() {
     RoundTrip("chars/kfm/kfm.sff", "chars/kfm/kfm.act");
     RoundTrip("chars/ryu_pots/ryusprite.sff", "");
+    ActRoundTrip("chars/ryu_pots/ryupalettes/default.act");
     printf(g_failed ? "sff-test: %d failed\n" : "sff-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

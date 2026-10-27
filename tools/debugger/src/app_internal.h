@@ -348,7 +348,34 @@ ImTextureRef TexRef(GLuint tex);
 void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
 std::vector<std::string> PickFiles(const char *filter, bool multi);
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name);
+void SpritesChanged(SpriteFile &sf);
 void SpritesWindow();
+extern std::map<int, int> g_palNo; // pn -> the palette the game gave the player (1..), as @IKFILES tells
+
+// Palettes (app_sffpal.cpp): what sprites can be seen with, and the palette editor
+struct PalChoice {
+    std::string label;
+    std::string act;  // a character's ACT file (its def's palN), "" none
+    int sff = -1;     // index in the SFF's palettes (the act's 1,N when it has one)
+    int slot = 0;     // a character's palette N (1,N), 0 another
+    bool own = false; // each sprite with its own palette
+};
+// The palettes of an SFF: "its own"; a character's palettes (pn > 0) from its ACT files, else the
+// SFF's 1,N; the SFF's other palettes.
+void PalChoices(SpriteFile &sf, int pn, std::vector<PalChoice> &out);
+// The palette sprite is drawn with when c is chosen: c for the sprites using the shared palette
+// (1,1; every paletted sprite for a palette that is not a character's), else the sprite's own.
+PalChoice PalFor(SpriteFile &sf, const PalChoice &c, int sprite);
+// That sprite drawn with that choice; mark: colours flashed (256 flags), nullptr none.
+GLuint PalSpriteTexture(SpriteFile &sf, int sprite, const PalChoice &c, const std::vector<char> *mark = nullptr);
+int SpritePixel(SpriteFile &sf, int sprite, int x, int y); // its palette index there, -1 none (true colour, outside)
+bool PalDirty();               // ACT files changed and not saved
+void PalSave();                // writes them (the first time the old one is kept as .bak)
+void PalRevert(SpriteFile &sf, int pn); // reads its ACT files again; the game gets them back
+void PalFrame(SpriteFile &sf, int pn);  // sends the colours changed to the game (now and then while they change)
+// The Palette tab: the colours of target, picked, edited. picked: a colour picked on the sprite
+// (-1 none), shift: added to the selection. Fills mark with the colours selected.
+void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, bool shift, std::vector<char> &mark);
 
 // Sounds
 const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)

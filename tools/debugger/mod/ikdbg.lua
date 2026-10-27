@@ -269,7 +269,9 @@ function ikdbg.files()
 	if debugCharFiles ~= nil then
 		for pn = 1, 8 do
 			local f = debugCharFiles(pn)
-			if f.def then table.insert(players, {pn = pn, files = f}) end
+			if f.def then
+				table.insert(players, {pn = pn, files = f, palno = debugPalNo ~= nil and debugPalNo(pn) or 0})
+			end
 		end
 	end
 	send('@IKFILES', {players = players})
@@ -297,6 +299,15 @@ end
 function ikdbg.sprites(pn)
 	local ok, err = debugReloadSprites(pn)
 	if not ok then send('@IKRES', {ok = false, r = 'sprites of P' .. pn .. ': ' .. tostring(err)}) end
+	ikdbg.dirty = true
+end
+
+-- Gives palette group,number of a player's SFF new colours (256 RGBA colours in hexadecimal),
+-- for every player using it.
+function ikdbg.palette(pn, group, number, colours)
+	if debugSetPalette == nil then return end
+	local ok, err = debugSetPalette(pn, group, number, colours)
+	if not ok then send('@IKRES', {ok = false, r = 'palette ' .. group .. ',' .. number .. ': ' .. tostring(err)}) end
 	ikdbg.dirty = true
 end
 

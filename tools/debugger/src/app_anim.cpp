@@ -22,6 +22,7 @@ std::map<int, std::pair<std::string, double>> g_swapWanted;
 void OnFiles(const Json &j) {
     for (const auto &p : j["players"].items) {
         int pn = p["pn"].i();
+        g_palNo[pn] = p["palno"].i();
         auto &files = g_charFiles[pn];
         files.clear();
         for (const auto &kv : p["files"].fields)

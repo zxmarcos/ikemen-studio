@@ -196,6 +196,7 @@ src/script_debugger.go   engine side: controller sources and trace, setters, Lua
 src/editor_frame.go      engine side: frames, geometry and input events in shared memory
 src/editor_shm_*.go      the shared memory (Windows; a stub elsewhere)
 src/editor_reload.go     reloading a character during a match (debugReloadChar)
+src/editor_palette.go    a palette's colours put in place during a match (debugSetPalette), a player's palette (debugPalNo)
 src/editor_input.go      engine side: players' input buffers and commands under way, for the geometry
 src/editor_stage.go      engine side: where the stage's BGs were drawn, moving a BG, reloading the stage
 src/editor_fight.go      engine side: where the fight screen's elements were drawn, reloading the fight screen
@@ -221,6 +222,7 @@ tools/debugger/
   src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
   src/app_anim.cpp       Animation window (AIR)
   src/app_sprites.cpp    Sprites window (SFF), file dialogs
+  src/app_sffpal.cpp     palettes: a character's (ACT files, SFF 1,N), the Palette tab, sent to the game live
   src/app_sounds.cpp     Sounds window (SND)
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file

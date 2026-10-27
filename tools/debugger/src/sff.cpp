@@ -491,6 +491,15 @@ int Sff_FindPal(const SffDoc &d, int group, int number) {
     return -1;
 }
 
+bool Sff_ReadAct(const std::string &path, std::vector<unsigned char> &rgba) { return ReadAct(path, rgba); }
+
+std::string Sff_ActBytes(const std::vector<unsigned char> &rgba) {
+    std::string out(768, '\0');
+    for (int i = 0; i < 256 && (255 - i) * 4 + 2 < (int)rgba.size(); i++)
+        for (int k = 0; k < 3; k++) out[i * 3 + k] = (char)rgba[(255 - i) * 4 + k];
+    return out;
+}
+
 bool Sff_Load(SffDoc &d, const std::string &path, const std::string &pal1) {
     d = SffDoc();
     d.path = path;
@@ -628,10 +637,14 @@ bool Sff_Decode(const SffSprite &s, std::vector<unsigned char> &px, int *bpp) {
 
 void Sff_ToRgba(const SffDoc &d, const SffSprite &s, const std::vector<unsigned char> &px, int bpp,
                 std::vector<unsigned char> &rgba, int palOverride) {
+    int p = palOverride >= 0 && palOverride < (int)d.pals.size() ? palOverride : s.pal;
+    Sff_ToRgbaWith(s, px, bpp, rgba, p >= 0 && p < (int)d.pals.size() ? d.pals[p].rgba.data() : nullptr);
+}
+
+void Sff_ToRgbaWith(const SffSprite &s, const std::vector<unsigned char> &px, int bpp, std::vector<unsigned char> &rgba,
+                    const unsigned char *pal) {
     size_t n = (size_t)s.w * s.h;
     rgba.assign(n * 4, 0);
-    int p = palOverride >= 0 && palOverride < (int)d.pals.size() ? palOverride : s.pal;
-    const unsigned char *pal = p >= 0 && p < (int)d.pals.size() ? d.pals[p].rgba.data() : nullptr;
     for (size_t i = 0; i < n && i * bpp < px.size(); i++) {
         unsigned char *o = &rgba[i * 4];
         if (bpp == 1) {

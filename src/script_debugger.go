@@ -135,6 +135,7 @@ func debugTriggerGeometry(b []byte) []byte {
 
 func debuggerFunctions(l *lua.LState) {
 	editorReloadFunctions(l)
+	editorPaletteFunctions(l)
 	editorStageFunctions(l)
 	editorFightFunctions(l)
 	editorMotifFunctions(l)
