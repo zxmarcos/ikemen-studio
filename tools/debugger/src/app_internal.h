@@ -530,6 +530,7 @@ void ReloadStage(SourceFile &sf, bool fromText);
 void OnModel(const Json &j);
 void ModelSection(bool stageHasModel);
 void ModelWindow();
+std::string ModelFileInUse(); // the model file of the stage in the match, as the game names it; "" none
 void ReadModelGeometry(const Json &mdl); // the frame geometry's stage "mdl"
 extern bool g_modelPick;                 // the Game window picks the model's nodes, not the players
 void ModelPickToggle();                  // its checkbox on the Game window's toolbar

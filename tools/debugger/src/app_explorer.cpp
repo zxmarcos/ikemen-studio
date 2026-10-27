@@ -73,9 +73,10 @@ std::string Unquote(std::string s) {
 
 bool NamesFile(const std::string &section, const std::string &key) {
     if (section == "files") return true;
-    if (section == "bgdef" || section == "scenedef") return key == "spr" || key == "snd";
+    // A stage's 3D model is [BGdef] model, its environment map [Model] environment
+    if (section == "bgdef" || section == "scenedef") return key == "spr" || key == "snd" || key == "model";
     if (section == "music") return key == "bgmusic";
-    if (section == "model") return key == "model";
+    if (section == "model") return key == "environment";
     return false;
 }
 
@@ -470,6 +471,17 @@ const std::map<std::string, std::vector<std::string>> *FilesFor(int pn) {
 
 void OpenPath(const std::string &path, bool keep, const std::string &pal) {
     std::string ext = ExtOf(path);
+    if (ext == "glb" || ext == "gltf") {
+        ShowWindow("Model");
+        // The game may name it from another folder: the same file when one path ends the other
+        std::string inUse = NormPath(ModelFileInUse()), p = NormPath(path);
+        auto ends = [](const std::string &a, const std::string &b) {
+            return a.size() >= b.size() && a.compare(a.size() - b.size(), b.size(), b) == 0;
+        };
+        if (!inUse.empty() && !ends(inUse, p) && !ends(p, inUse))
+            Log(LogLine::Info, "Model shows the 3D model of the stage in the match (" + ModelFileInUse() + ").");
+        return;
+    }
     if (!IsBinary(path)) {
         CodeOpen(path, keep);
         return;

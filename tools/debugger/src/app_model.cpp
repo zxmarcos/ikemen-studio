@@ -931,6 +931,8 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 // The windows
 // ---------------------------------------------------------------------------
 
+std::string ModelFileInUse() { return g_model.known && g_model.has ? g_model.file : ""; }
+
 // In the Stage window: what the model is, and the way to the Model window
 void ModelSection(bool stageHasModel) {
     if (!stageHasModel && !g_mframe.ok) return;
