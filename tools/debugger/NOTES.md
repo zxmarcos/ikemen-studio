@@ -792,6 +792,21 @@ picked on the preview and outlined, turned around, a node rotated and
 saved; the game then loaded the saved file with that node turned (the file
 restored after).
 
+Dragging the node selected (Game window in "3D model" mode, and the
+preview): the frame geometry's "mdl" also carries, with a node selected,
+the view-projection matrix the model was drawn with, the world matrix of
+the node's parent and the picture's size; `DragTranslation` unprojects the
+press and the mouse at the node origin's depth and adds the difference,
+taken into the parent's space, to its translation at rest (Shift: along the
+line of sight, the mouse's height), sent as any change of the inspector
+(`debugModelNodeTRS`, or the `GltfDoc`). The matrices are the press's, so
+the camera moving during the drag does not pull the node. Tested on
+stage3d: the gong's stand followed the mouse on the game and on the
+preview, within 3 pixels; the gong itself is animated, so only its place at
+rest changes (the tooltip says so). The Game window's toolbar now goes on
+in a second line when it does not fit (`SameLineFits`), which hid "3D
+model" on narrow windows.
+
 Themes (`app_theme.cpp`, the menu bar's Theme, `Theme=` in the settings):
 Dear ImGui's dark and light and TheAncientOwl's twelve from imgui issue
 #707, as posted but for the colours renamed since (TabActive, NavHighlight:

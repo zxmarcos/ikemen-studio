@@ -94,6 +94,9 @@ struct ModelFrame {
     bool ok = false, dirty = false;
     int sel = -1, hover = -1, picked = -1;
     std::vector<float> sb, hb, sp, hp; // the selected and hovered nodes' boxes (segments) or points
+    bool mats = false;                 // the selected node's matrices: it can be dragged
+    GltfMat viewProj{}, parentWorld{};
+    float w = 0, h = 0; // the game picture's size
 };
 ModelFrame g_mframe;
 int g_pickedSeen = -1;
@@ -225,6 +228,14 @@ void EulerToQuat(const float e[3], float q[4]) {
 // Changes sent to the game
 // ---------------------------------------------------------------------------
 
+void SendLiveTRS(int i, const ModelView::Node &n) {
+    char lua[320];
+    snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)", i, n.t[0], n.t[1], n.t[2],
+             n.r[0], n.r[1], n.r[2], n.r[3], n.s[0], n.s[1], n.s[2]);
+    SendRaw(lua);
+    g_modelAsked = ImGui::GetTime();
+}
+
 // From disk: into the model read (what Save writes), the preview showing it at once
 void SendTRS(int i) {
     const auto &n = View().nodes[i];
@@ -234,11 +245,110 @@ void SendTRS(int i) {
         g_disk.doc.trs.insert(i);
         return;
     }
-    char lua[320];
-    snprintf(lua, sizeof(lua), "debugModelNodeTRS(%d, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)", i, n.t[0], n.t[1], n.t[2],
-             n.r[0], n.r[1], n.r[2], n.r[3], n.s[0], n.s[1], n.s[2]);
-    SendRaw(lua);
-    g_modelAsked = ImGui::GetTime();
+    SendLiveTRS(i, n);
+}
+
+// ---------------------------------------------------------------------------
+// A node dragged with the mouse, on the Game window or on the preview
+// ---------------------------------------------------------------------------
+
+// A point through a matrix, divided by its w
+bool Project(const GltfMat &m, const float in[3], float w, float out[4]) {
+    for (int r = 0; r < 4; r++) out[r] = m[r] * in[0] + m[4 + r] * in[1] + m[8 + r] * in[2] + m[12 + r] * w;
+    return out[3] != 0;
+}
+
+// Its translation (in its parent's space) once the mouse moved from a to b (both -1..1 across the
+// picture, y up): its origin follows the mouse at its depth; with depth, the mouse's height moves
+// it along the line of sight instead (up: away). False: it is behind the camera.
+bool DragTranslation(const GltfMat &viewProj, const GltfMat &parentWorld, const float t0[3], const float a[2],
+                     const float b[2], bool depth, float t[3]) {
+    float p[4], c[4];
+    Project(parentWorld, t0, 1, p);
+    if (!Project(viewProj, p, 1, c) || c[3] < 1e-4f) return false;
+    GltfMat inv = Gltf_Invert(viewProj);
+    auto unproject = [&](float x, float y, float z, float out[3]) {
+        float in[3] = {x, y, z}, o[4];
+        Project(inv, in, 1, o);
+        for (int k = 0; k < 3; k++) out[k] = o[3] != 0 ? o[k] / o[3] : o[k];
+    };
+    float z = c[2] / c[3], ua[3], ub[3], d[3];
+    unproject(a[0], a[1], z, ua);
+    unproject(b[0], b[1], z, ub);
+    for (int k = 0; k < 3; k++) d[k] = ub[k] - ua[k];
+    if (depth) {
+        float um[3], nearP[3], farP[3];
+        unproject(b[0], a[1], z, um);
+        unproject(c[0] / c[3], c[1] / c[3], -1, nearP);
+        unproject(c[0] / c[3], c[1] / c[3], 1, farP);
+        float len = std::hypot(ub[0] - um[0], ub[1] - um[1], ub[2] - um[2]) * (b[1] > a[1] ? 1 : -1);
+        float dir[3] = {farP[0] - nearP[0], farP[1] - nearP[1], farP[2] - nearP[2]};
+        float dl = std::hypot(dir[0], dir[1], dir[2]);
+        if (dl <= 0) return false;
+        for (int k = 0; k < 3; k++) d[k] = um[k] - ua[k] + dir[k] / dl * len;
+    }
+    // A direction: into the parent's space without its translation
+    GltfMat ip = Gltf_Invert(parentWorld);
+    float local[4];
+    Project(ip, d, 0, local);
+    for (int k = 0; k < 3; k++) t[k] = t0[k] + local[k];
+    return true;
+}
+
+// Dragged, an animated node keeps its place: it is its place at rest that changes
+const char *AnimatedNote(const ModelView::Node &n) {
+    return n.animated ? "\nAn animation moves it: its place at rest changes (seen with the animations off)." : "";
+}
+
+struct NodeDrag {
+    int node = -1;      // pressed on, the left button still down
+    bool moving = false; // past a few pixels
+    bool depth = false;  // Shift held: from, t0 taken again when it changes
+    ImVec2 from;
+    float t0[3], orig[3];
+    GltfMat viewProj, parentWorld;
+};
+
+void BeginDrag(NodeDrag &g, int node, const ModelView &v, const GltfMat &viewProj, const GltfMat &parentWorld) {
+    g = NodeDrag();
+    g.node = node;
+    g.from = ImGui::GetMousePos();
+    memcpy(g.t0, v.nodes[node].t, sizeof(g.t0));
+    memcpy(g.orig, g.t0, sizeof(g.orig));
+    g.viewProj = viewProj, g.parentWorld = parentWorld;
+    g.depth = ImGui::GetIO().KeyShift;
+}
+
+// The drag going on: the node moved to where the mouse is (a, b as DragTranslation takes them);
+// the right button puts it back (Esc would go to the game). False when it ended.
+bool StepDrag(NodeDrag &g, ModelView &v, const float a[2], const float b[2], const std::function<void(int)> &send) {
+    if (g.node < 0 || g.node >= (int)v.nodes.size()) return g.node = -1, false;
+    ModelView::Node &n = v.nodes[g.node];
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (g.moving) memcpy(n.t, g.orig, sizeof(n.t)), send(g.node);
+        return g.node = -1, false;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) return g.node = -1, false;
+    ImVec2 m = ImGui::GetMousePos();
+    if (!g.moving && std::hypot(m.x - g.from.x, m.y - g.from.y) < 3) return true;
+    g.moving = true;
+    bool depth = ImGui::GetIO().KeyShift;
+    if (depth != g.depth) {
+        // Another way of moving: from here
+        g.depth = depth, g.from = m;
+        memcpy(g.t0, n.t, sizeof(g.t0));
+        return true;
+    }
+    float t[3];
+    if (DragTranslation(g.viewProj, g.parentWorld, g.t0, a, b, depth, t) &&
+        memcmp(t, n.t, sizeof(t)) != 0) {
+        memcpy(n.t, t, sizeof(t));
+        send(g.node);
+    }
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    ImGui::SetTooltip("%s\n%.3f, %.3f, %.3f\nShift: nearer or farther; right button: back where it was%s", NodeName(g.node).c_str(),
+                      n.t[0], n.t[1], n.t[2], AnimatedNote(n));
+    return true;
 }
 
 void SendProps(int i) {
@@ -917,6 +1027,10 @@ void ReadModelGeometry(const Json &mdl) {
     floats(mdl["hb"], f.hb);
     floats(mdl["sp"], f.sp);
     floats(mdl["hp"], f.hp);
+    f.w = (float)mdl["w"].num(), f.h = (float)mdl["h"].num();
+    f.mats = mdl["vp"].items.size() == 16 && mdl["pw"].items.size() == 16 && f.w > 0 && f.h > 0;
+    for (int k = 0; f.mats && k < 16; k++)
+        f.viewProj[k] = (float)mdl["vp"].items[k].num(), f.parentWorld[k] = (float)mdl["pw"].items[k].num();
     // A node picked on the game: selected here
     if (f.ok && f.picked != g_pickedSeen) {
         if (g_pickedSeen >= 0 && f.sel >= 0 && g_isLive) {
@@ -942,9 +1056,10 @@ void ModelPickToggle() {
         stage = g_stagePick, screen = g_screenPick;
         return;
     }
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("3D model"));
     if (ImGui::Checkbox("3D model", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
-    ImGui::SetItemTooltip("The mouse picks the stage model's nodes instead of the players (window Model).");
+    ImGui::SetItemTooltip("The mouse picks the stage model's nodes instead of the players (window Model);\n"
+                          "the one selected, dragged, moves.");
     stage = g_stagePick, screen = g_screenPick;
 }
 
@@ -979,6 +1094,24 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     if (f.sel >= 0) drawBox(f.sb, f.sp, IM_COL32(255, 220, 60, 255), thick * 2, f.sel);
     if (!g_modelPick) return false;
 
+    // The selected node, pressed on, dragged (the matrices it was seen through at the press)
+    static NodeDrag drag;
+    auto ndc = [&](ImVec2 q, float out[2]) {
+        ImVec2 p = toPicture(q);
+        out[0] = p.x / f.w * 2 - 1, out[1] = 1 - p.y / f.h * 2;
+    };
+    if (drag.node >= 0) {
+        float a[2], b[2];
+        ndc(drag.from, a), ndc(ImGui::GetMousePos(), b);
+        if (StepDrag(drag, g_live, a, b, [](int i) { SendLiveTRS(i, g_live.nodes[i]); })) return true;
+    }
+    bool onSel = hovered && f.mats && f.sel >= 0 && f.hover == f.sel && f.sel < (int)g_live.nodes.size();
+    if (onSel && clicked) {
+        BeginDrag(drag, f.sel, g_live, f.viewProj, f.parentWorld);
+        return true;
+    }
+    if (onSel) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+
     // The node under the mouse, asked when it moves (the game casts the ray)
     static double asked;
     static ImVec2 askedAt(-1, -1);
@@ -999,7 +1132,8 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             asked = ImGui::GetTime();
         }
         if (f.hover >= 0 && f.hover < (int)View().nodes.size())
-            ImGui::SetTooltip("%s\nClick: select it (window Model)", NodeLabel(f.hover).c_str());
+            ImGui::SetTooltip(onSel ? "%s\nDrag: move it (Shift: nearer or farther)%s" : "%s\nClick: select it (window Model)%s",
+                              NodeLabel(f.hover).c_str(), onSel ? AnimatedNote(View().nodes[f.hover]) : "");
     } else if (wasHovered) {
         SendRaw("debugModelPick()");
         askedAt = ImVec2(-1, -1);
@@ -1294,6 +1428,26 @@ void Preview(float height) {
         }
         return Gltf_Pick(d.doc, d.world, visible, pts[0], pts[1]);
     };
+    // The selected node, pressed on, dragged; elsewhere a drag turns the camera
+    static NodeDrag drag;
+    auto ndc = [&](ImVec2 q, float out[2]) {
+        out[0] = (q.x - p0.x) / size.x * 2 - 1, out[1] = 1 - (q.y - p0.y) / size.y * 2;
+    };
+    GltfMat viewProj = Gltf_Mul(proj, view);
+    if (drag.node >= 0) {
+        float a[2], b[2];
+        ndc(drag.from, a), ndc(io.MousePos, b);
+        if (StepDrag(drag, v, a, b, [](int i) { SendTRS(i); })) {
+            d.hover = -1;
+            return;
+        }
+    }
+    bool onSel = hovered && g_selKind == kNode && g_sel >= 0 && g_sel < (int)v.nodes.size() && d.hover == g_sel;
+    if (onSel && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        int parent = v.nodes[g_sel].parent;
+        BeginDrag(drag, g_sel, v, viewProj, parent >= 0 && parent < (int)d.world.size() ? d.world[parent] : Gltf_Identity());
+        return;
+    }
     static bool dragged;
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) dragged = false;
     if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)) dragged = true;
@@ -1320,7 +1474,11 @@ void Preview(float height) {
         int hit = pickAt(io.MousePos);
         if (hit >= 0) SelectNode(hit, true);
     }
-    if (hovered && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) ImGui::SetTooltip("%s", NodeLabel(d.hover).c_str());
+    if (hovered && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (onSel) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        ImGui::SetTooltip(onSel ? "%s\nDrag: move it (Shift: nearer or farther)%s" : "%s%s", NodeLabel(d.hover).c_str(),
+                          onSel ? AnimatedNote(v.nodes[d.hover]) : "");
+    }
 }
 
 // The lists (nodes, materials, animations, lights) and the inspector beside them, or under them
@@ -1503,7 +1661,8 @@ void ModelWindow() {
     if (live) {
         ImGui::SameLine();
         if (ImGui::Checkbox("Pick on the Game window", &g_modelPick) && g_modelPick) g_stagePick = g_screenPick = false;
-        ImGui::SetItemTooltip("On the Game window the mouse shows the node under it; a click selects it.");
+        ImGui::SetItemTooltip("On the Game window the mouse shows the node under it; a click selects it,\n"
+                              "and the one selected, dragged, moves (Shift: nearer or farther).");
     }
     if (!g_wanted.empty()) {
         ImGui::SameLine();

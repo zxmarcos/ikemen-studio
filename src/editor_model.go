@@ -321,7 +321,8 @@ func editorModelPick(m *Model, x, y float32) int {
 // The frame geometry's model: "mdl": {"sel", "hover": nodes (-1 none), "picked": bumped at each
 // pick, "dirty": changed since its file was read, "sb", "hb": the selected and hovered nodes'
 // boxes as segments [x0, y0, x1, y1, ...], or "sp", "hp": [x, y] where they are, in the game
-// picture's pixels}
+// picture's pixels; with a node selected, "vp": the view-projection matrix, "pw": the world
+// matrix of the selected node's parent (column-major), "w", "h": the picture's size}
 func editorModelGeometry(b []byte) []byte {
 	m, _ := editorStageModelNow()
 	if m == nil {
@@ -357,6 +358,33 @@ func editorModelGeometry(b []byte) []byte {
 		l, p = editorNodeBox(m, e.hover)
 		nums("hb", l)
 		nums("hp", p)
+	}
+	// What dragging the selected node needs: the matrices it is seen through
+	if e.drawn && e.sel >= 0 && e.sel < len(m.nodes) {
+		parent := mgl.Ident4()
+		for _, n := range m.nodes {
+			for _, c := range n.childrenIndex {
+				if int(c) == e.sel {
+					parent = n.worldTransform
+				}
+			}
+		}
+		mat := func(key string, v mgl.Mat4) {
+			b = append(b, `,"`+key+`":[`...)
+			for i, f := range v {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				b = strconv.AppendFloat(b, float64(f), 'g', -1, 32)
+			}
+			b = append(b, ']')
+		}
+		mat("vp", e.viewProj)
+		mat("pw", parent)
+		b = append(b, `,"w":`...)
+		b = strconv.AppendInt(b, int64(sys.scrrect[2]), 10)
+		b = append(b, `,"h":`...)
+		b = strconv.AppendInt(b, int64(sys.scrrect[3]), 10)
 	}
 	e.drawn = false
 	return append(b, '}')

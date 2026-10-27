@@ -369,25 +369,26 @@ void GameWindow() {
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     ForwardKeys(focused);
     static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false, showHistory = false;
+    // The toolbar goes on in a second line when the window is narrow
     ImGui::Checkbox("Boxes", &showBoxes);
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Axes"));
     ImGui::Checkbox("Axes", &showAxes);
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Keys"));
     ImGui::Checkbox("Keys", &showKeys);
     ImGui::SetItemTooltip("Under each player, the keys it holds (its own, the AI's, a dummy's or a take's).");
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("History"));
     ImGui::Checkbox("History", &showHistory);
     ImGui::SetItemTooltip("P1's last keys down the left side, P2's down the right, each with the ticks it lasted\n"
                           "(newest on top), as training modes show them.");
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Only the selected one"));
     ImGui::Checkbox("Only the selected one", &onlySelected);
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Follow it"));
     ImGui::Checkbox("Follow it", &g_followSel);
     ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Stage"));
     if (ImGui::Checkbox("Stage", &g_stagePick) && g_stagePick) g_screenPick = false;
     ImGui::SetItemTooltip("The mouse picks and drags the stage's BGs instead of the players (window Stage).");
-    ImGui::SameLine();
+    SameLineFits(CheckboxWidth("Screenpack"));
     if (ImGui::Checkbox("Screenpack", &g_screenPick) && g_screenPick) g_stagePick = false;
     ImGui::SetItemTooltip("The mouse picks and drags the fight screen's elements (lifebars, time...) and the motif's\n(menus, select screen...) instead of the players (windows Fight screen, Motif).");
     ModelPickToggle();

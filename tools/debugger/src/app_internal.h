@@ -242,6 +242,8 @@ std::string NormPath(const std::string &path);
 std::string ExeDir();
 std::string ReadWholeFile(const std::string &path);
 void HelpMarker(const char *text);
+void SameLineFits(float width);         // SameLine when an item this wide still fits the line, else a new line
+float CheckboxWidth(const char *label); // what ImGui::Checkbox takes
 // The windows: the menu bar, each one opened or closed, the layouts (app_layout.cpp)
 bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden
 void ShowWindow(const char *name); // opened if closed, its tab to the front, without taking the keyboard

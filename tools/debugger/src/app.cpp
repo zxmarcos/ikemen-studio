@@ -509,6 +509,15 @@ void OnLine(const Bridge::Line &line) {
 // Windows
 // ---------------------------------------------------------------------------
 
+void SameLineFits(float width) {
+    float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= right) ImGui::SameLine();
+}
+
+float CheckboxWidth(const char *label) {
+    return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(label, nullptr, true).x;
+}
+
 void HelpMarker(const char *text) {
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
