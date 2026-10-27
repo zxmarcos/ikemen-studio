@@ -306,6 +306,20 @@ struct AnimTarget {
     bool live = false; // that element is the one on the game now
 };
 
+// A drag of one of the element's boxes: an edge, a corner or the inside.
+struct BoxDrag {
+    bool active = false;
+    int g = 0, i = 0, edges = 0; // edges: 1 left, 2 right, 4 top, 8 bottom (screen); 15 move
+    ImVec2 start;                // mouse, in AIR units
+    AirBox box;                  // when the drag started
+};
+// The element's boxes drawn with handles, dragged; written to the AIR text when released. flip:
+// the screen's x goes the other way (facing left). hit: the box under the mouse (g * 1000 + i), or
+// -1. Returns true while it has the mouse.
+bool BoxHandles(BoxDrag &d, ImDrawList *draw, bool hovered, const AnimTarget &t,
+                const std::function<ImVec2(float, float)> &airToScreen, const std::function<ImVec2(ImVec2)> &screenToAir,
+                bool flip, int *hit = nullptr);
+
 void OnFiles(const Json &j);
 extern std::map<int, std::pair<std::string, double>> g_swapWanted; // pn -> the character swapped in, when
 std::string AirPath(int pn);

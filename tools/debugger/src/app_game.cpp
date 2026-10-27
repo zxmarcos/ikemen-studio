@@ -271,12 +271,7 @@ int TriggerValue(int tick, int src) {
 
 // The selected player's boxes on the Game window, with handles: drag an edge, a corner or the
 // inside. Returns true while it has the mouse (the Game window then neither selects nor moves).
-struct BoxDrag {
-    bool active = false;
-    int g = 0, i = 0, edges = 0; // edges: 1 left, 2 right, 4 top, 8 bottom (screen); 15 move
-    ImVec2 start;                // mouse, in AIR units
-    AirBox box;                  // when the drag started
-} g_boxDrag;
+static BoxDrag g_boxDrag;
 
 bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(float, float)> &toScreen,
                     const std::function<ImVec2(ImVec2)> &toPicture, bool &shown) {
@@ -293,26 +288,6 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     auto screenToAir = [&](ImVec2 s) {
         ImVec2 p = toPicture(s);
         return ImVec2((p.x - fe.axis.x) / fe.k.x, (p.y - fe.axis.y) / fe.k.y);
-    };
-    // The box as dragged so far (AIR units, x1 <= x2, y1 <= y2)
-    auto dragged = [&](ImVec2 m) {
-        AirBox b = g_boxDrag.box;
-        ImVec2 a = screenToAir(m);
-        int dx = (int)lroundf(a.x - g_boxDrag.start.x), dy = (int)lroundf(a.y - g_boxDrag.start.y);
-        int e = g_boxDrag.edges;
-        if (e == 15) {
-            b.x1 += dx, b.x2 += dx, b.y1 += dy, b.y2 += dy;
-        } else {
-            // facing left: the screen's left edge is the box's x2
-            bool flip = fe.k.x < 0;
-            if (e & 1) (flip ? b.x2 : b.x1) += dx;
-            if (e & 2) (flip ? b.x1 : b.x2) += dx;
-            if (e & 4) b.y1 += dy;
-            if (e & 8) b.y2 += dy;
-        }
-        if (b.x1 > b.x2) std::swap(b.x1, b.x2);
-        if (b.y1 > b.y2) std::swap(b.y1, b.y2);
-        return b;
     };
     ImVec2 m = ImGui::GetMousePos();
     float grab = ImGui::GetFontSize() * 0.45f;
@@ -382,75 +357,7 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
         return active || (hovered && nearby);
     }
 
-    int hitG = -1, hitI = -1, hitEdges = 0;
-    float hitArea = FLT_MAX;
-    for (int g = 0; g < 2; g++)
-        for (size_t i = 0; i < el.clsn[g].size(); i++) {
-            const AirBox &b = el.clsn[g][i];
-            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
-            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
-            if (m.x < lo.x - grab || m.x > hi.x + grab || m.y < lo.y - grab || m.y > hi.y + grab) continue;
-            int edges = (fabsf(m.x - lo.x) < grab ? 1 : 0) | (fabsf(m.x - hi.x) < grab ? 2 : 0) |
-                        (fabsf(m.y - lo.y) < grab ? 4 : 0) | (fabsf(m.y - hi.y) < grab ? 8 : 0);
-            float area = (hi.x - lo.x) * (hi.y - lo.y);
-            if (edges == 0 && (m.x < lo.x || m.x > hi.x || m.y < lo.y || m.y > hi.y)) continue;
-            // An edge beats an inside; among insides the smallest box wins
-            bool better = hitG < 0 || (edges && !hitEdges) || ((edges != 0) == (hitEdges != 0) && area < hitArea);
-            if (better) {
-                hitG = g, hitI = (int)i, hitEdges = edges ? edges : 15, hitArea = area;
-                if (edges == 0) hitEdges = 15;
-            }
-        }
-
-    if (g_boxDrag.active && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        // Released: write the box and send the animations to the game
-        AirBox b = dragged(m);
-        const AirBox &old = g_boxDrag.box;
-        g_boxDrag.active = false;
-        if ((b.x1 != old.x1 || b.y1 != old.y1 || b.x2 != old.x2 || b.y2 != old.y2) && g_boxDrag.g < 2 &&
-            g_boxDrag.i < (int)el.clsn[g_boxDrag.g].size() &&
-            Air_SetBox(t.sf->text, el.clsn[g_boxDrag.g][g_boxDrag.i], b.x1, b.y1, b.x2, b.y2))
-            ApplyAnims(*t.sf);
-        return true;
-    }
-    if (!g_boxDrag.active && hovered && hitG >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        g_boxDrag.active = true;
-        g_boxDrag.g = hitG, g_boxDrag.i = hitI, g_boxDrag.edges = hitEdges;
-        g_boxDrag.start = screenToAir(m);
-        g_boxDrag.box = el.clsn[hitG][hitI];
-    }
-
-    int cursorEdges = g_boxDrag.active ? g_boxDrag.edges : hovered ? hitEdges : 0;
-    if (cursorEdges == 15)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-    else if ((cursorEdges & 3) && (cursorEdges & 12))
-        ImGui::SetMouseCursor(((cursorEdges & 1) != 0) == ((cursorEdges & 4) != 0) ? ImGuiMouseCursor_ResizeNWSE
-                                                                                    : ImGuiMouseCursor_ResizeNESW);
-    else if (cursorEdges & 3)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    else if (cursorEdges & 12)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-
-    for (int g = 0; g < 2; g++)
-        for (size_t i = 0; i < el.clsn[g].size(); i++) {
-            bool dragging = g_boxDrag.active && g_boxDrag.g == g && g_boxDrag.i == (int)i;
-            bool hot = dragging || (!g_boxDrag.active && hitG == g && hitI == (int)i);
-            AirBox b = dragging ? dragged(m) : el.clsn[g][i];
-            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
-            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
-            ImU32 line = g == 0 ? IM_COL32(255, 70, 70, 255) : IM_COL32(80, 140, 255, 255);
-            draw->AddRectFilled(lo, hi, g == 0 ? IM_COL32(255, 70, 70, hot ? 80 : 40) : IM_COL32(80, 140, 255, hot ? 80 : 40));
-            draw->AddRect(lo, hi, line, 0, hot ? thick * 2 : thick);
-            float h = grab * 0.5f;
-            for (ImVec2 p : {lo, hi, ImVec2(lo.x, hi.y), ImVec2(hi.x, lo.y)})
-                draw->AddRectFilled(ImVec2(p.x - h, p.y - h), ImVec2(p.x + h, p.y + h), line);
-            if (dragging) {
-                char label[64];
-                snprintf(label, sizeof(label), "%d, %d, %d, %d", b.x1, b.y1, b.x2, b.y2);
-                draw->AddText(ImVec2(lo.x, hi.y + thick * 2), IM_COL32(255, 255, 255, 255), label);
-            }
-        }
-    return g_boxDrag.active || (hovered && hitG >= 0);
+    return BoxHandles(g_boxDrag, draw, hovered, t, airToScreen, screenToAir, fe.k.x < 0);
 }
 
 void GameWindow() {

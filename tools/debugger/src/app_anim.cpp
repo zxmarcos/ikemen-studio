@@ -2,6 +2,7 @@
 // action a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def).
 #include "app_internal.h"
 
+#include <cfloat>
 #include <cmath>
 #include <fstream>
 
@@ -116,11 +117,14 @@ void ApplyAnims(SourceFile &sf) {
     }
 }
 
-void AddBox(AnimTarget &t, int g) {
+// A box added to the element's Clsn1 (g 0) or Clsn2 (g 1): at, or under the last one.
+void AddBox(const AnimTarget &t, int g, const AirBox *at = nullptr) {
     const AirElem &el = t.act->elems[t.elem - 1];
     std::vector<AirBox> boxes = el.clsn[g];
     AirBox b;
-    if (boxes.empty()) {
+    if (at) {
+        b = *at;
+    } else if (boxes.empty()) {
         b.x1 = -15, b.y1 = -80, b.x2 = 15, b.y2 = 0;
     } else {
         b = boxes.back();
@@ -130,11 +134,109 @@ void AddBox(AnimTarget &t, int g) {
     if (Air_SetOwnBoxes(t.sf->text, el, g, boxes)) ApplyAnims(*t.sf);
 }
 
-void DeleteBox(AnimTarget &t, int g, int index) {
+void DeleteBox(const AnimTarget &t, int g, int index) {
     const AirElem &el = t.act->elems[t.elem - 1];
     std::vector<AirBox> boxes = el.clsn[g];
     boxes.erase(boxes.begin() + index);
     if (Air_SetOwnBoxes(t.sf->text, el, g, boxes)) ApplyAnims(*t.sf);
+}
+
+bool BoxHandles(BoxDrag &d, ImDrawList *draw, bool hovered, const AnimTarget &t,
+                const std::function<ImVec2(float, float)> &airToScreen, const std::function<ImVec2(ImVec2)> &screenToAir,
+                bool flip, int *hit) {
+    const AirElem &el = t.act->elems[t.elem - 1];
+    // The box as dragged so far (AIR units, x1 <= x2, y1 <= y2)
+    auto dragged = [&](ImVec2 m) {
+        AirBox b = d.box;
+        ImVec2 a = screenToAir(m);
+        int dx = (int)lroundf(a.x - d.start.x), dy = (int)lroundf(a.y - d.start.y);
+        int e = d.edges;
+        if (e == 15) {
+            b.x1 += dx, b.x2 += dx, b.y1 += dy, b.y2 += dy;
+        } else {
+            // facing left: the screen's left edge is the box's x2
+            if (e & 1) (flip ? b.x2 : b.x1) += dx;
+            if (e & 2) (flip ? b.x1 : b.x2) += dx;
+            if (e & 4) b.y1 += dy;
+            if (e & 8) b.y2 += dy;
+        }
+        if (b.x1 > b.x2) std::swap(b.x1, b.x2);
+        if (b.y1 > b.y2) std::swap(b.y1, b.y2);
+        return b;
+    };
+    ImVec2 m = ImGui::GetMousePos();
+    float grab = ImGui::GetFontSize() * 0.45f;
+    float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
+
+    int hitG = -1, hitI = -1, hitEdges = 0;
+    float hitArea = FLT_MAX;
+    for (int g = 0; g < 2; g++)
+        for (size_t i = 0; i < el.clsn[g].size(); i++) {
+            const AirBox &b = el.clsn[g][i];
+            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
+            if (m.x < lo.x - grab || m.x > hi.x + grab || m.y < lo.y - grab || m.y > hi.y + grab) continue;
+            int edges = (fabsf(m.x - lo.x) < grab ? 1 : 0) | (fabsf(m.x - hi.x) < grab ? 2 : 0) |
+                        (fabsf(m.y - lo.y) < grab ? 4 : 0) | (fabsf(m.y - hi.y) < grab ? 8 : 0);
+            float area = (hi.x - lo.x) * (hi.y - lo.y);
+            if (edges == 0 && (m.x < lo.x || m.x > hi.x || m.y < lo.y || m.y > hi.y)) continue;
+            // An edge beats an inside; among insides the smallest box wins
+            bool better = hitG < 0 || (edges && !hitEdges) || ((edges != 0) == (hitEdges != 0) && area < hitArea);
+            if (better) {
+                hitG = g, hitI = (int)i, hitEdges = edges ? edges : 15, hitArea = area;
+                if (edges == 0) hitEdges = 15;
+            }
+        }
+    if (hit) *hit = hovered && hitG >= 0 ? hitG * 1000 + hitI : -1;
+
+    if (d.active && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        // Released: write the box and send the animations to the game
+        AirBox b = dragged(m);
+        const AirBox &old = d.box;
+        d.active = false;
+        if ((b.x1 != old.x1 || b.y1 != old.y1 || b.x2 != old.x2 || b.y2 != old.y2) && d.g < 2 &&
+            d.i < (int)el.clsn[d.g].size() && Air_SetBox(t.sf->text, el.clsn[d.g][d.i], b.x1, b.y1, b.x2, b.y2))
+            ApplyAnims(*t.sf);
+        return true;
+    }
+    if (!d.active && hovered && hitG >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        d.active = true;
+        d.g = hitG, d.i = hitI, d.edges = hitEdges;
+        d.start = screenToAir(m);
+        d.box = el.clsn[hitG][hitI];
+    }
+
+    int cursorEdges = d.active ? d.edges : hovered ? hitEdges : 0;
+    if (cursorEdges == 15)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    else if ((cursorEdges & 3) && (cursorEdges & 12))
+        ImGui::SetMouseCursor(((cursorEdges & 1) != 0) == ((cursorEdges & 4) != 0) ? ImGuiMouseCursor_ResizeNWSE
+                                                                                    : ImGuiMouseCursor_ResizeNESW);
+    else if (cursorEdges & 3)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    else if (cursorEdges & 12)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+
+    for (int g = 0; g < 2; g++)
+        for (size_t i = 0; i < el.clsn[g].size(); i++) {
+            bool dragging = d.active && d.g == g && d.i == (int)i;
+            bool hot = dragging || (!d.active && hovered && hitG == g && hitI == (int)i);
+            AirBox b = dragging ? dragged(m) : el.clsn[g][i];
+            ImVec2 a = airToScreen((float)b.x1, (float)b.y1), c = airToScreen((float)b.x2, (float)b.y2);
+            ImVec2 lo(std::min(a.x, c.x), std::min(a.y, c.y)), hi(std::max(a.x, c.x), std::max(a.y, c.y));
+            ImU32 line = g == 0 ? IM_COL32(255, 70, 70, 255) : IM_COL32(80, 140, 255, 255);
+            draw->AddRectFilled(lo, hi, g == 0 ? IM_COL32(255, 70, 70, hot ? 80 : 40) : IM_COL32(80, 140, 255, hot ? 80 : 40));
+            draw->AddRect(lo, hi, line, 0, hot ? thick * 2 : thick);
+            float h = grab * 0.5f;
+            for (ImVec2 p : {lo, hi, ImVec2(lo.x, hi.y), ImVec2(hi.x, lo.y)})
+                draw->AddRectFilled(ImVec2(p.x - h, p.y - h), ImVec2(p.x + h, p.y + h), line);
+            if (dragging) {
+                char label[64];
+                snprintf(label, sizeof(label), "%d, %d, %d, %d", b.x1, b.y1, b.x2, b.y2);
+                draw->AddText(ImVec2(lo.x, hi.y + thick * 2), IM_COL32(255, 255, 255, 255), label);
+            }
+        }
+    return d.active || (hovered && hitG >= 0);
 }
 
 // Number of elements of the action whose boxes come from that header line.
@@ -146,17 +248,26 @@ int SharedBy(const AirAction &act, int g, int header) {
 
 // The action drawn here, without the game: each element's sprite at its offset from the axis,
 // its Clsn2 (blue) and Clsn1 (red) boxes; played at the game's 60 ticks a second, looping from
-// its loop start, or the element selected.
-void AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes) {
+// its loop start, or the element selected. The selected element's boxes are edited on it: a drag
+// moves an edge, a corner or the whole box; the right button adds or deletes one. Returns true
+// when the element's lines changed (a box added or deleted).
+bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes) {
     static bool playing = false;
     static double started;
     static const AirAction *forAct;
+    static BoxDrag drag;
     float em = ImGui::GetFontSize();
     if (ImGui::SmallButton(playing ? "Stop" : "Play")) {
         playing = !playing;
         started = ImGui::GetTime();
     }
     ImGui::SetItemTooltip("Plays the action at the game's speed (60 ticks a second), from its loop start after the end");
+    if (boxes && !playing) {
+        ImGui::SameLine();
+        HelpMarker("Drag an edge, a corner or the inside of a box to change it. Right click: add a Clsn2 or "
+                   "Clsn1 box there, or delete the box under the mouse (Delete does it too). Changes go to the "
+                   "game at once; Save writes the AIR file. Wheel: zoom; middle drag: pan; double click: fit.");
+    }
     const AirAction &act = *t.act;
     // The element shown: the one selected, or the one playing
     int shown = t.elem - 1;
@@ -200,15 +311,42 @@ void AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes) {
     }
     if (!ImGui::BeginChild("preview", ImVec2(0, em * 14), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY)) {
         ImGui::EndChild();
-        return;
+        return false;
     }
     ImVec2 p0 = ImGui::GetCursorScreenPos(), size = ImGui::GetContentRegionAvail();
+    ImGui::InvisibleButton("canvas", ImVec2(std::max(size.x, 1.0f), std::max(size.y, 1.0f)),
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+    bool hovered = ImGui::IsItemHovered();
     ImDrawList *draw = ImGui::GetWindowDrawList();
     Checkerboard(draw, p0, ImVec2(p0.x + size.x, p0.y + size.y));
-    float pad = em;
-    float k = std::min((size.x - pad * 2) / (maxX - minX), (size.y - pad * 2) / (maxY - minY));
-    k = k >= 1 ? floorf(k) : std::max(k, 0.1f); // whole pixels when it can
-    ImVec2 axis(p0.x + (size.x - (maxX - minX) * k) * 0.5f - minX * k, p0.y + (size.y - (maxY - minY) * k) * 0.5f - minY * k);
+    // The view, fitted to the action when it or the canvas changes (or on a double click), and
+    // kept while its boxes are edited; the wheel zooms at the mouse, a middle drag pans
+    static std::string viewOf;
+    static bool refit;
+    static float k;
+    static ImVec2 origin; // the axis, from the canvas's corner
+    char key[64];
+    snprintf(key, sizeof(key), "#%d %.0fx%.0f ", g_animAction, size.x, size.y);
+    std::string view = key + (t.sf ? t.sf->path : std::string());
+    if (viewOf != view || refit) {
+        viewOf = view, refit = false;
+        float pad = em;
+        k = std::min((size.x - pad * 2) / (maxX - minX), (size.y - pad * 2) / (maxY - minY));
+        k = k >= 1 ? floorf(k) : std::max(k, 0.1f); // whole pixels when it can
+        origin = ImVec2((size.x - (maxX - minX) * k) * 0.5f - minX * k, (size.y - (maxY - minY) * k) * 0.5f - minY * k);
+    }
+    ImGuiIO &io = ImGui::GetIO();
+    if (hovered && io.MouseWheel != 0) {
+        float before = k;
+        k = std::max(0.1f, std::min(32.0f, k * powf(1.25f, io.MouseWheel)));
+        ImVec2 m(io.MousePos.x - p0.x, io.MousePos.y - p0.y);
+        origin = ImVec2(m.x - (m.x - origin.x) * k / before, m.y - (m.y - origin.y) * k / before);
+    }
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0)) {
+        origin.x += io.MouseDelta.x, origin.y += io.MouseDelta.y;
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+    ImVec2 axis(floorf(p0.x + origin.x), floorf(p0.y + origin.y));
     auto at = [&](float x, float y) { return ImVec2(floorf(axis.x + x * k), floorf(axis.y + y * k)); };
     const AirElem &el = act.elems[std::clamp(shown, 0, (int)act.elems.size() - 1)];
     int si = spf ? Sff_FindSprite(spf->doc, el.group, el.image) : -1;
@@ -218,20 +356,62 @@ void AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes) {
             draw->AddImage(TexRef(tex), at((float)(el.x - s.x), (float)(el.y - s.y)),
                            at((float)(el.x - s.x + s.w), (float)(el.y - s.y + s.h)));
     } else if (el.group >= 0) {
-        ImGui::TextColored(Ink(kRed), " sprite %d, %d is not in the SFF", el.group, el.image);
+        char note[64];
+        snprintf(note, sizeof(note), " sprite %d, %d is not in the SFF", el.group, el.image);
+        draw->AddText(p0, ImGui::GetColorU32(Ink(kRed)), note);
     }
-    if (boxes)
-        for (int g = 1; g >= 0; g--)
-            for (const AirBox &b : el.clsn[g]) {
-                ImU32 col = g ? IM_COL32(60, 120, 255, 255) : IM_COL32(255, 60, 60, 255);
-                draw->AddRectFilled(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), (col & 0x00FFFFFF) | 0x30000000);
-                draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), col);
-            }
     // The axis
     draw->AddLine(ImVec2(axis.x - em * 0.6f, axis.y), ImVec2(axis.x + em * 0.6f, axis.y), IM_COL32(255, 230, 80, 255));
     draw->AddLine(ImVec2(axis.x, axis.y - em * 0.6f), ImVec2(axis.x, axis.y + em * 0.6f), IM_COL32(255, 230, 80, 255));
-    ImGui::Dummy(size);
+    bool changed = false;
+    int hit = -1;
+    if (boxes && !playing && t.sf) {
+        // The selected element's boxes, with handles
+        auto toAir = [&](ImVec2 s) { return ImVec2((s.x - axis.x) / k, (s.y - axis.y) / k); };
+        BoxHandles(drag, draw, hovered, t, at, toAir, false, &hit);
+        static int menuHit;
+        static ImVec2 menuAt;
+        if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            menuHit = hit, menuAt = toAir(ImGui::GetMousePos());
+            ImGui::OpenPopup("boxes");
+        }
+        auto exists = [&](int h) { return h >= 0 && h % 1000 < (int)el.clsn[h / 1000].size(); };
+        if (ImGui::BeginPopup("boxes")) {
+            if (exists(menuHit)) {
+                if (ImGui::MenuItem(menuHit / 1000 ? "Delete this Clsn2 box" : "Delete this Clsn1 box", "Delete")) {
+                    DeleteBox(t, menuHit / 1000, menuHit % 1000);
+                    changed = true;
+                }
+                ImGui::Separator();
+            }
+            for (int g = 1; g >= 0; g--)
+                if (ImGui::MenuItem(g ? "Add a Clsn2 box here" : "Add a Clsn1 box here")) {
+                    int x = (int)lroundf(menuAt.x), y = (int)lroundf(menuAt.y);
+                    AirBox b;
+                    b.x1 = x - 10, b.y1 = y - 10, b.x2 = x + 10, b.y2 = y + 10;
+                    AddBox(t, g, &b);
+                    changed = true;
+                }
+            ImGui::EndPopup();
+        }
+        if (exists(hit) && !drag.active && ImGui::IsKeyPressed(ImGuiKey_Delete, false) &&
+            ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+            DeleteBox(t, hit / 1000, hit % 1000);
+            changed = true;
+        }
+    } else {
+        drag.active = false;
+        if (boxes)
+            for (int g = 1; g >= 0; g--)
+                for (const AirBox &b : el.clsn[g]) {
+                    ImU32 col = g ? IM_COL32(60, 120, 255, 255) : IM_COL32(255, 60, 60, 255);
+                    draw->AddRectFilled(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), (col & 0x00FFFFFF) | 0x30000000);
+                    draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), col);
+                }
+    }
+    if (hovered && hit < 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) refit = true;
     ImGui::EndChild();
+    return changed;
 }
 
 // The action a screen's element shows, as a target: the def is its file.
@@ -467,7 +647,10 @@ void AnimationWindow() {
     }
 
     ImGui::SeparatorText("Preview");
-    AnimPreview(t, screen ? sa.sprites : SpritesOf(t.pn), !screen);
+    if (AnimPreview(t, screen ? sa.sprites : SpritesOf(t.pn), !screen)) {
+        ImGui::End();
+        return; // the element's lines changed
+    }
 
     const AirElem &el = t.act->elems[t.elem - 1];
     ImGui::SeparatorText("Element");

@@ -48,7 +48,7 @@ while (((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -
 if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } else { "game window not found" }
 Start-Sleep -Seconds $Wait
 
-$shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F3 = 0x72; F5 = 0x74; F10 = 0x79; F11 = 0x7A; F12 = 0x7B; ESCAPE = 0x1B; RETURN = 0x0D; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10; CTRL = 0x11 }
+$shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F3 = 0x72; F5 = 0x74; F10 = 0x79; F11 = 0x7A; F12 = 0x7B; ESCAPE = 0x1B; RETURN = 0x0D; DELETE = 0x2E; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10; CTRL = 0x11 }
 foreach ($c in [char[]]"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") { $vk["$c"] = [int]$c }
 foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
   $kind, $arg = $a -split ':', 2
