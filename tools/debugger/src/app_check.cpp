@@ -48,6 +48,7 @@ struct VarUse {
     bool write;
     int file, line, state;
     bool stateLiteral;
+    bool range = false; // set by a VarRangeSet with others
 };
 
 struct Finding {
@@ -164,7 +165,7 @@ void SetVars(const CnsCtrl &c, int file, int state, bool literal, std::vector<Va
         int lo = first && Cns_Numbers(first->value, a) ? a.n[0] : 0;
         bool floats = c.Param("fvalue") != nullptr;
         int hi = last && Cns_Numbers(last->value, b) ? b.n[0] : (floats ? 39 : 59);
-        for (int i = lo; i <= hi && i - lo < 100; i++) out.push_back({floats ? 'f' : 'v', i, true, file, c.line, state, literal});
+        for (int i = lo; i <= hi && i - lo < 100; i++) out.push_back({floats ? 'f' : 'v', i, true, file, c.line, state, literal, true});
     }
 }
 
@@ -717,6 +718,157 @@ void UseButtons(const Model &m, const std::vector<const VarUse *> &uses, const c
     }
 }
 
+// Where a line's code ends: its comment (';' in CNS, '#' in ZSS) outside quotes
+size_t CodeEnd(const std::string &line, bool zss) {
+    bool quoted = false;
+    for (size_t i = 0; i < line.size(); i++) {
+        if (line[i] == '"') quoted = !quoted;
+        else if (line[i] == (zss ? '#' : ';') && !quoted) return i;
+    }
+    return line.size();
+}
+
+// A variable given another number in the character's own files (the common ones are left): every
+// var(n) (fvar(n)) outside comments, and n in v = n (fv = n) of VarSet, VarAdd, VarRandom,
+// ParentVarSet and ParentVarAdd. The new texts, and what is left as it is.
+struct Renumbering {
+    std::map<std::string, std::string> texts; // path -> its new text
+    int changes = 0;
+    std::vector<std::string> notes;
+};
+
+Renumbering PlanRenumber(const Model &m, char kind, int from, int to) {
+    Renumbering r;
+    const char *name = kind == 'v' ? "var" : "fvar";
+    const std::regex use(std::string("(^|[^A-Za-z0-9_.])(") + name + R"()(\s*\(\s*))" + std::to_string(from) + R"((\s*\)))",
+                         std::regex::icase);
+    const std::regex param(std::string("(^|[^A-Za-z0-9_.])(") + (kind == 'v' ? "v" : "fv") + R"()(\s*[=:]\s*))" +
+                               std::to_string(from) + "(?![0-9])",
+                           std::regex::icase);
+    static const std::set<std::string> setters = {"varset", "varadd", "varrandom", "parentvarset", "parentvaradd"};
+    for (const ParsedFile &pf : m.files) {
+        if (!pf.own) continue;
+        bool zss = Cns_IsZss(pf.path);
+        // The lines of its setters naming the variable by number
+        std::set<int> paramLines;
+        for (const CnsState &st : pf.cns.states)
+            for (const CnsCtrl &c : st.ctrls) {
+                if (setters.count(c.type))
+                    for (const CnsParam &p : c.params) {
+                        CnsNumbers n;
+                        if (p.key == (kind == 'v' ? "v" : "fv") && Cns_Numbers(p.value, n) && !n.prefix && n.n.size() == 1 && n.n[0] == from)
+                            paramLines.insert(p.line);
+                    }
+                if (c.type == "varrangeset" && (c.Param("fvalue") != nullptr) == (kind == 'f')) {
+                    CnsNumbers a, b;
+                    const CnsParam *first = c.Param("first"), *last = c.Param("last");
+                    int lo = first && Cns_Numbers(first->value, a) ? a.n[0] : 0;
+                    int hi = last && Cns_Numbers(last->value, b) ? b.n[0] : (kind == 'f' ? 39 : 59);
+                    if ((from >= lo && from <= hi) != (to >= lo && to <= hi))
+                        r.notes.push_back(pf.path + ":" + std::to_string(c.line) + ": a VarRangeSet sets " + std::to_string(lo) +
+                                          " to " + std::to_string(hi) + ", one number and not the other (left as it is)");
+                }
+            }
+        const std::string &text = LoadSource(pf.path).text;
+        std::string out;
+        int count = 0, lineNo = 1;
+        for (size_t at = 0; at <= text.size(); lineNo++) {
+            size_t nl = text.find('\n', at);
+            if (nl == std::string::npos) nl = text.size();
+            std::string line = text.substr(at, nl - at);
+            size_t end = CodeEnd(line, zss);
+            std::string code = line.substr(0, end), rest = line.substr(end);
+            // two-digit group numbers: the new number's digits follow them
+            std::string fmt = "$01$02$03" + std::to_string(to) + "$04";
+            for (std::sregex_iterator it(code.begin(), code.end(), use), e; it != e; ++it) count++;
+            code = std::regex_replace(code, use, fmt);
+            if (paramLines.count(lineNo)) {
+                for (std::sregex_iterator it(code.begin(), code.end(), param), e; it != e; ++it) count++;
+                code = std::regex_replace(code, param, "$01$02$03" + std::to_string(to));
+            }
+            out += code + rest;
+            if (nl < text.size()) out += '\n';
+            at = nl + 1;
+        }
+        if (count) {
+            r.texts[pf.path] = out;
+            r.changes += count;
+        }
+    }
+    for (const VarUse &u : m.vars)
+        if (u.kind == kind && u.index == from && !u.range && !m.files[u.file].own) {
+            r.notes.push_back(m.files[u.file].path + ":" + std::to_string(u.line) + ": a common file uses it (left as it is)");
+            break;
+        }
+    return r;
+}
+
+// The Renumber popup of a variable (var or fvar): its new number, what would change, then the change
+void RenumberPopup(Model &m, char kind, int from) {
+    static int to = 0;
+    static std::string forKey;
+    std::string key = VarKey(m.def, kind, from);
+    float em = ImGui::GetFontSize();
+    if (ImGui::IsWindowAppearing() || forKey != key) {
+        forKey = key;
+        to = from;
+        for (int i = 0; i < (kind == 'v' ? 60 : 40); i++) {
+            bool used = false;
+            for (const VarUse &u : m.vars) used |= u.kind == kind && u.index == i && !u.range;
+            if (!used && VarName(m.def, kind, i).empty()) {
+                to = i;
+                break;
+            }
+        }
+    }
+    ImGui::Text("Renumber %s(%d) in the character's files", KindName(kind), from);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("to");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 5);
+    ImGui::InputInt("##to", &to, 1, 10);
+    to = std::clamp(to, 0, kind == 'v' ? 59 : 39);
+    int usedTo = 0;
+    for (const VarUse &u : m.vars) usedTo += u.kind == kind && u.index == to && !u.range;
+    // Planned again when the number or the files change
+    static Renumbering r;
+    static std::tuple<size_t, std::string, int> planned;
+    if (planned != std::make_tuple(m.signature, key, to)) {
+        planned = std::make_tuple(m.signature, key, to);
+        r = PlanRenumber(m, kind, from, to);
+    }
+    bool ok = to != from && usedTo == 0;
+    if (to == from) ImGui::TextDisabled("The same number.");
+    else if (usedTo) ImGui::TextColored(Ink(kRed), "%s(%d) is used already (%d places): pick a free one.", KindName(kind), to, usedTo);
+    else ImGui::TextColored(Ink(kGreen), "%s(%d) is free.", KindName(kind), to);
+    if (ok) {
+        ImGui::Text("%d changes in %zu files:", r.changes, r.texts.size());
+        for (const auto &[path, text] : r.texts) ImGui::BulletText("%s", path.c_str());
+    }
+    for (const std::string &n : r.notes) ImGui::TextColored(Ink(kYellow), "%s", n.c_str());
+    ImGui::BeginDisabled(!ok || r.changes == 0);
+    if (ImGui::Button("Renumber")) {
+        for (const auto &[path, text] : r.texts) {
+            SourceFile &sf = LoadSource(path);
+            sf.text = text;
+            sf.version++;
+        }
+        std::string &oldName = g_varNames[VarKey(m.def, kind, from)];
+        if (!oldName.empty()) {
+            g_varNames[VarKey(m.def, kind, to)] = oldName;
+            oldName.clear();
+        }
+        Log(LogLine::Info, std::string(KindName(kind)) + "(" + std::to_string(from) + ") is now " + KindName(kind) + "(" +
+                               std::to_string(to) + "): " + std::to_string(r.changes) + " changes in " +
+                               std::to_string(r.texts.size()) + " files, not saved yet (Code: Save and apply, Ctrl+S).");
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    ImGui::TextDisabled("Only numbers written as numbers change; the files are left unsaved.");
+}
+
 // e: the entity whose values are shown, nullptr none (a character read from disk)
 void VariablesTab(Model &m, const Entity *e) {
     static int kindIdx = 0;
@@ -756,7 +908,15 @@ void VariablesTab(Model &m, const Entity *e) {
         ImGui::PushID(i);
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImGui::Text("%s(%d)", KindName(kind), i);
+        char label[32];
+        snprintf(label, sizeof(label), "%s(%d)", KindName(kind), i);
+        bool sys = kind == 's' || kind == 'S';
+        if (ImGui::Selectable(label, false, sys ? ImGuiSelectableFlags_Disabled : 0)) ImGui::OpenPopup("renumber");
+        if (!sys) ImGui::SetItemTooltip("Click: give it another number in every file of the character");
+        if (ImGui::BeginPopup("renumber")) {
+            RenumberPopup(m, kind, i);
+            ImGui::EndPopup();
+        }
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputTextWithHint("##name", "name", &name);
@@ -939,6 +1099,108 @@ void LintProblems(std::vector<Problem> &out) {
 std::string VarName(const std::string &def, char kind, int index) {
     auto it = g_varNames.find(VarKey(def, kind, index));
     return it == g_varNames.end() ? "" : it->second;
+}
+
+namespace {
+
+// The variable a word names: var(12) at "var" or at "12"; VarSet's v = 12 or v: 12 at "12"
+bool VarAt(const std::string &t, size_t b, size_t e, char *kind, int *index) {
+    auto kindOf = [](const std::string &k) -> char {
+        return k == "var" ? 'v' : k == "fvar" ? 'f' : k == "sysvar" ? 's' : k == "sysfvar" ? 'S' : 0;
+    };
+    auto skip = [&](size_t p) {
+        while (p < t.size() && (t[p] == ' ' || t[p] == '\t')) p++;
+        return p;
+    };
+    auto skipBack = [&](size_t p) {
+        while (p > 0 && (t[p - 1] == ' ' || t[p - 1] == '\t')) p--;
+        return p;
+    };
+    auto identBefore = [&](size_t p) {
+        size_t q = p;
+        while (q > 0 && IdentChar(t[q - 1])) q--;
+        return Lower(t.substr(q, p - q));
+    };
+    std::string w = Lower(t.substr(b, e - b));
+    if (char k = kindOf(w)) {
+        size_t p = skip(e);
+        if (p >= t.size() || t[p] != '(') return false;
+        p = skip(p + 1);
+        size_t q = p;
+        while (q < t.size() && isdigit((unsigned char)t[q])) q++;
+        if (q == p || skip(q) >= t.size() || t[skip(q)] != ')') return false;
+        *kind = k, *index = atoi(t.c_str() + p);
+        return true;
+    }
+    if (!IsNumber(w)) return false;
+    size_t p = skipBack(b);
+    if (p > 0 && t[p - 1] == '(') {
+        if (char k = kindOf(identBefore(skipBack(p - 1)))) {
+            *kind = k, *index = atoi(w.c_str());
+            return true;
+        }
+    } else if (p > 0 && (t[p - 1] == '=' || t[p - 1] == ':')) {
+        std::string key = identBefore(skipBack(p - 1));
+        if (key == "v" || key == "fv") {
+            *kind = key == "v" ? 'v' : 'f', *index = atoi(w.c_str());
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+std::string CodeHoverNote(const std::string &file, size_t b, size_t e) {
+    int pn = 0;
+    Model *m = ModelWith(file, &pn);
+    const std::string &t = LoadSource(file).text;
+    if (!m || b >= e || e > t.size()) return "";
+    char kind;
+    int index;
+    if (VarAt(t, b, e, &kind, &index)) {
+        int writes = 0, reads = 0;
+        for (const VarUse &u : m->vars)
+            if (u.kind == kind && u.index == index) (u.write ? writes : reads)++;
+        std::string name = VarName(m->def, kind, index);
+        std::string s = std::string(KindName(kind)) + "(" + std::to_string(index) + ")";
+        if (!name.empty()) s += " \"" + name + "\"";
+        s += ": written in " + std::to_string(writes) + (writes == 1 ? " place" : " places") + ", read in " +
+             std::to_string(reads) + ".\nName or renumber it in Analysis > Variables.";
+        return s;
+    }
+    // A number naming a state or an action
+    Spot s = SpotAt(t, b);
+    if (!IsNumber(s.word)) return "";
+    int n = atoi(s.word.c_str());
+    switch (WhatAt(*m, file, s)) {
+    case kState: {
+        auto it = m->states.find(n);
+        if (it == m->states.end()) return "State " + s.word + " is not in the character's files.";
+        const ParsedFile &pf = m->files[it->second.first];
+        return "State " + s.word + ": " + pf.path + ":" + std::to_string(pf.cns.states[it->second.second].line) +
+               " (F12 or Ctrl+click goes there; Shift+F12: what changes to it)";
+    }
+    case kAction: {
+        std::vector<std::string> airs = {CharFile(pn, "anim")};
+        for (const auto &p : FilesOf(pn, "common.air")) airs.push_back(p);
+        for (const std::string &air : airs) {
+            if (air.empty()) continue;
+            const AirFile &parsed = AirOf(LoadSource(air));
+            auto a = parsed.actions.find(n);
+            if (a == parsed.actions.end()) continue;
+            int ticks = 0;
+            bool endless = false;
+            for (const AirElem &el : a->second.elems) el.time < 0 ? endless = true : ticks += el.time;
+            return "Action " + s.word + ": " + std::to_string(a->second.elems.size()) + " elements, " +
+                   (endless ? "the last one forever" : std::to_string(ticks) + " ticks") + " (" + air + ":" +
+                   std::to_string(a->second.line) + "; F12 goes there)";
+        }
+        return "Action " + s.word + " is not in the character's AIR files.";
+    }
+    default:
+        return "";
+    }
 }
 
 void AnalysisSettingsLine(const std::string &key, const std::string &value) {

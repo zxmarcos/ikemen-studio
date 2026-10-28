@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <unordered_map>
 #include <vector>
@@ -180,6 +181,11 @@ static const NameDoc kRedirects[] = {
     { "Enemy", "Enemy(n), trigger", "evaluates trigger for opponent n (0: the first)" },
     { "EnemyNear", "EnemyNear(n), trigger", "evaluates trigger for the n-th nearest opponent (0: the nearest)" },
     { "PlayerID", "PlayerID(id), trigger", "evaluates trigger for the player with this ID" },
+    { "P2", "P2, trigger", "evaluates trigger for the nearest opponent" },
+    { "StateOwner", "StateOwner, trigger", "evaluates trigger for the owner of the state the player is in (a custom state's giver)" },
+    { "Player", "Player(n), trigger", "evaluates trigger for player n (1: P1)" },
+    { "PlayerIndex", "PlayerIndex(n), trigger", "evaluates trigger for the n-th player in the game's list" },
+    { "HelperIndex", "HelperIndex(n), trigger", "evaluates trigger for the player's n-th helper" },
 };
 
 static const char kPalFX[] = "time = t; add = r,g,b; mul = r,g,b; sinadd = r,g,b,period; invertall = 0/1; color = 0-256";
@@ -345,18 +351,160 @@ static const char *const kParams[] = {
 /* Words of the AIR files. */
 static const char *const kKeywords[] = { "loopstart", "interpolate" };
 
+/* The words of ZSS's statements. */
+static const char *const kZssKeywords[] = {
+    "if", "else", "switch", "case", "default", "for", "while", "break", "continue", "let", "call", "ignorehitpause",
+    "persistent",
+};
+
+/* What the parameters most controllers share mean (a controller's own line in kControllers says more). */
+static const NameDoc kParamDocs[] = {
+    { "value", "", "the controller's main value" },
+    { "value2", "", "a second value" },
+    { "ctrl", "0/1", "gives (1) or takes (0) the control of the player" },
+    { "anim", "action", "an action of the AIR file (F prefix: fightfx's)" },
+    { "elem", "n", "the element of the action to start from" },
+    { "x", "n", "the x component (forward from the player's facing)" },
+    { "y", "n", "the y component (positive down)" },
+    { "z", "n", "the z component (depth)" },
+    { "time", "ticks", "how long it lasts (-1: forever, where it applies)" },
+    { "id", "n", "an ID, to find it again (explods, helpers, projectiles, HitDef targets)" },
+    { "pos", "x, y", "a position, relative to what postype says" },
+    { "postype", "p1/p2/front/back/left/right", "what pos is relative to" },
+    { "facing", "1/-1", "the same way as the player (1) or the other way (-1)" },
+    { "vfacing", "1/-1", "upright (1) or upside down (-1)" },
+    { "vel", "x, y", "a velocity" },
+    { "velocity", "x, y", "a velocity" },
+    { "accel", "x, y", "an acceleration, added to the velocity each tick" },
+    { "scale", "x, y", "a scale factor" },
+    { "sprpriority", "n", "drawing priority (higher is in front)" },
+    { "ontop", "0/1", "drawn on top of everything" },
+    { "removetime", "ticks", "removed after this many ticks (-1: never, -2: when its animation ends)" },
+    { "bindtime", "ticks", "stays bound to the player for this many ticks (-1: forever)" },
+    { "supermovetime", "ticks", "keeps moving during a SuperPause for this many ticks" },
+    { "pausemovetime", "ticks", "keeps moving during a Pause for this many ticks" },
+    { "ownpal", "0/1", "its own copy of the palette (not changed by the player's PalFX)" },
+    { "removeongethit", "0/1", "removed when the player is hit" },
+    { "ignorehitpause", "0/1", "runs during hit pause too" },
+    { "persistent", "n", "0: once per state; 1: every tick its triggers are true; n: once every n ticks" },
+    { "triggerall", "expression", "must be true for any of the triggers to count" },
+    { "trigger1", "expression", "the controller runs when every triggerN line of the lowest true N is true" },
+    { "type", "name", "the controller (in a [State] block), or S/C/A/L (in a statedef)" },
+    { "redirectid", "playerid", "runs the controller on the player with this ID (Ikemen GO)" },
+    { "trans", "default/none/add/addalpha/add1/sub", "the transparency" },
+    { "alpha", "src, dst", "the transparency's amounts (0-256)" },
+    { "channel", "n", "the sound channel (-1: any free one)" },
+    { "attr", "SCA, NA/SA/HA/NT/ST/HT/NP/SP/HP", "the attack's attributes: standing, crouching, air; normal, special, hyper; attack, throw, projectile" },
+    { "damage", "hit, guard", "damage done when it hits, and when it is guarded" },
+    { "animtype", "light/medium/hard/back/up/diagup", "how the opponent reacts to the hit" },
+    { "guardflag", "HLA", "how it can be guarded: high, low, in the air (M = HL)" },
+    { "hitflag", "HLAFD+-", "what it can hit: high, low, air, falling (F), lying down (D); + only hit states, - not them" },
+    { "pausetime", "p1, p2", "hit pause of the attacker and shake time of the target" },
+    { "guard.pausetime", "p1, p2", "the same when guarded" },
+    { "sparkno", "[S]n", "the hit spark's action (S prefix: the character's own)" },
+    { "guard.sparkno", "[S]n", "the guard spark's action" },
+    { "sparkxy", "x, y", "where the spark goes, from the target's front and the attacker's axis" },
+    { "hitsound", "[S]group, n", "the sound of the hit (S prefix: the character's own)" },
+    { "guardsound", "[S]group, n", "the sound when guarded" },
+    { "ground.type", "high/low/trip/none", "the kind of hit on a standing or crouching target" },
+    { "air.type", "high/low/trip/none", "the kind of hit on a target in the air" },
+    { "ground.slidetime", "ticks", "how long the target slides back" },
+    { "ground.hittime", "ticks", "how long the target stays in its hit state" },
+    { "air.hittime", "ticks", "the same for a target in the air" },
+    { "guard.slidetime", "ticks", "how long a guarding target slides back" },
+    { "guard.hittime", "ticks", "how long a guarding target stays in its guard state" },
+    { "guard.ctrltime", "ticks", "when a guarding target gets control back" },
+    { "ground.velocity", "x, y", "the velocity given to a target on the ground" },
+    { "air.velocity", "x, y", "the velocity given to a target in the air" },
+    { "guard.velocity", "x", "the velocity given to a guarding target" },
+    { "airguard.velocity", "x, y", "the velocity given to a target guarding in the air" },
+    { "fall", "0/1", "the target falls down" },
+    { "air.fall", "0/1", "a target in the air falls down" },
+    { "fall.recover", "0/1", "the target can recover from the fall" },
+    { "fall.damage", "n", "damage when the target hits the ground" },
+    { "fall.xvelocity", "x", "x velocity of the target when it bounces off the ground" },
+    { "fall.yvelocity", "y", "y velocity of the target when it bounces off the ground" },
+    { "p1stateno", "state", "the attacker goes to this state when it hits" },
+    { "p2stateno", "state", "the target goes to this state of the attacker's (a custom state)" },
+    { "p2getp1state", "0/1", "with p2stateno, the target uses the attacker's states" },
+    { "p1facing", "1/-1", "the attacker turns around (-1) when it hits" },
+    { "p2facing", "1/-1/0", "the target faces the attacker (1) or away (-1)" },
+    { "p1sprpriority", "n", "the attacker's drawing priority when it hits" },
+    { "p2sprpriority", "n", "the target's drawing priority when hit" },
+    { "chainid", "n", "this hit's ID, for nochainid" },
+    { "nochainid", "n, n", "it cannot hit after a hit with these chainids" },
+    { "hitonce", "0/1", "hits one opponent only" },
+    { "numhits", "n", "hits added to the combo counter" },
+    { "getpower", "hit, guard", "power the attacker gets" },
+    { "givepower", "hit, guard", "power the target gets" },
+    { "kill", "0/1", "the hit can KO" },
+    { "guard.kill", "0/1", "a guarded hit can KO" },
+    { "fall.kill", "0/1", "the fall can KO" },
+    { "priority", "n, hit/miss/dodge", "which of two hits that meet wins" },
+    { "stateno", "state", "the state it starts in" },
+    { "helpertype", "normal/player", "a normal helper, or one treated as a player" },
+    { "name", "\"text\"", "a name" },
+    { "keyctrl", "0/1", "the helper reads the player's keys" },
+    { "v", "n", "the int variable's number" },
+    { "fv", "n", "the float variable's number" },
+    { "sysvar", "n", "the system int variable's number" },
+    { "sysfvar", "n", "the system float variable's number" },
+    { "first", "n", "the first variable of the range" },
+    { "last", "n", "the last variable of the range" },
+    { "range", "min, max", "the random number's range" },
+    { "flag", "name", "a special flag (see AssertSpecial)" },
+    { "movetype", "I/A/H", "idle, attacking, being hit" },
+    { "physics", "S/C/A/N", "stand, crouch, air or none: how the engine moves the player" },
+    { "juggle", "n", "juggle points the state's attacks need" },
+    { "poweradd", "n", "power added when the state starts" },
+    { "velset", "x, y", "the velocity set when the state starts" },
+    { "facep2", "0/1", "turns toward the opponent when the state starts" },
+    { "hitdefpersist", "0/1", "the HitDef stays active in the next state" },
+    { "movehitpersist", "0/1", "MoveHit and the like keep their values in the next state" },
+    { "hitcountpersist", "0/1", "the hit counter keeps its value in the next state" },
+    { "projid", "n", "the projectile's ID" },
+    { "projanim", "action", "the projectile's action" },
+    { "projhitanim", "action", "its action when it hits" },
+    { "projremanim", "action", "its action when it is removed" },
+    { "projcancelanim", "action", "its action when it is cancelled by another projectile" },
+    { "projhits", "n", "how many hits before it is removed" },
+    { "projpriority", "n", "against other projectiles: the higher one survives" },
+    { "offset", "x, y", "an offset from where it would be" },
+    { "under", "0/1", "drawn behind the players" },
+    { "random", "x, y", "a random offset added to pos" },
+    { "shadow", "r, g, b", "the shadow's colour (-1: the stage's)" },
+    { "color", "0-256", "the colour's saturation (0: grey)" },
+    { "add", "r, g, b", "added to the colours" },
+    { "mul", "r, g, b", "the colours multiplied by this / 256" },
+    { "sinadd", "r, g, b, period", "added to the colours, back and forth over period ticks" },
+    { "invertall", "0/1", "the colours inverted" },
+    { "darken", "0/1", "darkens the screen" },
+    { "movetime", "ticks", "the player keeps moving during the pause for this many ticks" },
+    { "freq", "f", "a frequency" },
+    { "ampl", "n", "an amplitude" },
+    { "phase", "degrees", "a phase" },
+    { "edge", "front, back", "the width added to the player's front and back, against the screen's edges" },
+    { "player", "front, back", "the width added to the player's front and back, against the other players" },
+};
+
 enum { K_Trigger, K_Redirect, K_Controller, K_Param, K_Keyword };
 
 struct NameInfo {
     int trigger = -1;       /* in kTriggers */
     int redirect = -1;      /* in kRedirects */
     int controller = -1;    /* in kControllers */
+    int gen_trigger = -1;   /* in kGenTriggers: a trigger the engine's compiler knows */
+    int gen_controller = -1; /* in kGenControllers */
+    int param = -1;         /* in kParamDocs */
     bool keyword = false;
+    bool zss_keyword = false;
     bool listed = false;    /* in Names.words */
+    const char *spelling = nullptr; /* as CNS files write it */
 };
 
 struct Word {
     const char *name;       /* the known spelling */
+    std::string zss;        /* as ZSS files write it: changeState, animElemTime */
     std::string lower;
     int kind;
 };
@@ -364,7 +512,17 @@ struct Word {
 struct Names {
     std::unordered_map<std::string, NameInfo> map;  /* by lower-case name */
     std::vector<Word> words;                        /* for completion, one of each, sorted */
+    std::vector<std::vector<std::string>> ctrl_params, trig_args;  /* of kGenControllers, kGenTriggers */
+    std::vector<std::string> statedef_params;
+    std::deque<std::string> spellings;              /* the names' spellings that are not in a table */
 };
+
+/* The lists read from the engine's compiler (scripts/gen_names) */
+struct GenName {
+    const char *name;
+    const char *words;
+};
+#include "ikemen_names.inc"
 
 static char ToLower(char c)
 {
@@ -380,6 +538,38 @@ static std::string Lower(const char *s, size_t n)
     return r;
 }
 
+/* The words of a space separated list. */
+static std::vector<std::string> SplitWords(const char *s)
+{
+    std::vector<std::string> out;
+    for (const char *p = s; *p;) {
+        const char *e = strchr(p, ' ');
+        if (e == nullptr) {
+            e = p + strlen(p);
+        }
+        if (e > p) {
+            out.emplace_back(p, e);
+        }
+        p = *e ? e + 1 : e;
+    }
+    return out;
+}
+
+/* A CNS spelling as ZSS writes it: AnimElemTime -> animElemTime, AILevel -> aiLevel, ID -> id. */
+static std::string Camel(const char *name)
+{
+    std::string s = name;
+    size_t run = 0;
+    while (run < s.size() && s[run] >= 'A' && s[run] <= 'Z') {
+        run++;
+    }
+    size_t lower = run < s.size() && run > 1 && s[run] >= 'a' && s[run] <= 'z' ? run - 1 : run;
+    for (size_t i = 0; i < lower; i++) {
+        s[i] = ToLower(s[i]);
+    }
+    return s;
+}
+
 static void AddName(Names &names, const char *name, int kind, int index)
 {
     std::string low = Lower(name, strlen(name));
@@ -393,7 +583,8 @@ static void AddName(Names &names, const char *name, int kind, int index)
     }
     if (!ni.listed) {
         ni.listed = true;
-        names.words.push_back(Word{ name, low, kind });
+        ni.spelling = name;
+        names.words.push_back(Word{ name, "", low, kind });
     }
 }
 
@@ -415,8 +606,53 @@ static const Names &KnownNames()
     for (int i = 0; i < IM_ARRAYSIZE(kKeywords); i++) {
         AddName(names, kKeywords[i], K_Keyword, i);
     }
+    for (int i = 0; i < IM_ARRAYSIZE(kParamDocs); i++) {
+        AddName(names, kParamDocs[i].name, K_Param, i);
+        names.map[Lower(kParamDocs[i].name, strlen(kParamDocs[i].name))].param = i;
+    }
     for (int i = 0; i < IM_ARRAYSIZE(kParams); i++) {
         AddName(names, kParams[i], K_Param, i);
+    }
+    for (const char *k : kZssKeywords) {
+        names.map[k].zss_keyword = true;
+    }
+    /* What the engine's compiler knows: its spelling in ZSS, and as CNS writes names (AnimElemVar) */
+    auto add_gen = [&](const char *gen, int kind, int i) {
+        std::string low = Lower(gen, strlen(gen));
+        NameInfo &ni = names.map[low];
+        (kind == K_Controller ? ni.gen_controller : ni.gen_trigger) = i;
+        if (!ni.listed) {
+            ni.listed = true;
+            std::string pascal = gen;
+            pascal[0] = (char)toupper((unsigned char)pascal[0]);
+            names.spellings.push_back(pascal);
+            ni.spelling = names.spellings.back().c_str();
+            names.words.push_back(Word{ ni.spelling, gen, low, kind });
+        }
+    };
+    for (int i = 0; i < IM_ARRAYSIZE(kGenControllers); i++) {
+        add_gen(kGenControllers[i].name, K_Controller, i);
+        names.ctrl_params.push_back(SplitWords(kGenControllers[i].words));
+    }
+    for (int i = 0; i < IM_ARRAYSIZE(kGenTriggers); i++) {
+        add_gen(kGenTriggers[i].name, K_Trigger, i);
+        names.trig_args.push_back(SplitWords(kGenTriggers[i].words));
+    }
+    names.statedef_params = SplitWords(kGenStatedefParams);
+    for (Word &w : names.words) {
+        if (!w.zss.empty()) {
+            continue;
+        }
+        const NameInfo &ni = names.map[w.lower];
+        if (w.kind == K_Controller && ni.gen_controller >= 0) {
+            w.zss = kGenControllers[ni.gen_controller].name;
+        } else if ((w.kind == K_Trigger || w.kind == K_Redirect) && ni.gen_trigger >= 0) {
+            w.zss = kGenTriggers[ni.gen_trigger].name;
+        } else if (w.kind == K_Param || w.kind == K_Keyword) {
+            w.zss = w.name;
+        } else {
+            w.zss = Camel(w.name);
+        }
     }
     std::sort(names.words.begin(), names.words.end(), [](const Word &a, const Word &b) { return a.lower < b.lower; });
     return names;
@@ -434,14 +670,14 @@ static const NameInfo *FindName(const char *s, size_t n)
 
 static bool HasDoc(const NameInfo &ni)
 {
-    return ni.trigger >= 0 || ni.redirect >= 0 || ni.controller >= 0;
+    return ni.trigger >= 0 || ni.redirect >= 0 || ni.controller >= 0 || ni.gen_trigger >= 0 || ni.gen_controller >= 0;
 }
 
 /* ------------------------------------------------------------------ colours */
 
 enum {
     C_Text, C_Comment, C_Header, C_Key, C_Op, C_Number, C_String, C_Trigger, C_Redirect, C_Controller, C_Keyword,
-    C_Count
+    C_Local, C_Count
 };
 
 struct Palette {
@@ -461,7 +697,8 @@ static const Palette kDark = {
         IM_COL32(220, 220, 150, 255),   /* triggers */
         IM_COL32(197, 134, 192, 255),   /* redirections */
         IM_COL32(78, 201, 176, 255),    /* controller types */
-        IM_COL32(197, 134, 192, 255),   /* loopstart */
+        IM_COL32(197, 134, 192, 255),   /* loopstart, ZSS's if, for... */
+        IM_COL32(255, 196, 120, 255),   /* ZSS's $locals */
     },
     IM_COL32(28, 28, 32, 255),          /* background */
     IM_COL32(34, 34, 40, 255),          /* gutter */
@@ -487,6 +724,7 @@ static const Palette kLight = {
         IM_COL32(150, 0, 190, 255),
         IM_COL32(20, 120, 145, 255),
         IM_COL32(150, 0, 190, 255),
+        IM_COL32(0, 110, 110, 255),
     },
     IM_COL32(255, 255, 255, 255),
     IM_COL32(242, 242, 238, 255),
@@ -594,11 +832,13 @@ static void ColourValues(const char *s, size_t b, size_t e, unsigned char *out, 
             const NameInfo *ni = FindName(s + p, q - p);
             if (ni != nullptr) {
                 if (controller) {
-                    col = ni->controller >= 0 ? C_Controller : C_Text;
+                    col = ni->controller >= 0 || ni->gen_controller >= 0 ? C_Controller : C_Text;
                 } else if (ni->trigger >= 0) {
                     col = C_Trigger;
                 } else if (ni->redirect >= 0) {
                     col = C_Redirect;
+                } else if (ni->gen_trigger >= 0) {
+                    col = C_Trigger;
                 } else if (ni->keyword) {
                     col = C_Keyword;
                 }
@@ -654,10 +894,127 @@ static bool IsTypeKey(const char *s, size_t b, size_t eq)
     return EqualsNoCase(s + b, eq - b, "type");
 }
 
+/* ZSS: where the code of a line ends, its first '#' outside "double quotes" (n: none). */
+static size_t ZssCommentStart(const char *s, size_t n)
+{
+    bool quoted = false;
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '"') {
+            quoted = !quoted;
+        } else if (s[i] == '#' && !quoted) {
+            return i;
+        }
+    }
+    return n;
+}
+
+static bool IsController(const NameInfo *ni)
+{
+    return ni != nullptr && (ni->controller >= 0 || ni->gen_controller >= 0);
+}
+
+/* ZSS's statements, b to e: controller{key: value; ...}, if/for/switch, $locals, let, :=. */
+static void ColourZss(const char *s, size_t b, size_t e, unsigned char *out)
+{
+    size_t p = b;
+    while (p < e) {
+        char c = s[p];
+        if (c == '"') {
+            size_t q = p + 1;
+            while (q < e && s[q] != '"') {
+                q++;
+            }
+            q = std::min(q + 1, e);
+            memset(out + p, C_String, q - p);
+            p = q;
+        } else if (c == '$' && p + 1 < e && (IsAlpha(s[p + 1]) || s[p + 1] == '_')) {
+            size_t q = p + 1;
+            while (q < e && IsIdent(s[q])) {
+                q++;
+            }
+            memset(out + p, C_Local, q - p);
+            p = q;
+        } else if (IsDigit(c) || (c == '.' && p + 1 < e && IsDigit(s[p + 1]))) {
+            size_t q = p;
+            while (q < e && (IsDigit(s[q]) || s[q] == '.')) {
+                q++;
+            }
+            memset(out + p, C_Number, q - p);
+            p = q;
+        } else if (IsAlpha(c) || c == '_') {
+            size_t q = p;
+            while (q < e && IsIdent(s[q])) {
+                q++;
+            }
+            size_t r = q;
+            while (r < e && IsBlank(s[r])) {
+                r++;
+            }
+            const NameInfo *ni = FindName(s + p, q - p);
+            int col = C_Text;
+            if (r < e && s[r] == ':' && (r + 1 >= e || s[r + 1] != '=')) {
+                col = C_Key;    /* a parameter: value: 200 */
+            } else if (r < e && s[r] == '{' && IsController(ni)) {
+                col = C_Controller;
+            } else if (ni != nullptr && ni->zss_keyword) {
+                col = C_Keyword;
+            } else if (ni != nullptr && ni->trigger >= 0) {
+                col = C_Trigger;
+            } else if (ni != nullptr && ni->redirect >= 0) {
+                col = C_Redirect;
+            } else if (ni != nullptr && ni->gen_trigger >= 0) {
+                col = C_Trigger;
+            }
+            memset(out + p, col, q - p);
+            p = q;
+        } else {
+            if (c != '\0' && strchr("+-*/%&|^!<>=~:,()[]{};", c) != nullptr) {
+                out[p] = C_Op;
+            }
+            p++;
+        }
+    }
+}
+
+/* A ZSS line: # comments; [StateDef n; key: value; ...] and [Function name(args)] headers. */
+static void HighlightZss(const char *s, size_t n, unsigned char *out)
+{
+    size_t end = ZssCommentStart(s, n);
+    memset(out + end, C_Comment, n - end);
+    size_t i = 0;
+    while (i < end && IsBlank(s[i])) {
+        i++;
+    }
+    if (i < end && s[i] == '[') {
+        /* its name and number up to the first ';', then key: value pairs */
+        size_t j = i;
+        while (j < end && s[j] != ';' && s[j] != ']') {
+            j++;
+        }
+        memset(out + i, C_Header, j - i);
+        size_t close = j;
+        while (close < end && s[close] != ']') {
+            close++;
+        }
+        if (j < close) {
+            ColourZss(s, j, close, out);
+        }
+        if (close < end) {
+            out[close] = C_Header;
+        }
+        return;
+    }
+    ColourZss(s, i, end, out);
+}
+
 /* The colour of each byte of a line. */
-static void Highlight(const char *s, size_t n, std::vector<unsigned char> &colors)
+static void Highlight(const char *s, size_t n, std::vector<unsigned char> &colors, bool zss = false)
 {
     colors.assign(n + 1, (unsigned char)C_Text);
+    if (zss) {
+        HighlightZss(s, n, colors.data());
+        return;
+    }
     unsigned char *out = colors.data();
     size_t end = CommentStart(s, n);
     memset(out + end, C_Comment, n - end);
@@ -722,6 +1079,23 @@ struct UndoStep {
     int group = G_None;         /* typing, backspaces and deletes in a row merge */
 };
 
+/* The documentation of a name, as it is used there. */
+enum { D_None, D_Name, D_Param, D_Arg };
+struct Doc {
+    int what = D_None;
+    std::string name;           /* lower case: a trigger or controller (D_Name), a parameter, a name a trigger takes */
+    std::string ctrl;           /* D_Param: its controller ("" a statedef's); D_Arg: the trigger */
+    bool controller_first = false;  /* D_Name: a name that is a controller and a trigger shows the controller */
+};
+
+/* A name the completion offers: what it puts, what follows it (the cursor goes before a '}' of it). */
+struct CompItem {
+    std::string text;
+    std::string tail;
+    const char *kind;
+    Doc doc;
+};
+
 struct CodeEditor {
     /* the caller's text (while drawing), and what was known of it */
     std::string *text = nullptr;
@@ -755,8 +1129,7 @@ struct CodeEditor {
     /* completion */
     bool comp_open = false;
     size_t comp_begin = 0;      /* where the word being completed starts */
-    bool comp_type = false;     /* the word is the value of "type =" */
-    std::vector<int> comp_items;    /* in KnownNames().words */
+    std::vector<CompItem> comp_items;
     int comp_sel = 0;
     int comp_top = 0;
     bool comp_moved = false;    /* Up/Down used */
@@ -776,8 +1149,12 @@ struct CodeEditor {
     std::vector<std::pair<size_t, size_t>> highlights;
     int highlight_cur = -1;
 
+    bool zss = false;           /* the text is ZSS (Editor_SetZss) */
+    std::function<std::string(size_t, size_t)> hover_note;  /* Editor_SetHoverNote */
+
     size_t hover_word = kNone;  /* the word under the mouse, and for how long */
     float hover_time = 0.0f;
+    std::string hover_text;     /* hover_note's for it */
 
     std::vector<unsigned char> colors;  /* of the line being drawn */
 };
@@ -1236,6 +1613,7 @@ static void IndentLines(CodeEditor *ed, int a, int b, bool outdent)
 static void ToggleComment(CodeEditor *ed)
 {
     std::string &t = *ed->text;
+    const char mark = ed->zss ? '#' : ';';
     int a, b;
     SelLines(ed, &a, &b);
     bool all = true, any = false;
@@ -1243,7 +1621,7 @@ static void ToggleComment(CodeEditor *ed)
         size_t p = LineIndentEnd(ed, t, l);
         if (p < LineEnd(ed, t, l)) {
             any = true;
-            if (t[p] != ';') {
+            if (t[p] != mark) {
                 all = false;
             }
         }
@@ -1258,7 +1636,7 @@ static void ToggleComment(CodeEditor *ed)
         size_t ind = LineIndentEnd(ed, t, l);
         long delta = 0;
         if (remove) {
-            if (ind < le && t[ind] == ';') {
+            if (ind < le && t[ind] == mark) {
                 out.append(t, lb, ind - lb);
                 out.append(t, ind + 1, le - ind - 1);
                 delta = cur_col > ind - lb ? -1 : 0;
@@ -1267,7 +1645,7 @@ static void ToggleComment(CodeEditor *ed)
             }
         } else {
             if (ind < LineEnd(ed, t, l) || a == b) {
-                out += ';';
+                out += mark;
                 delta = 1;
             }
             out.append(t, lb, le - lb);
@@ -1372,38 +1750,506 @@ static void SelectWord(CodeEditor *ed, size_t pos)
     ed->cur = f;
 }
 
-/* ------------------------------------------------------------------ completion */
+/* ------------------------------------------------------------------ what a place of the text is */
 
-/* The names that match word: those that start with it first, then those that contain it. */
-static void FindCompletions(const std::string &word, bool controllers_only, std::vector<int> &items)
+enum { X_None, X_Any, X_Key, X_Controller, X_Statement, X_Expr, X_Arg };
+
+/*
+ * What fits at a place of a state file: X_Key a parameter's name (of the controller ctrl, lower
+ * case, "" not known yet; of the statedef with statedef), X_Controller a controller's name (CNS's
+ * type =), X_Statement a ZSS statement (a controller or a keyword), X_Expr an expression, X_Arg a
+ * name the trigger trig takes in its parentheses (GetHitVar(fall.damage)); X_Any outside the
+ * statedefs (CMD, AIR, DEF files: every name), X_None nothing (comments, headers, a statedef's type).
+ */
+struct Context {
+    int kind = X_None;
+    std::string ctrl;
+    bool statedef = false;
+    int trig = -1;
+};
+
+static std::string TrimLower(const char *s, size_t b, size_t e)
 {
-    items.clear();
-    const Names &names = KnownNames();
-    std::string lw = Lower(word.data(), word.size());
-    std::vector<int> inside;
-    for (int i = 0; i < (int)names.words.size(); i++) {
-        const Word &w = names.words[i];
-        if (controllers_only) {
-            auto it = names.map.find(w.lower);
-            if (it == names.map.end() || it->second.controller < 0) {
-                continue;
+    while (b < e && IsBlank(s[b])) {
+        b++;
+    }
+    while (e > b && IsBlank(s[e - 1])) {
+        e--;
+    }
+    return Lower(s + b, e - b);
+}
+
+/* The trigger whose parentheses p is just inside ("GetHitVar(" before it), in kGenTriggers; -1 none. */
+static int ArgTrigger(const char *s, size_t lb, size_t p)
+{
+    while (p > lb && IsBlank(s[p - 1])) {
+        p--;
+    }
+    if (p == lb || s[p - 1] != '(') {
+        return -1;
+    }
+    p--;
+    while (p > lb && IsBlank(s[p - 1])) {
+        p--;
+    }
+    size_t q = p;
+    while (q > lb && IsIdent(s[q - 1])) {
+        q--;
+    }
+    const NameInfo *ni = FindName(s + q, p - q);
+    if (ni == nullptr || ni->gen_trigger < 0 || ni->redirect >= 0) {
+        return -1;
+    }
+    return KnownNames().trig_args[ni->gen_trigger].empty() ? -1 : ni->gen_trigger;
+}
+
+static void ExprContext(Context &x, const char *s, size_t lb, size_t wb)
+{
+    x.trig = ArgTrigger(s, lb, wb);
+    x.kind = x.trig >= 0 ? X_Arg : X_Expr;
+}
+
+/* CNS: [Statedef n] key = value; [State n] key = value, its controller named by its type = line. */
+static Context CnsContext(const CodeEditor *ed, const std::string &t, size_t wb)
+{
+    Context x;
+    const char *d = t.data();
+    int l = LineOf(ed, wb);
+    size_t lb = ed->lines[l], le = LineEnd(ed, t, l);
+    size_t end = lb + CommentStart(d + lb, le - lb);
+    size_t i = LineIndentEnd(ed, t, l);
+    if (wb > end || (i < end && d[i] == '[')) {
+        return x;
+    }
+    /* the section: the header above */
+    std::string header;
+    int hl = -1;
+    for (int k = l; k >= 0 && hl < 0; k--) {
+        size_t kb = LineIndentEnd(ed, t, k), ke = LineEnd(ed, t, k);
+        if (kb < ke && d[kb] == '[') {
+            size_t close = kb;
+            while (close < ke && d[close] != ']') {
+                close++;
             }
-        }
-        size_t at = w.lower.find(lw);
-        if (at == 0) {
-            items.push_back(i);
-        } else if (at != std::string::npos) {
-            inside.push_back(i);
+            header = TrimLower(d, kb + 1, close);
+            hl = k;
         }
     }
-    items.insert(items.end(), inside.begin(), inside.end());
-    if (items.size() > 50) {
-        items.resize(50);
+    bool statedef = header.compare(0, 8, "statedef") == 0;
+    bool state = !statedef && header.compare(0, 5, "state") == 0;
+    if (!state && !statedef) {
+        x.kind = X_Any;
+        return x;
+    }
+    size_t eq = FindEquals(d, i, end);
+    if (eq >= wb) {
+        x.kind = X_Key;
+        x.statedef = statedef;
+        /* the block's type = line */
+        for (int k = hl + 1; state && k < LineCount(ed); k++) {
+            size_t kb = LineIndentEnd(ed, t, k), ke = LineEnd(ed, t, k);
+            if (kb < ke && d[kb] == '[') {
+                break;
+            }
+            size_t kend = kb + CommentStart(d + kb, ke - kb), keq = FindEquals(d, kb, kend);
+            if (keq < kend && IsTypeKey(d, kb, keq)) {
+                x.ctrl = TrimLower(d, keq + 1, kend);
+                break;
+            }
+        }
+        return x;
+    }
+    std::string key = TrimLower(d, i, eq);
+    if (state && key == "type") {
+        x.kind = X_Controller;
+    } else if (!(statedef && (key == "type" || key == "movetype" || key == "physics"))) {
+        ExprContext(x, d, lb, wb);
+    }
+    return x;
+}
+
+/* ZSS: [StateDef n; key: value; ...]; statements; controller{key: value; ...}, over several lines too. */
+static Context ZssContext(const CodeEditor *ed, const std::string &t, size_t wb)
+{
+    Context x;
+    const char *d = t.data();
+    int l = LineOf(ed, wb);
+    size_t lb = ed->lines[l], le = LineEnd(ed, t, l);
+    size_t end = lb + ZssCommentStart(d + lb, le - lb);
+    size_t i = LineIndentEnd(ed, t, l);
+    if (wb > end) {
+        return x;
+    }
+    if (i < end && d[i] == '[') {
+        if (TrimLower(d, i + 1, std::min(i + 9, end)) != "statedef") {
+            return x;
+        }
+        size_t sep = wb;
+        while (sep > i && d[sep - 1] != ';') {
+            sep--;
+        }
+        if (sep == i) {
+            return x;   /* its number */
+        }
+        size_t colon = sep;
+        while (colon < wb && d[colon] != ':') {
+            colon++;
+        }
+        if (colon >= wb) {
+            x.kind = X_Key;
+            x.statedef = true;
+            return x;
+        }
+        std::string key = TrimLower(d, sep, colon);
+        if (key != "type" && key != "movetype" && key != "physics") {
+            ExprContext(x, d, lb, wb);
+        }
+        return x;
+    }
+    /* The '{' it is in, back through the lines of the state; at its level, the nearest ';' or
+       '{' before the word and whether a ':' (not :=) comes after it */
+    int depth = 0;
+    bool sep = false, colon = false;
+    size_t brace = kNone;
+    for (int k = l; k >= 0 && k > l - 400 && brace == kNone; k--) {
+        size_t kb = ed->lines[k], ke = LineEnd(ed, t, k);
+        size_t ki = LineIndentEnd(ed, t, k);
+        if (k < l && ki < ke && d[ki] == '[') {
+            break;
+        }
+        size_t from = k == l ? wb : kb + ZssCommentStart(d + kb, ke - kb);
+        for (size_t p = from; p > kb; p--) {
+            char c = d[p - 1];
+            if (c == '}') {
+                depth++;
+            } else if (c == '{') {
+                if (depth == 0) {
+                    brace = p - 1;
+                    break;
+                }
+                depth--;
+            } else if (depth == 0 && !sep) {
+                if (c == ';') {
+                    sep = true;
+                } else if (c == ':' && d[p] != '=') {
+                    colon = true;
+                }
+            }
+        }
+    }
+    if (brace != kNone) {
+        int bl = LineOf(ed, brace);
+        size_t blb = ed->lines[bl], p = brace;
+        while (p > blb && IsBlank(d[p - 1])) {
+            p--;
+        }
+        size_t q = p;
+        while (q > blb && IsIdent(d[q - 1])) {
+            q--;
+        }
+        if (IsController(FindName(d + q, p - q))) {
+            if (!colon) {
+                x.kind = X_Key;
+                x.ctrl = Lower(d + q, p - q);
+            } else {
+                ExprContext(x, d, lb, wb);
+            }
+            return x;
+        }
+    }
+    /* a statement: the first word of its line, or after '{', '}' or ';' */
+    size_t p = wb;
+    while (p > lb && IsBlank(d[p - 1])) {
+        p--;
+    }
+    if (p == lb || strchr("{};", d[p - 1]) != nullptr) {
+        x.kind = X_Statement;
+        return x;
+    }
+    ExprContext(x, d, lb, wb);
+    return x;
+}
+
+static Context ContextAt(const CodeEditor *ed, const std::string &t, size_t wb)
+{
+    return ed->zss ? ZssContext(ed, t, wb) : CnsContext(ed, t, wb);
+}
+
+/* ------------------------------------------------------------------ documentation */
+
+static ImVec4 Colour(int c)
+{
+    return ImGui::ColorConvertU32ToFloat4(pal->syntax[c]);
+}
+
+static const NameInfo *Info(const std::string &lower)
+{
+    const Names &names = KnownNames();
+    auto it = names.map.find(lower);
+    return it == names.map.end() ? nullptr : &it->second;
+}
+
+/* A list of names, at most max of them */
+static void ShowList(const char *label, const std::vector<std::string> &list, size_t max)
+{
+    std::string s = label;
+    for (size_t i = 0; i < list.size() && i < max; i++) {
+        s += (i ? ", " : " ") + list[i];
+    }
+    if (list.size() > max) {
+        s += ", and " + std::to_string(list.size() - max) + " more";
+    }
+    ImGui::TextDisabled("%s", s.c_str());
+}
+
+/* The part of a controller's line in kControllers about a parameter ("value = action"), "" none. */
+static std::string ParamPart(const char *syntax, const std::string &param)
+{
+    std::string s = syntax;
+    for (size_t at = 0; at < s.size();) {
+        size_t semi = s.find(';', at);
+        if (semi == std::string::npos) {
+            semi = s.size();
+        }
+        std::string part = s.substr(at, semi - at);
+        part.erase(0, part.find_first_not_of(' '));
+        size_t n = 0;
+        while (n < part.size() && IsIdent(part[n])) {
+            n++;
+        }
+        if (Lower(part.data(), n) == param) {
+            return part;
+        }
+        at = semi + 1;
+    }
+    return "";
+}
+
+static void ShowDoc(const Doc &doc)
+{
+    const Names &names = KnownNames();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+    const NameInfo *ni = Info(doc.name);
+    if (doc.what == D_Name && ni != nullptr) {
+        bool ctrl = (ni->controller >= 0 || ni->gen_controller >= 0) &&
+                    (doc.controller_first || (ni->trigger < 0 && ni->redirect < 0 && ni->gen_trigger < 0));
+        if (ctrl) {
+            if (ni->controller >= 0) {
+                const NameDoc &d = kControllers[ni->controller];
+                ImGui::TextColored(Colour(C_Controller), "%s (state controller)", d.name);
+                if (d.syntax[0] != '\0') {
+                    ImGui::TextColored(Colour(C_Key), "%s", d.syntax);
+                }
+                ImGui::TextUnformatted(d.desc);
+            } else {
+                ImGui::TextColored(Colour(C_Controller), "%s (Ikemen GO state controller)", ni->spelling);
+            }
+            if (ni->gen_controller >= 0) {
+                ShowList("Parameters:", names.ctrl_params[ni->gen_controller], 48);
+            }
+        } else if (ni->trigger >= 0 || ni->redirect >= 0) {
+            const NameDoc &d = ni->trigger >= 0 ? kTriggers[ni->trigger] : kRedirects[ni->redirect];
+            ImGui::TextColored(Colour(ni->trigger >= 0 ? C_Trigger : C_Redirect), "%s", d.syntax);
+            ImGui::TextUnformatted(d.desc);
+        } else if (ni->gen_trigger >= 0) {
+            ImGui::TextColored(Colour(C_Trigger), "%s (Ikemen GO trigger)", ni->spelling);
+        }
+        if (!ctrl && ni->gen_trigger >= 0 && ni->redirect < 0 && !names.trig_args[ni->gen_trigger].empty()) {
+            ShowList("Takes:", names.trig_args[ni->gen_trigger], 30);
+        }
+    } else if (doc.what == D_Param) {
+        const NameInfo *ci = Info(doc.ctrl);
+        const char *owner = doc.ctrl.empty() ? "the statedef" : ci != nullptr && ci->spelling ? ci->spelling : doc.ctrl.c_str();
+        ImGui::TextColored(Colour(C_Key), "%s", doc.name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("a parameter of %s", owner);
+        std::string part = ci != nullptr && ci->controller >= 0 ? ParamPart(kControllers[ci->controller].syntax, doc.name) : "";
+        const NameInfo *pi = Info(doc.name);
+        if (!part.empty()) {
+            ImGui::TextColored(Colour(C_Key), "%s", part.c_str());
+        } else if (pi != nullptr && pi->param >= 0 && kParamDocs[pi->param].syntax[0] != '\0') {
+            ImGui::TextColored(Colour(C_Key), "%s = %s", doc.name.c_str(), kParamDocs[pi->param].syntax);
+        }
+        if (pi != nullptr && pi->param >= 0) {
+            ImGui::TextUnformatted(kParamDocs[pi->param].desc);
+        } else if (const NameInfo *t1 = Info("trigger1"); doc.name.compare(0, 7, "trigger") == 0 && t1 && t1->param >= 0) {
+            ImGui::TextUnformatted(kParamDocs[t1->param].desc);
+        }
+    } else if (doc.what == D_Arg) {
+        const NameInfo *ti = Info(doc.ctrl);
+        ImGui::TextColored(Colour(C_Trigger), "%s(%s)", ti != nullptr && ti->spelling ? ti->spelling : doc.ctrl.c_str(),
+                           doc.name.c_str());
+        const NameInfo *pi = Info(doc.name);
+        if (pi != nullptr && pi->param >= 0) {
+            ImGui::TextUnformatted(kParamDocs[pi->param].desc);
+        }
+    }
+    ImGui::PopTextWrapPos();
+}
+
+/* Whether a doc has anything to show. */
+static bool DocShows(const Doc &doc)
+{
+    if (doc.what == D_Name) {
+        const NameInfo *ni = Info(doc.name);
+        return ni != nullptr && HasDoc(*ni);
+    }
+    return doc.what != D_None;
+}
+
+static const char *KindName(const NameInfo &ni)
+{
+    if ((ni.controller >= 0 || ni.gen_controller >= 0) && ni.redirect >= 0) {
+        return "controller, redirection";
+    }
+    if (ni.controller >= 0 || ni.gen_controller >= 0) {
+        return "controller";
+    }
+    if (ni.redirect >= 0) {
+        return "redirection";
+    }
+    if (ni.trigger >= 0 || ni.gen_trigger >= 0) {
+        return "trigger";
+    }
+    if (ni.keyword) {
+        return "keyword";
+    }
+    return "parameter";
+}
+
+/* ------------------------------------------------------------------ completion */
+
+/* What fits there, sorted. */
+static void Candidates(const Context &x, bool zss, std::vector<CompItem> &out)
+{
+    const Names &names = KnownNames();
+    out.clear();
+    auto name = [&](const Word &w, bool controller_first) {
+        CompItem it;
+        it.text = zss ? w.zss : w.name;
+        it.kind = KindName(names.map.find(w.lower)->second);
+        it.doc.what = D_Name;
+        it.doc.name = w.lower;
+        it.doc.controller_first = controller_first;
+        out.push_back(it);
+    };
+    auto param = [&](const std::string &p, const std::string &ctrl) {
+        CompItem it;
+        it.text = p;
+        it.kind = "parameter";
+        it.doc.what = D_Param;
+        it.doc.name = p;
+        it.doc.ctrl = ctrl;
+        out.push_back(it);
+    };
+    switch (x.kind) {
+    case X_Any:
+        for (const Word &w : names.words) {
+            name(w, false);
+        }
+        break;
+    case X_Controller:
+    case X_Statement:
+        for (const Word &w : names.words) {
+            const NameInfo &ni = names.map.find(w.lower)->second;
+            if (ni.controller >= 0 || ni.gen_controller >= 0) {
+                name(w, true);
+                if (zss) {
+                    out.back().tail = "{}";
+                }
+            }
+        }
+        if (x.kind == X_Statement) {
+            for (const char *k : kZssKeywords) {
+                CompItem it;
+                it.text = k;
+                it.kind = "keyword";
+                out.push_back(it);
+            }
+        }
+        break;
+    case X_Expr:
+        for (const Word &w : names.words) {
+            const NameInfo &ni = names.map.find(w.lower)->second;
+            if (ni.trigger >= 0 || ni.redirect >= 0 || ni.gen_trigger >= 0) {
+                name(w, false);
+            }
+        }
+        break;
+    case X_Key: {
+        if (x.statedef) {
+            for (const std::string &p : names.statedef_params) {
+                param(p, "");
+            }
+            break;
+        }
+        const NameInfo *ci = Info(x.ctrl);
+        if (ci != nullptr && ci->gen_controller >= 0) {
+            for (const std::string &p : names.ctrl_params[ci->gen_controller]) {
+                param(p, x.ctrl);
+            }
+        }
+        if (!zss) {
+            for (const char *p : { "type", "triggerall", "trigger1", "trigger2", "trigger3", "trigger4", "persistent",
+                                   "ignorehitpause" }) {
+                param(p, x.ctrl);
+            }
+        }
+        break;
+    }
+    case X_Arg:
+        for (const std::string &a : names.trig_args[x.trig]) {
+            CompItem it;
+            it.text = a;
+            it.kind = "name";
+            it.doc.what = D_Arg;
+            it.doc.name = a;
+            it.doc.ctrl = Lower(kGenTriggers[x.trig].name, strlen(kGenTriggers[x.trig].name));
+            out.push_back(it);
+        }
+        break;
+    default:
+        break;
+    }
+    std::stable_sort(out.begin(), out.end(), [](const CompItem &a, const CompItem &b) {
+        return Lower(a.text.data(), a.text.size()) < Lower(b.text.data(), b.text.size());
+    });
+    out.erase(std::unique(out.begin(), out.end(), [](const CompItem &a, const CompItem &b) { return a.text == b.text; }),
+              out.end());
+    /* a parameter is followed by its '=' (CNS) or ':' (ZSS) */
+    if (x.kind == X_Key) {
+        for (CompItem &it : out) {
+            it.tail = zss ? ": " : " = ";
+        }
     }
 }
 
-/* Opens (or updates) the completion of the word before the cursor; closes it when there is none. */
-static void UpdateCompletion(CodeEditor *ed, bool open)
+/* Those that match word: those that start with it first, then those that contain it. */
+static void FindCompletions(const std::string &word, std::vector<CompItem> &items)
+{
+    std::string lw = Lower(word.data(), word.size());
+    std::vector<CompItem> first, inside;
+    for (CompItem &it : items) {
+        size_t at = Lower(it.text.data(), it.text.size()).find(lw);
+        if (at == 0) {
+            first.push_back(std::move(it));
+        } else if (at != std::string::npos) {
+            inside.push_back(std::move(it));
+        }
+    }
+    first.insert(first.end(), std::make_move_iterator(inside.begin()), std::make_move_iterator(inside.end()));
+    if (first.size() > 400) {
+        first.resize(400);
+    }
+    items = std::move(first);
+}
+
+/*
+ * Opens (or updates) the completion of the word before the cursor; closes it when there is none.
+ * force: 0 a word of 2 letters at least (1 for a parameter, or a name in parentheses); 1 also
+ * none yet where a parameter or a name in parentheses goes ('(' or '{' typed); 2 anything (Ctrl+Space).
+ */
+static void UpdateCompletion(CodeEditor *ed, bool open, int force = 0)
 {
     if (!open && !ed->comp_open) {
         return;
@@ -1419,25 +2265,37 @@ static void UpdateCompletion(CodeEditor *ed, bool open)
     while (wb > lb && IsIdent(t[wb - 1])) {
         wb--;
     }
-    if (ed->cur - wb < 2 || !(IsAlpha(t[wb]) || t[wb] == '_')) {
+    if (wb < ed->cur && !(IsAlpha(t[wb]) || t[wb] == '_')) {
         CloseCompletion(ed);
         return;
     }
-    /* not in comments, strings or group headers */
+    /* not in comments, strings or headers */
     const char *s = t.data() + lb;
     size_t n = LineEnd(ed, t, l) - lb;
-    Highlight(s, n, ed->colors);
+    Highlight(s, n, ed->colors, ed->zss);
     int col = ed->colors[wb - lb];
+    if (wb > lb && ed->colors[wb - lb - 1] == C_Comment) {
+        col = C_Comment;    /* at the end of a comment */
+    }
     if (col == C_Comment || col == C_String || col == C_Header) {
         CloseCompletion(ed);
         return;
     }
-    size_t eq = FindEquals(s, 0, CommentStart(s, n));
-    ed->comp_type = eq < wb - lb && IsTypeKey(s, 0, eq);
+    Context x = ContextAt(ed, t, wb);
+    size_t need = (x.kind == X_Key || x.kind == X_Arg) ? 1 : 2;
+    if (force == 2 || (force == 1 && (x.kind == X_Key || x.kind == X_Arg))) {
+        need = 0;
+    }
+    if (x.kind == X_None || ed->cur - wb < need) {
+        CloseCompletion(ed);
+        return;
+    }
     std::string word = t.substr(wb, ed->cur - wb);
-    FindCompletions(word, ed->comp_type, ed->comp_items);
-    const Names &names = KnownNames();
-    if (ed->comp_items.empty() || (ed->comp_items.size() == 1 && word == names.words[ed->comp_items[0]].name)) {
+    Candidates(x, ed->zss, ed->comp_items);
+    FindCompletions(word, ed->comp_items);
+    if (ed->comp_items.empty() ||
+        (ed->comp_items.size() == 1 && ed->comp_items[0].tail.empty() && Lower(word.data(), word.size()) ==
+                                           Lower(ed->comp_items[0].text.data(), ed->comp_items[0].text.size()))) {
         CloseCompletion(ed);
         return;
     }
@@ -1457,68 +2315,44 @@ static bool CompletionTakesKey(const CodeEditor *ed)
     if (ed->comp_moved) {
         return true;
     }
-    const Word &w = KnownNames().words[ed->comp_items[ed->comp_sel]];
-    return ed->text->compare(ed->comp_begin, ed->cur - ed->comp_begin, w.name) != 0;
+    /* a parameter typed whole still takes its ' = ' or ': ' */
+    const CompItem &it = ed->comp_items[ed->comp_sel];
+    return !it.tail.empty() || ed->text->compare(ed->comp_begin, ed->cur - ed->comp_begin, it.text) != 0;
 }
 
 static void AcceptCompletion(CodeEditor *ed)
 {
-    const Word &w = KnownNames().words[ed->comp_items[ed->comp_sel]];
+    CompItem it = ed->comp_items[ed->comp_sel];
+    const std::string &t = *ed->text;
     size_t begin = ed->comp_begin, end = ed->cur;
+    /* the rest of the word goes too; its tail only when what follows is not it already */
+    while (end < t.size() && IsIdent(t[end])) {
+        end++;
+    }
+    size_t next = end;
+    while (next < t.size() && IsBlank(t[next])) {
+        next++;
+    }
+    std::string tail = it.tail;
+    std::string tail_trim = tail;
+    tail_trim.erase(0, tail_trim.find_first_not_of(' '));
+    if (!tail_trim.empty() && next < t.size() && t[next] == tail_trim[0]) {
+        tail.clear();
+    }
     CloseCompletion(ed);
     ed->anchor = ed->cur;
-    Replace(ed, begin, end, w.name, G_None);
+    Replace(ed, begin, end, it.text + tail, G_None);
+    if (!tail.empty() && tail.back() == '}') {
+        ed->cur = ed->anchor = ed->cur - 1;
+        RecordAfter(ed);
+        UpdateCompletion(ed, true, 1);  /* its parameters */
+    }
     ed->merge = false;
-}
-
-static ImVec4 Colour(int c)
-{
-    return ImGui::ColorConvertU32ToFloat4(pal->syntax[c]);
-}
-
-/* The documentation of a name: a trigger (or redirection) unless controller_first and it is a controller. */
-static void ShowDoc(const NameInfo &ni, bool controller_first)
-{
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
-    if (ni.controller >= 0 && (controller_first || (ni.trigger < 0 && ni.redirect < 0))) {
-        const NameDoc &d = kControllers[ni.controller];
-        ImGui::TextColored(Colour(C_Controller), "%s (state controller)", d.name);
-        if (d.syntax[0] != '\0') {
-            ImGui::TextColored(Colour(C_Key), "%s", d.syntax);
-        }
-        ImGui::TextUnformatted(d.desc);
-    } else if (ni.trigger >= 0 || ni.redirect >= 0) {
-        const NameDoc &d = ni.trigger >= 0 ? kTriggers[ni.trigger] : kRedirects[ni.redirect];
-        ImGui::TextColored(Colour(ni.trigger >= 0 ? C_Trigger : C_Redirect), "%s", d.syntax);
-        ImGui::TextUnformatted(d.desc);
-    }
-    ImGui::PopTextWrapPos();
-}
-
-static const char *KindName(const NameInfo &ni)
-{
-    if (ni.controller >= 0 && ni.redirect >= 0) {
-        return "controller, redirection";
-    }
-    if (ni.controller >= 0) {
-        return "controller";
-    }
-    if (ni.trigger >= 0) {
-        return "trigger";
-    }
-    if (ni.redirect >= 0) {
-        return "redirection";
-    }
-    if (ni.keyword) {
-        return "keyword";
-    }
-    return "parameter";
 }
 
 /* The list of names, under the word; it takes no input (the keys stay with the editor). */
 static void DrawCompletion(CodeEditor *ed)
 {
-    const Names &names = KnownNames();
     int count = (int)ed->comp_items.size();
     int rows = std::min(count, 10);
     if (ed->comp_sel < ed->comp_top) {
@@ -1547,27 +2381,26 @@ static void DrawCompletion(CodeEditor *ed)
     if (ImGui::Begin(name, nullptr, flags)) {
         float w = 0.0f;
         for (int i = ed->comp_top; i < ed->comp_top + rows; i++) {
-            w = std::max(w, ImGui::CalcTextSize(names.words[ed->comp_items[i]].name).x);
+            w = std::max(w, ImGui::CalcTextSize(ed->comp_items[i].text.c_str()).x);
         }
         w += ImGui::GetFontSize();
         for (int i = ed->comp_top; i < ed->comp_top + rows; i++) {
-            const Word &word = names.words[ed->comp_items[i]];
-            const NameInfo &ni = names.map.find(word.lower)->second;
+            const CompItem &it = ed->comp_items[i];
             ImGui::PushID(i);
-            ImGui::Selectable(word.name, i == ed->comp_sel, ImGuiSelectableFlags_None, ImVec2(w, 0.0f));
+            ImGui::Selectable(it.text.c_str(), i == ed->comp_sel, ImGuiSelectableFlags_None, ImVec2(w, 0.0f));
             ImGui::SameLine();
-            ImGui::TextDisabled("%s", KindName(ni));
+            ImGui::TextDisabled("%s", it.kind);
             ImGui::PopID();
         }
         if (count > rows) {
             ImGui::TextDisabled("%d of %d", ed->comp_sel + 1, count);
         }
-        const NameInfo &sel = names.map.find(names.words[ed->comp_items[ed->comp_sel]].lower)->second;
-        if (HasDoc(sel)) {
+        const CompItem &sel = ed->comp_items[ed->comp_sel];
+        if (DocShows(sel.doc)) {
             ImGui::Separator();
-            ShowDoc(sel, ed->comp_type);
+            ShowDoc(sel.doc);
         }
-        ImGui::TextDisabled("Enter/Tab: take it, Esc: close");
+        ImGui::TextDisabled("Enter/Tab: take it, Esc: close, Ctrl+Space: all that fit here");
     }
     ImGui::End();
 }
@@ -1583,8 +2416,8 @@ static void HandleKeys(CodeEditor *ed, const Metrics &m, float view_h)
     const bool ctrl = io.KeyCtrl, shift = io.KeyShift, alt = io.KeyAlt;
     auto key = [id](ImGuiKey k) { return ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id); };
 
-    /* typed characters (AltGr is Ctrl+Alt) */
-    bool typed = false;
+    /* typed characters (AltGr is Ctrl+Alt); 2: the last one opens a list of parameters or names */
+    int typed = 0;
     if (io.InputQueueCharacters.Size > 0) {
         if (!ctrl || alt) {
             std::string s;
@@ -1599,13 +2432,17 @@ static void HandleKeys(CodeEditor *ed, const Metrics &m, float view_h)
             }
             if (!s.empty()) {
                 InsertText(ed, s, G_Type);
-                typed = true;
+                typed = s.back() == '(' || s.back() == '{' ? 2 : 1;
             }
         }
         io.InputQueueCharacters.resize(0);
     }
     if (typed) {
-        UpdateCompletion(ed, true);
+        UpdateCompletion(ed, true, typed == 2 ? 1 : 0);
+    }
+    if (ctrl && !alt && key(ImGuiKey_Space)) {
+        UpdateCompletion(ed, true, 2);
+        return;
     }
 
     /* the completion list takes Up, Down, Enter, Tab and Escape */
@@ -2148,7 +2985,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
             }
             dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + m.line_h), pal->selection);
         }
-        Highlight(d + lb, le - lb, ed->colors);
+        Highlight(d + lb, le - lb, ed->colors, ed->zss);
         DrawLine(dl, m, d + lb, d + le, ed->colors.data(), ImVec2(origin.x, y), text_min.x, area.Max.x);
         if (ed->note_of) {
             ImU32 note_col = 0;
@@ -2213,14 +3050,13 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
                     num + len);
     }
 
-    /* tooltips: the error of the line, the documentation of the name under the mouse */
+    /* tooltips: the error of the line, the documentation of the name under the mouse, the caller's note on it */
     if (hovered && !ed->dragging && !io.MouseDown[0]) {
         ImVec2 mp = io.MousePos;
         int l = (int)floorf((mp.y - origin.y) / m.line_h);
         bool on_error = l >= 0 && l < count && l + 1 == ed->error_line && !ed->error_msg.empty();
-        const NameInfo *doc = nullptr;
-        bool doc_controller = false;
-        size_t word = kNone;
+        Doc doc;
+        size_t word = kNone, word_end = kNone;
         if (l >= 0 && l < count && mp.x >= area.Min.x + gutter) {
             size_t lb = ed->lines[l], le = LineEnd(ed, t, l);
             size_t p = PosAtX(ed, m, t, l, mp.x - origin.x);
@@ -2244,14 +3080,23 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
                                 ImVec2(origin.x + TextX(m, d + lb, d + le, d + we), y), pal->cursor, 1.0f);
                     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                 }
-                Highlight(d + lb, le - lb, ed->colors);
+                word = wb, word_end = we;
+                Highlight(d + lb, le - lb, ed->colors, ed->zss);
                 int col = ed->colors[wb - lb];
                 if (col == C_Trigger || col == C_Redirect || col == C_Controller) {
-                    const NameInfo *ni = FindName(d + wb, we - wb);
-                    if (ni != nullptr && HasDoc(*ni)) {
-                        doc = ni;
-                        doc_controller = col == C_Controller;
-                        word = wb;
+                    doc.what = D_Name;
+                    doc.name = Lower(d + wb, we - wb);
+                    doc.controller_first = col == C_Controller;
+                } else if (col == C_Key || col == C_Text) {
+                    Context x = ContextAt(ed, t, wb);
+                    if (x.kind == X_Key && col == C_Key) {
+                        doc.what = D_Param;
+                        doc.name = Lower(d + wb, we - wb);
+                        doc.ctrl = x.statedef ? "" : x.ctrl;
+                    } else if (x.kind == X_Arg) {
+                        doc.what = D_Arg;
+                        doc.name = Lower(d + wb, we - wb);
+                        doc.ctrl = Lower(kGenTriggers[x.trig].name, strlen(kGenTriggers[x.trig].name));
                     }
                 }
             }
@@ -2259,21 +3104,35 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
         if (word != ed->hover_word) {
             ed->hover_word = word;
             ed->hover_time = 0.0f;
+            ed->hover_text.clear();
+            if (word != kNone && ed->hover_note) {
+                ed->hover_text = ed->hover_note(word, word_end);
+            }
         }
         ed->hover_time += io.DeltaTime;
-        bool show_doc = doc != nullptr && ed->hover_time >= 0.35f;
-        if (on_error || show_doc) {
+        bool waited = ed->hover_time >= 0.35f;
+        bool show_doc = waited && DocShows(doc);
+        bool show_note = waited && !ed->hover_text.empty();
+        if (on_error || show_doc || show_note) {
             ImGui::BeginTooltip();
             if (on_error) {
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
                 ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(pal->error_mark), "%s", ed->error_msg.c_str());
                 ImGui::PopTextWrapPos();
-                if (show_doc) {
+                if (show_doc || show_note) {
                     ImGui::Separator();
                 }
             }
             if (show_doc) {
-                ShowDoc(*doc, doc_controller);
+                ShowDoc(doc);
+                if (show_note) {
+                    ImGui::Separator();
+                }
+            }
+            if (show_note) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+                ImGui::TextUnformatted(ed->hover_text.c_str());
+                ImGui::PopTextWrapPos();
             }
             ImGui::EndTooltip();
         }
@@ -2384,6 +3243,16 @@ void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> no
 int Editor_MarkClicked(const CodeEditor *ed)
 {
     return ed->mark_clicked;
+}
+
+void Editor_SetZss(CodeEditor *ed, bool zss)
+{
+    ed->zss = zss;
+}
+
+void Editor_SetHoverNote(CodeEditor *ed, std::function<std::string(size_t, size_t)> note_of)
+{
+    ed->hover_note = std::move(note_of);
 }
 
 bool Editor_IsFocused(const CodeEditor *ed)

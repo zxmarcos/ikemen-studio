@@ -3,6 +3,8 @@
 
 #include <fstream>
 
+#include "cns.h"
+
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 
@@ -49,6 +51,8 @@ SourceFile &LoadSource(const std::string &file) {
     SourceFile &sf = g_files[key];
     sf.path = file;
     sf.ed = dbg::Editor_Create();
+    dbg::Editor_SetZss(sf.ed, Cns_IsZss(file));
+    dbg::Editor_SetHoverNote(sf.ed, [path = sf.path](size_t b, size_t e) { return CodeHoverNote(path, b, e); });
     ReadSource(sf);
     return sf;
 }

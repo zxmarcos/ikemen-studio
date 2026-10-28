@@ -15,8 +15,8 @@
 
 namespace dbg {
 
-/* A text editor for the files of a character (CNS, CMD, AIR, DEF): line numbers, syntax colours,
-   completion and documentation of triggers and controllers. */
+/* A text editor for the files of a character (CNS, ZSS, CMD, AIR, DEF): line numbers, syntax colours,
+   completion and documentation of triggers, controllers and their parameters (Ctrl+Space: all that fit). */
 struct CodeEditor;
 CodeEditor *Editor_Create();
 void Editor_Destroy(CodeEditor *ed);
@@ -52,6 +52,11 @@ void Editor_SetDecorations(CodeEditor *ed, std::function<int(int)> mark_of, std:
 int  Editor_MarkClicked(const CodeEditor *ed);
 /* A note after the end of each line in view (1-based): its text ("" for none), and *color. */
 void Editor_SetNotes(CodeEditor *ed, std::function<std::string(int, ImU32 *)> note_of);
+/* The text is ZSS (# comments, [StateDef n; key: value], controller{key: value}), else CNS-like (CMD, AIR, DEF too). */
+void Editor_SetZss(CodeEditor *ed, bool zss);
+/* More for the tooltip of the word under the mouse ([begin, end) byte offsets in text), "" nothing; asked once
+   when the mouse comes to a word. */
+void Editor_SetHoverNote(CodeEditor *ed, std::function<std::string(size_t, size_t)> note_of);
 /* The colours of every editor: dark (the default) or light, for a light theme. */
 void Editor_SetLight(bool light);
 /* The text size of every editor, a factor of the font's (1: as the rest; 0.5 to 3). Ctrl+Wheel over an editor

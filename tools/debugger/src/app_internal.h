@@ -394,6 +394,9 @@ void SoundsWindow();
 // Analysis: a character's states checked (Lint), its variables, the graph of its states
 void AnalysisWindow();
 std::string VarName(const std::string &def, char kind, int index); // "" without one ('v', 'f', 's', 'S')
+// For the Code window's tooltip of a word (byte offsets in the file's text): a variable's name and
+// uses, the state or action a number names; "" nothing
+std::string CodeHoverNote(const std::string &file, size_t begin, size_t end);
 std::string StatedefFile(int pn, int no); // the character's file whose [Statedef no] the engine reads first; "" none
 void AnalysisSettingsLine(const std::string &key, const std::string &value);
 void AnalysisSettingsWrite(ImGuiTextBuffer *buf);

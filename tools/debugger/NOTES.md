@@ -194,6 +194,26 @@ select.def from disk when the game has not named it. Tested without the
 game: a character made from kfm, action 0 copied as 200, a Clsn1 box added
 on the preview, the move created; then launched with it as P1.
 
+Then Code's completion and documentation by context, and ZSS. `editor.cpp`
+knows Ikemen GO's names from `ikemen_names.inc`, written by
+`scripts/gen_names` (Go, `go/ast`) from the engine's compiler: `scmap`'s
+controllers, each with the parameters its method reads from its section
+(the calls taking `is`: `paramValue`, `stateParam`, `is["x"]`..., followed
+into the methods it hands `is` to, a `prefix` parameter carried: `palfx.`,
+`afterimage.`, `shader.`), `expValue`'s cases of `switch c.token` as triggers
+with the names a nested `switch c.token` takes (GetHitVar's, Const's), the
+statedef's parameters, the spellings of `script.go`'s Lua functions. Run it
+again when the engine's compiler changes. `ContextAt` says what fits where:
+CNS by the section and its `type =` line, ZSS by the `{` the cursor is in
+(a controller's or a block's), `;` and `:` before it, the start of a
+statement; `Editor_SetZss` (Code sets it for `.zss`) gives `#` comments and
+`HighlightZss`. `Editor_SetHoverNote` lets the app add to a word's tooltip:
+`CodeHoverNote` in `app_check.cpp` (a variable's name and uses, the state or
+action a number names). Analysis > Variables renumbers a var or fvar
+(`PlanRenumber`: per line, outside comments; VarRangeSet uses are marked
+`range` and do not make a number used). Not done: completing `$locals`, ZSS
+functions' names, a command's name in `command = "`.
+
 ## Where things are
 
 Branch `debugger-bridge` of this clone (local only, never pushed), on top of
@@ -248,7 +268,8 @@ tools/debugger/
   src/app_debug.cpp      the toolbar, Players, Inspector, Frame data, Trace, Breakpoints, Watch, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
-  src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds)
+  src/editor.cpp/.hpp    the code editor widget (with marks and line backgrounds); CNS and ZSS, completion by context
+  src/ikemen_names.inc   the engine's controllers (with their parameters), triggers, statedef parameters (scripts/gen_names)
   src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
@@ -266,7 +287,7 @@ tools/debugger/
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
-  scripts/               build.ps1/build.sh, msys_setup.ps1, test_ui.ps1, probe.ps1
+  scripts/               build.ps1/build.sh, msys_setup.ps1, test_ui.ps1, probe.ps1, gen_names (Go: ikemen_names.inc)
 ```
 
 ## What works
