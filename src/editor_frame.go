@@ -37,6 +37,7 @@ import (
 //	   "stage": the stage's def and where its BGs were drawn (editor_stage.go),
 //	   "fight", "motif": the fight screen's and the motif's defs and where their elements
 //	   were drawn (editor_fight.go, editor_motif.go)}
+//	  "e" is empty out of a match (editorInMatch).
 //	  "vp" is where the game's picture is in the frame (top-left origin), "scr"
 //	  the size of the game's picture; "ax" and boxes are in its pixels.
 //	event ring after the slots: events of 4 int32 values, kind first:
@@ -190,6 +191,11 @@ func (f *EditorFrame) readCommands() {
 	atomic.StoreUint32(f.u32(52), read)
 }
 
+// editorInMatch tells whether the characters and the stage are being drawn.
+func editorInMatch() bool {
+	return sys.gameRunning && sys.loader.state != LS_Loading
+}
+
 // editorFrameGeometry writes where the players and helpers are, in the game picture's pixels.
 func editorFrameGeometry(winW, winH int32) []byte {
 	f := &edFrame
@@ -226,7 +232,13 @@ func editorFrameGeometry(winW, winH int32) []byte {
 	sx, sy := sys.widthScale, sys.heightScale
 	toX := func(x float32) float32 { return (x + sys.gameWidth/2) * sx }
 	first := true
-	for _, chars := range sys.chars {
+	// Out of a match (menus, select screen) or while one loads, sys.chars still holds the last
+	// match's characters, which are not drawn
+	all := sys.chars[:]
+	if !editorInMatch() {
+		all = nil
+	}
+	for _, chars := range all {
 		for _, c := range chars {
 			if c == nil || c.helperIndex < 0 || c.scf(SCF_disabled) {
 				continue

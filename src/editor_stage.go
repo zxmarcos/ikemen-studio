@@ -193,7 +193,7 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 
 // editorStageGeometry adds the stage to the frame geometry and starts the next frame's list:
 //
-//	"stage": {"def", "free": the editor's camera is on,
+//	"stage": {"def" (alone out of a match), "free": the editor's camera is on,
 //	  "cam": [x, y, s, gl, gameWidth, widthScale, heightScale]: a point (X, Y) of the world (a
 //	    character's pos * localscl) is at picture pixel ((X - x) * s + gameWidth/2) * widthScale,
 //	    (Y * s - y + gl) * heightScale,
@@ -225,6 +225,10 @@ func editorStageGeometry(b []byte) []byte {
 	c := &sys.cam
 	b = append(b, `,"stage":{"def":`...)
 	b = editorJSONString(b, s.def)
+	if !editorInMatch() {
+		// The last match's stage, not drawn: only which one it is
+		return append(b, '}')
+	}
 	b = append(b, `,"free":`...)
 	b = strconv.AppendBool(b, edCam.free)
 	cx, cy, cs := editorDrawCamera()
