@@ -350,7 +350,7 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     static ImVec2 origin; // the axis, from the canvas's corner
     float em = ImGui::GetFontSize();
     // Its toolbar: play, the previous element, the zoom
-    if (ImGui::Button(playing ? "Stop" : "Play", ImVec2(em * 3.5f, 0))) {
+    if (ImGui::Button(playing ? ICON_STOP " Stop" : ICON_PLAY " Play", ImVec2(em * 4.5f, 0))) {
         playing = !playing;
         started = ImGui::GetTime();
     }
@@ -770,10 +770,10 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     char title[48];
     snprintf(title, sizeof(title), "Element %d of %d", t.elem, count);
     ImGui::SeparatorText(title);
-    if (ImGui::SmallButton("Duplicate") && Air_DuplicateElem(sf.text, act, index)) goTo = t.elem + 1;
+    if (ImGui::SmallButton(ICON_COPY " Duplicate") && Air_DuplicateElem(sf.text, act, index)) goTo = t.elem + 1;
     flow("Delete");
     ImGui::BeginDisabled(count < 2);
-    if (ImGui::SmallButton("Delete") && Air_DeleteElem(sf.text, act, index)) goTo = std::max(1, t.elem - 1);
+    if (ImGui::SmallButton(ICON_TRASH " Delete") && Air_DeleteElem(sf.text, act, index)) goTo = std::max(1, t.elem - 1);
     ImGui::EndDisabled();
     flow("<");
     ImGui::BeginDisabled(index == 0);
@@ -803,7 +803,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     done |= ImGui::IsItemDeactivatedAfterEdit();
     ImGui::SetItemTooltip("Group, image");
     ImGui::SameLine();
-    if (ImGui::Button("Pick...")) ImGui::OpenPopup("pick");
+    if (ImGui::Button(ICON_IMAGE " Pick...")) ImGui::OpenPopup("pick");
     ImGui::SetItemTooltip("Pick the element's sprite among the sprites of a group");
     FieldLabel("Offset");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
@@ -898,7 +898,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("Line %d", el.line);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Show in Code")) CodeShowLine(sf.path, el.line);
+    if (ImGui::SmallButton(ICON_CODE " Show in Code")) CodeShowLine(sf.path, el.line);
 
     // The boxes: Clsn2, then Clsn1
     for (int g = 1; g >= 0 && !screen; g--) {
@@ -937,7 +937,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
             if (ImGui::IsItemDeactivatedAfterEdit()) apply(sf);
             ImGui::SetItemTooltip("x1, y1, x2, y2");
             ImGui::SameLine();
-            bool del = ImGui::Button("x", ImVec2(delW, 0));
+            bool del = ImGui::Button(ICON_XMARK, ImVec2(delW, 0));
             ImGui::SetItemTooltip("Delete this box (the element gets its own boxes)");
             ImGui::PopID();
             if (del) {
@@ -946,7 +946,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
                 return true;
             }
         }
-        if (ImGui::Button("Add a box", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        if (ImGui::Button(ICON_PLUS " Add a box", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
             AddBox(t, g);
             ImGui::PopID();
             return true;
@@ -1020,12 +1020,12 @@ void AnimationWindow() {
         rightAlign(w);
         ImGui::BeginDisabled(!sf.Dirty());
         if (sf.Dirty()) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        bool save = ImGui::Button("Save");
+        bool save = ImGui::Button(ICON_SAVE " Save");
         if (sf.Dirty()) ImGui::PopStyleColor();
         if (save) SaveSource(sf);
         ImGui::SetItemTooltip(screen ? "Writes the def" : "Writes the AIR file");
         ImGui::SameLine();
-        if (ImGui::Button("Revert")) {
+        if (ImGui::Button(ICON_REVERT " Revert")) {
             ReadSource(sf);
             apply(sf);
         }
@@ -1150,7 +1150,7 @@ void AnimationWindow() {
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         bool ok = ImGui::InputInt("##no", &newNo, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
-        ok |= ImGui::Button("OK");
+        ok |= ImGui::Button(ICON_CHECK " OK");
         bool taken = air.actions.count(newNo) != 0;
         if (taken) ImGui::TextColored(Ink(kRed), "Action %d exists already.", newNo);
         if (ok && !taken && t.act) {
@@ -1166,13 +1166,13 @@ void AnimationWindow() {
     }
     if (ImGui::BeginPopup("delete")) {
         ImGui::Text("Delete action %d?", g_animAction);
-        if (ImGui::Button("Delete") && t.act) {
+        if (ImGui::Button(ICON_TRASH " Delete") && t.act) {
             if (Air_DeleteAction(sf.text, *t.act)) apply(sf);
             g_animFollow = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+        if (ImGui::Button(ICON_XMARK " Cancel")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     if (!t.act) {
@@ -1205,8 +1205,8 @@ void AnimationWindow() {
     if (ImGui::BeginPopup("element")) {
         int index = t.elem - 1, count = (int)t.act->elems.size();
         ImGui::TextDisabled("Element %d", t.elem);
-        if (ImGui::MenuItem("Duplicate") && Air_DuplicateElem(sf.text, *t.act, index)) goTo = t.elem + 1;
-        if (ImGui::MenuItem("Delete", nullptr, false, count > 1) && Air_DeleteElem(sf.text, *t.act, index))
+        if (ImGui::MenuItem(ICON_COPY " Duplicate") && Air_DuplicateElem(sf.text, *t.act, index)) goTo = t.elem + 1;
+        if (ImGui::MenuItem(ICON_TRASH " Delete", nullptr, false, count > 1) && Air_DeleteElem(sf.text, *t.act, index))
             goTo = std::max(1, t.elem - 1);
         if (ImGui::MenuItem("Move earlier", nullptr, false, index > 0) && Air_MoveElem(sf.text, *t.act, index, -1))
             goTo = t.elem - 1;

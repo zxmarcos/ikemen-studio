@@ -40,6 +40,7 @@
 #include <GL/gl.h>
 #include "imgui.h"
 #include "json.h"
+#include "icons.h"
 
 namespace app {
 

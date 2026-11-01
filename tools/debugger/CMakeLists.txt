@@ -1,4 +1,4 @@
-# Ikemen GO debugger: a separate program that starts Ikemen GO with the
+﻿# Ikemen GO debugger: a separate program that starts Ikemen GO with the
 # ikdbg.lua mod and talks to it over stdin/stdout (see README.md).
 # Windows only. Builds with MSVC or with MSYS2's gcc:
 #   cmake -S tools/debugger -B tools/debugger/build && cmake --build tools/debugger/build --config Release
@@ -29,8 +29,20 @@ target_link_libraries(imgui PUBLIC opengl32)
 add_library(lodepng STATIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/lodepng.cpp")
 target_include_directories(lodepng PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng")
 
+# Font Awesome Free 6.5.2 (fonts: SIL OFL 1.1, icons: CC BY 4.0, third_party/fontawesome/LICENSE.txt),
+# embedded as a byte array so the exe needs no file next to it.
+set(_fa "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fontawesome/fa-solid-900.ttf")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_fa}")
+file(READ "${_fa}" _fa_hex HEX)
+string(LENGTH "${_fa_hex}" _fa_len)
+math(EXPR _fa_size "${_fa_len} / 2")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _fa_bytes "${_fa_hex}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icon_font.cpp"
+  "extern const unsigned char kIconFont[] = {${_fa_bytes}};\nextern const unsigned kIconFontSize = ${_fa_size};\n")
+
 add_executable(ikemen-debugger WIN32
   src/main.cpp
+  "${CMAKE_CURRENT_BINARY_DIR}/icon_font.cpp"
   src/app.cpp
   src/app_game.cpp
   src/app_anim.cpp

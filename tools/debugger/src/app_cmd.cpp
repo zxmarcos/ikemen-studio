@@ -486,7 +486,7 @@ void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float e
     ImGui::SetItemTooltip("Saves the changed files, then the game compiles the characters again; a match goes on.");
     ImGui::SameLine();
     ImGui::BeginDisabled(!sf.Dirty());
-    if (ImGui::Button("Revert")) ReadSource(sf);
+    if (ImGui::Button(ICON_REVERT " Revert")) ReadSource(sf);
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextDisabled("%s%s  %zu commands%s", sf.path.c_str(), sf.Dirty() ? " *" : "", cf.commands.size(),
@@ -584,7 +584,7 @@ void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float e
     ImGui::SameLine();
     ImGui::Checkbox("Only the ones under way", &underWay);
     ImGui::SameLine();
-    if (ImGui::Button("Add a command")) {
+    if (ImGui::Button(ICON_PLUS " Add a command")) {
         if (Cmd_Add(sf.text, cf, sel, "new", "x")) {
             sf.version++;
             selName = "new";

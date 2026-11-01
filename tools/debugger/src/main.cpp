@@ -15,6 +15,9 @@
 #include "imgui.h"
 #include "imgui_impl_opengl2.h"
 
+extern const unsigned char kIconFont[]; // Font Awesome Solid, embedded by CMake
+extern const unsigned kIconFontSize;
+
 static HWND g_hwnd;
 static HDC g_hdc;
 static bool g_mouseTracked;
@@ -250,6 +253,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR cmdLine, int show) {
     io.BackendPlatformName = "ikemen_debugger_win32";
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+    // The default font, and the icons (icons.h) merged into it
+    io.Fonts->AddFontDefault();
+    ImFontConfig icons;
+    icons.MergeMode = true;
+    icons.FontDataOwnedByAtlas = false;
+    icons.PixelSnapH = true;
+    icons.GlyphMinAdvanceX = 13.0f; // the icon takes the width of a letter and a bit more
+    icons.GlyphOffset.y = 1.0f;
+    static const ImWchar range[] = {0xe000, 0xf8ff, 0};
+    io.Fonts->AddFontFromMemoryTTF((void *)kIconFont, (int)kIconFontSize, 12.0f, &icons, range);
     ImGui::StyleColorsDark();
     ImGui::GetStyle().ScaleAllSizes(scale);
     ImGui::GetStyle().FontScaleDpi = scale;

@@ -374,7 +374,7 @@ static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, siz
         if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
     }
     ImGui::TableNextColumn();
-    if (ImGui::SmallButton("x") && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+    if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
     ImGui::SetItemTooltip("Remove this line");
     ImGui::PopID();
     return changed;
@@ -414,14 +414,14 @@ static void ScreenWindow(ScreenDef &d) {
     float em = ImGui::GetFontSize();
 
     ImGui::BeginDisabled(!sf.Dirty());
-    bool save = ImGui::Button("Save (Ctrl+S)");
+    bool save = ImGui::Button(ICON_SAVE " Save (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
         save = sf.Dirty();
     if (save) SaveSource(sf);
     ImGui::SetItemTooltip("Writes the def. The game already shows every change.");
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         ReadSource(sf);
         Reload(d, sf, false);
     }
@@ -432,7 +432,7 @@ static void ScreenWindow(ScreenDef &d) {
     };
     float box = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
     flow("Reload", pad);
-    if (ImGui::Button("Reload")) Reload(d, sf, true);
+    if (ImGui::Button(ICON_RESTART " Reload")) Reload(d, sf, true);
     ImGui::SetItemTooltip("The game loads the %s again (from the text here), e.g. after its files changed.", d.what);
     flow("Pick on the Game window", box);
     if (ImGui::Checkbox("Pick on the Game window", &g_screenPick) && g_screenPick) g_stagePick = false;
@@ -473,7 +473,7 @@ static void ScreenWindow(ScreenDef &d) {
     const IniSection &s = *sp;
     ImGui::Text("[%s]", s.name.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton("Show in Code")) {
+    if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = s.line;
         g_codeHold = true;
@@ -542,7 +542,7 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::SetNextItemWidth(-FLT_MIN);
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::TableNextColumn();
-        add = ImGui::SmallButton("+") || add;
+        add = ImGui::SmallButton(ICON_PLUS) || add;
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;
             for (char &ch : key) ch = (char)tolower((unsigned char)ch);

@@ -160,7 +160,7 @@ void Commands(std::vector<Entry> &out) {
 } // namespace
 
 void FileMenu() {
-    if (ImGui::MenuItem("Go to file...", "Ctrl+P")) Ask(0);
+    if (ImGui::MenuItem(ICON_SEARCH " Go to file...", "Ctrl+P")) Ask(0);
     if (ImGui::MenuItem("Commands...", "Ctrl+Shift+P")) Ask('>');
     ImGui::BeginDisabled(g_codeFile.empty());
     if (ImGui::MenuItem("Go to line...", "Ctrl+G")) Ask(':');
@@ -168,8 +168,8 @@ void FileMenu() {
     ImGui::EndDisabled();
     if (ImGui::MenuItem("Find in files...", "Ctrl+Shift+F")) SearchFor(CodeSelectedText());
     ImGui::Separator();
-    if (ImGui::MenuItem("Open...")) OpenDialog();
-    if (ImGui::MenuItem("Save and apply", "Ctrl+S")) SaveAndApply();
+    if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open...")) OpenDialog();
+    if (ImGui::MenuItem(ICON_SAVE " Save and apply", "Ctrl+S")) SaveAndApply();
     ImGui::BeginDisabled(g_codeFile.empty());
     if (ImGui::MenuItem("Close the tab", "Ctrl+W")) CodeCloseShown();
     ImGui::EndDisabled();

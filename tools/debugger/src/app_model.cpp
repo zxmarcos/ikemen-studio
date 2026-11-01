@@ -1287,7 +1287,7 @@ void KeyInspector(int a, float lw) {
     ImGui::SetItemTooltip("The animation put at its time");
     ImGui::SameLine();
     ImGui::BeginDisabled(c->in.size() < 2);
-    bool del = ImGui::SmallButton("Delete");
+    bool del = ImGui::SmallButton(ICON_TRASH " Delete");
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("A channel keeps one key at least");
     if (del) {
@@ -2640,7 +2640,7 @@ void ModelWindow() {
                                : "Read from its file and drawn here; changes go to the file with Save.");
     SameLineFits(buttonWidth("Save"));
     ImGui::BeginDisabled(!dirty && !defDirty);
-    bool save = ImGui::Button("Save");
+    bool save = ImGui::Button(ICON_SAVE " Save");
     ImGuiIO &io = ImGui::GetIO();
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
         save = dirty || defDirty;
@@ -2661,7 +2661,7 @@ void ModelWindow() {
     }
     SameLineFits(buttonWidth("Revert"));
     ImGui::BeginDisabled(!dirty);
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         if (live) {
             SendRaw("debugModelRevert()");
             if (sf) ReloadStage(*sf, true);

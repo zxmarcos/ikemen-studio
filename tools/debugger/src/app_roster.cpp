@@ -247,7 +247,7 @@ static bool EntryFields(RosterEntry &e, bool stage) {
         ImGui::PopID();
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("+")) ImGui::OpenPopup("addstage");
+    if (ImGui::SmallButton(ICON_PLUS)) ImGui::OpenPopup("addstage");
     if (ImGui::BeginPopup("addstage")) {
         static std::vector<std::string> list;
         if (ImGui::IsWindowAppearing()) list = ListDefs(true);
@@ -316,16 +316,16 @@ void RosterWindow() {
     std::string before = sf.text;
 
     ImGui::BeginDisabled(!sf.Dirty());
-    if (ImGui::Button("Save")) SaveSource(sf);
+    if (ImGui::Button(ICON_SAVE " Save")) SaveSource(sf);
     ImGui::SetItemTooltip("Writes select.def. The game already shows every change (in menus; not during a match).");
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         ReadSource(sf);
         RosterReload(sf, false);
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Show in Code")) {
+    if (ImGui::Button(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = r.charsLine;
         g_codeHold = true;
@@ -398,7 +398,7 @@ void RosterWindow() {
                     if (hovered) ImGui::SetTooltip("%s\nline %d. Drag it to another cell; right click: more.", r.chars[ci].Text().c_str(), r.chars[ci].first);
                     if (ImGui::BeginPopupContextItem("cellmenu")) {
                         if (ImGui::MenuItem("Insert a character before...")) openInsert = true;
-                        if (ImGui::MenuItem("Delete")) Roster_DeleteCell(sf.text, r.chars[ci]);
+                        if (ImGui::MenuItem(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, r.chars[ci]);
                         ImGui::EndPopup();
                     }
                 }
@@ -437,7 +437,7 @@ void RosterWindow() {
                 ImGui::Dummy(ImVec2(1, 1));
             }
             // A free cell at the end takes new characters and cells dropped there
-            if (ImGui::Button("Add a character...")) ImGui::OpenPopup("addchar");
+            if (ImGui::Button(ICON_PLUS " Add a character...")) ImGui::OpenPopup("addchar");
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("rostercell")) dropFrom = *(const int *)p->Data, dropTo = (int)r.chars.size();
                 ImGui::EndDragDropTarget();
@@ -468,7 +468,7 @@ void RosterWindow() {
                 RosterCell c = r.chars[sel];
                 ImGui::Text("Line %d%s", c.first, c.slot ? "  (a slot: several characters in one cell)" : "");
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Delete")) Roster_DeleteCell(sf.text, c);
+                if (ImGui::SmallButton(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
                 // The line as text
                 static std::string edit;
                 static int editFor = -1;
@@ -489,7 +489,7 @@ void RosterWindow() {
                         ImGui::TextDisabled("%s", d.def.empty() ? "not found under chars/" : d.def.c_str());
                         if (!d.def.empty()) {
                             ImGui::SameLine();
-                            if (ImGui::SmallButton("Open")) g_codeFile = d.def, g_codeLine = g_codeScrollTo = 1;
+                            if (ImGui::SmallButton(ICON_FOLDER_OPEN " Open")) g_codeFile = d.def, g_codeLine = g_codeScrollTo = 1;
                         }
                         if (EntryFields(e, false)) Roster_SetCell(sf.text, c, c.Text());
                     }
@@ -510,7 +510,7 @@ void RosterWindow() {
                 if (ImGui::Selectable((label + "##" + std::to_string(i)).c_str(), ssel == i)) ssel = i;
             }
             std::string picked;
-            if (ImGui::Button("Add a stage...")) ImGui::OpenPopup("addstage");
+            if (ImGui::Button(ICON_PLUS " Add a stage...")) ImGui::OpenPopup("addstage");
             if (PickName("addstage", true, picked) && r.stagesLine) {
                 Roster_InsertLine(sf.text, r.stagesEnd, picked);
                 ssel = (int)r.stages.size();
@@ -534,7 +534,7 @@ void RosterWindow() {
                     ssel++;
                 ImGui::EndDisabled();
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Delete")) Roster_DeleteCell(sf.text, c);
+                if (ImGui::SmallButton(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
                 if (sf.text == before && !c.slot) {
                     RosterEntry &e = c.entries[0];
                     ImGui::TextDisabled("%s", e.name.c_str());

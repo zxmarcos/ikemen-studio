@@ -847,7 +847,7 @@ void RenumberPopup(Model &m, char kind, int from) {
     }
     for (const std::string &n : r.notes) ImGui::TextColored(Ink(kYellow), "%s", n.c_str());
     ImGui::BeginDisabled(!ok || r.changes == 0);
-    if (ImGui::Button("Renumber")) {
+    if (ImGui::Button(ICON_LIST " Renumber")) {
         for (const auto &[path, text] : r.texts) {
             SourceFile &sf = LoadSource(path);
             sf.text = text;
@@ -865,7 +865,7 @@ void RenumberPopup(Model &m, char kind, int from) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    if (ImGui::Button(ICON_XMARK " Cancel")) ImGui::CloseCurrentPopup();
     ImGui::TextDisabled("Only numbers written as numbers change; the files are left unsaved.");
 }
 

@@ -55,7 +55,7 @@ void MatchesPopup() {
         ImGui::SetItemTooltip("P1 %s%s, P2 %s%s, stage %s", m.p1.c_str(), m.ai1 ? " (AI)" : "", m.p2.c_str(),
                               m.ai2 ? " (AI)" : "", m.stage.c_str());
         ImGui::SameLine();
-        bool del = ImGui::SmallButton("x");
+        bool del = ImGui::SmallButton(ICON_XMARK);
         ImGui::SetItemTooltip("Forget it");
         ImGui::PopID();
         if (del) {
@@ -69,7 +69,7 @@ void MatchesPopup() {
     ImGui::InputText("##name", &name);
     ImGui::SameLine();
     ImGui::BeginDisabled(name.empty() || name.find('|') != std::string::npos);
-    if (ImGui::Button("Save this match")) {
+    if (ImGui::Button(ICON_SAVE " Save this match")) {
         bool replaced = false;
         for (SavedMatch &m : g_matches)
             if (m.name == name) m = {name, s.p1, s.p2, s.stage, s.ai1, s.ai2}, replaced = true;
@@ -109,12 +109,12 @@ void Toolbar() {
         if (ImGui::GetContentRegionAvail().x < width) ImGui::NewLine();
     };
 
-    if (ImGui::Button(running ? "Restart" : "Launch (F5)")) Launch();
+    if (ImGui::Button(running ? ICON_RESTART " Restart" : ICON_PLAY " Launch (F5)")) Launch();
     ImGui::SetItemTooltip(running ? "Starts the game again with the match beside (Ctrl+Shift+F5)."
                                   : "Starts the game with the match beside (F5).");
     ImGui::SameLine();
     ImGui::BeginDisabled(!running);
-    if (ImGui::Button("Stop")) {
+    if (ImGui::Button(ICON_STOP " Stop")) {
         g_bridge.Stop();
         Log(LogLine::Info, "Stopped the game.");
     }
@@ -142,7 +142,7 @@ void Toolbar() {
     ImGui::SetNextItemWidth(em * 7);
     ImGui::InputText("##stage", &s.stage);
     ImGui::SameLine();
-    if (ImGui::Button("Matches")) ImGui::OpenPopup("matches");
+    if (ImGui::Button(ICON_BOOKMARKS " Matches")) ImGui::OpenPopup("matches");
     ImGui::SetItemTooltip("Matches saved by name: pick one, or save the one set");
     if (ImGui::BeginPopup("matches")) {
         MatchesPopup();
@@ -154,11 +154,11 @@ void Toolbar() {
     // The game's time
     flow(em * 26);
     ImGui::BeginDisabled(!live);
-    if (ImGui::Button(g_paused ? "Continue (F5)" : "Pause (F5)")) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
+    if (ImGui::Button(g_paused ? ICON_PLAY " Continue (F5)" : ICON_PAUSE " Pause (F5)")) SendRaw(g_paused ? "ikdbg.pause(false)" : "ikdbg.pause(true)");
     ImGui::SameLine();
-    if (ImGui::Button("Step (F10)")) SendRaw("ikdbg.step(1)");
+    if (ImGui::Button(ICON_STEP " Step (F10)")) SendRaw("ikdbg.step(1)");
     ImGui::SameLine();
-    if (ImGui::Button("+10 (F11)")) SendRaw("ikdbg.step(10)");
+    if (ImGui::Button(ICON_FAST " +10 (F11)")) SendRaw("ikdbg.step(10)");
     ImGui::SetItemTooltip("Ten ticks");
     ImGui::SameLine();
     static float speed = 1;
@@ -178,18 +178,18 @@ void Toolbar() {
     }
     ImGui::SetItemTooltip("The game's speed");
     ImGui::SameLine();
-    if (ImGui::Button("More")) ImGui::OpenPopup("more");
+    if (ImGui::Button(ICON_ELLIPSIS " More")) ImGui::OpenPopup("more");
     if (ImGui::BeginPopup("more")) {
         static int stepN = 60;
         ImGui::SetNextItemWidth(em * 5);
         ImGui::InputInt("##n", &stepN, 0);
         ImGui::SameLine();
-        if (ImGui::Button("Run N ticks")) SendRaw("ikdbg.step(" + std::to_string(std::max(1, stepN)) + ")");
+        if (ImGui::Button(ICON_PLAY " Run N ticks")) SendRaw("ikdbg.step(" + std::to_string(std::max(1, stepN)) + ")");
         ImGui::Separator();
-        if (ImGui::MenuItem("Save state")) Exec("saveState()");
-        if (ImGui::MenuItem("Load state")) Exec("loadState()");
-        if (ImGui::MenuItem("Reset round")) Exec("resetRound()");
-        if (ImGui::MenuItem("Reload match")) Exec("reload()");
+        if (ImGui::MenuItem(ICON_SAVE_STATE " Save state")) Exec("saveState()");
+        if (ImGui::MenuItem(ICON_LOAD_STATE " Load state")) Exec("loadState()");
+        if (ImGui::MenuItem(ICON_RESET " Reset round")) Exec("resetRound()");
+        if (ImGui::MenuItem(ICON_RESTART " Reload match")) Exec("reload()");
         ImGui::SetItemTooltip("Reads the characters, stage and fight screen from disk again: edit a file, then reload.");
         ImGui::Separator();
         if (ImGui::MenuItem("Ikemen's collision boxes")) Exec("toggleClsnDisplay()");
@@ -204,12 +204,12 @@ void Toolbar() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("x")) g_breakText.clear();
+        if (ImGui::SmallButton(ICON_XMARK "##break")) g_breakText.clear();
     }
 
     // The rest of the session
     flow(em * 6);
-    if (ImGui::Button("Settings")) ImGui::OpenPopup("session");
+    if (ImGui::Button(ICON_GEAR " Settings")) ImGui::OpenPopup("session");
     if (ImGui::BeginPopup("session")) {
         ImGui::SetNextItemWidth(em * 28);
         ImGui::InputTextWithHint("Ikemen GO", "Ikemen_GO.exe", &s.exe);
@@ -826,7 +826,7 @@ void BreakpointsWindow() {
     ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
     bool add = ImGui::InputText("##cond", &cond, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    add |= ImGui::Button("Add");
+    add |= ImGui::Button(ICON_PLUS " Add");
     if (add && !cond.empty()) {
         Breakpoint b{g_nextBid++, targetValues[target], cond};
         g_breakpoints.push_back(b);
@@ -857,7 +857,7 @@ void BreakpointsWindow() {
             ImGui::TableNextColumn();
             ImGui::Text("%d", b.hits);
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("Delete")) {
+            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
                 if (Connected()) SendRaw("ikdbg.brkDel(" + std::to_string(b.bid) + ")");
                 g_breakpoints.erase(g_breakpoints.begin() + n);
                 ImGui::PopID();
@@ -901,7 +901,7 @@ void BreakpointsWindow() {
             ImGui::TableNextColumn();
             ImGui::Text("%d", b.hits);
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("Delete")) {
+            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
                 if (Connected()) SendCtrlBreak(b, false);
                 g_ctrlBreaks.erase(g_ctrlBreaks.begin() + n);
                 ImGui::PopID();
@@ -927,7 +927,7 @@ void WatchWindow() {
     ImGui::SetNextItemWidth(-ImGui::GetFontSize() * 4);
     bool add = ImGui::InputTextWithHint("##code", "life(), var(3)", &code, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    add |= ImGui::Button("Add");
+    add |= ImGui::Button(ICON_PLUS " Add");
     if (add && !code.empty()) {
         g_watches.push_back({g_nextWatch++, target, code});
         if (Connected()) SendWatchExpr(g_watches.back());
@@ -973,7 +973,7 @@ void WatchWindow() {
                 ImGui::EndTooltip();
             }
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("Delete")) {
+            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
                 if (Connected()) SendRaw("ikdbg.exprDel(" + std::to_string(w.n) + ")");
                 g_watches.erase(g_watches.begin() + n);
                 ImGui::PopID();
@@ -1045,7 +1045,7 @@ bool ControllerInput(float em) {
     ImGui::SameLine();
     bool run = false;
     ImGui::BeginDisabled(!e || !Connected() || text.empty());
-    run = ImGui::Button("Run (Ctrl+Enter)");
+    run = ImGui::Button(ICON_PLAY " Run (Ctrl+Enter)");
     ImGui::EndDisabled();
     HelpMarker("State controllers compiled with the character's compiler and run once on the selected player, "
                "as a negative state runs: a ChangeState is taken at once. CNS: a [State] header and "

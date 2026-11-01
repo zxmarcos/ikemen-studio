@@ -359,18 +359,18 @@ void CloseDialog() {
     }
     SourceFile &sf = LoadSource(g_docs[g_closing].path);
     ImGui::Text("%s has changes.", sf.path.c_str());
-    if (ImGui::Button("Save")) {
+    if (ImGui::Button(ICON_SAVE " Save")) {
         if (SaveSource(sf)) CloseDoc(g_closing);
         g_closing = -1;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Don't save")) {
+    if (ImGui::Button(ICON_TRASH " Don't save")) {
         ReadSource(sf);
         CloseDoc(g_closing);
         g_closing = -1;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) g_closing = -1;
+    if (ImGui::Button(ICON_XMARK " Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) g_closing = -1;
     if (g_closing < 0) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
 }
@@ -505,7 +505,7 @@ void FindBar(SourceFile &sf, bool windowFocused) {
     ImGui::SameLine();
     ImGui::Checkbox("Replace", &g_find.replace);
     ImGui::SameLine();
-    if (ImGui::SmallButton("x")) g_find.open = false;
+    if (ImGui::SmallButton(ICON_XMARK)) g_find.open = false;
     ImGui::SetItemTooltip("Close (Escape)");
     if (windowFocused && ImGui::IsKeyPressed(ImGuiKey_F3)) Step(sf, io.KeyShift ? -1 : 1);
     if (escaped) {
@@ -610,7 +610,7 @@ void CodeWindow() {
     // Toolbar: Save and apply, Revert, the files with changes
     int dirty = 0;
     for (const auto &kv : g_files) dirty += kv.second.Dirty();
-    bool save = ImGui::Button(dirty ? "Save and apply (Ctrl+S)" : "Apply (Ctrl+S)");
+    bool save = ImGui::Button(dirty ? ICON_SAVE " Save and apply (Ctrl+S)" : ICON_CHECK " Apply (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     if (focused && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) save = true;
@@ -620,7 +620,7 @@ void CodeWindow() {
                           "(states, commands, constants, animations, sounds) without restarting the match.");
     ImGui::SameLine();
     ImGui::BeginDisabled(!shown || !shown->Dirty());
-    if (ImGui::Button("Revert")) ReadSource(*shown);
+    if (ImGui::Button(ICON_REVERT " Revert")) ReadSource(*shown);
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::Checkbox("Follow the state", &follow);

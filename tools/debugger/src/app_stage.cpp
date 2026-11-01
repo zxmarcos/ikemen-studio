@@ -517,14 +517,14 @@ void StageWindow() {
     float em = ImGui::GetFontSize();
 
     ImGui::BeginDisabled(!sf.Dirty());
-    bool save = ImGui::Button("Save (Ctrl+S)");
+    bool save = ImGui::Button(ICON_SAVE " Save (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
         save = sf.Dirty();
     if (save) SaveSource(sf);
     ImGui::SetItemTooltip("Writes the def. The game already shows every change.");
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         ReadSource(sf);
         ReloadStage(sf, false);
     }
@@ -536,7 +536,7 @@ void StageWindow() {
     };
     float box = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
     flow("Reload", pad);
-    if (ImGui::Button("Reload")) ReloadStage(sf, true);
+    if (ImGui::Button(ICON_RESTART " Reload")) ReloadStage(sf, true);
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
     flow("Pick on the Game window", box);
     if (ImGui::Checkbox("Pick on the Game window", &g_stagePick) && g_stagePick) g_screenPick = false;
@@ -551,7 +551,7 @@ void StageWindow() {
     ImGui::SetItemTooltip("Only what is drawn moves: the wheel zooms, the right button pans (on the Game window).\n"
                           "The game's camera, and what the players can do, stay as they are.");
     flow("Fit the stage", pad);
-    if (ImGui::Button("Fit the stage")) FitStage();
+    if (ImGui::Button(ICON_SEARCH " Fit the stage")) FitStage();
     // The game restarted, or another tool turned it off
     static int offFrames;
     offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
@@ -565,7 +565,7 @@ void StageWindow() {
     ImGui::SameLine();
     ImGui::TextDisabled("%zu BGCtrls, %d running", ctrls.size(), running);
     flow("Restart the stage", pad);
-    if (ImGui::SmallButton("Restart the stage")) SendRaw("debugStageReset()");
+    if (ImGui::SmallButton(ICON_RESTART " Restart the stage")) SendRaw("debugStageReset()");
     ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
     if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
         ImGui::TextColored(Ink(kYellow), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
@@ -625,7 +625,7 @@ void StageWindow() {
     const IniSection &s = ini.sections[selSection];
     ImGui::Text("[%s]", s.name.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton("Show in Code")) {
+    if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = s.line;
         g_codeHold = true;
@@ -697,7 +697,7 @@ void StageWindow() {
                 if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
             }
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("x") && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+            if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
             ImGui::SetItemTooltip("Remove this line");
             ImGui::PopID();
         }
@@ -711,7 +711,7 @@ void StageWindow() {
         ImGui::SetNextItemWidth(-FLT_MIN);
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::TableNextColumn();
-        add = ImGui::SmallButton("+") || add;
+        add = ImGui::SmallButton(ICON_PLUS) || add;
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;
             for (char &ch : key) ch = (char)tolower((unsigned char)ch);

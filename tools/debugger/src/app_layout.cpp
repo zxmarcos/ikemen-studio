@@ -98,6 +98,20 @@ std::vector<const char *> g_front; // windows whose tab goes to the front
 int g_frontUntil;                  // asked again on each frame until then (a tab appearing takes the front)
 std::map<std::string, int> g_tabOrder; // each tab's place in the arrangement built last
 
+// The icon of a window, in the Windows menu
+const char *WindowIcon(const char *name) {
+    static const std::map<std::string, const char *> icons = {
+        {"Game", ICON_GAME}, {"Explorer", ICON_EXPLORER}, {"Code", ICON_CODE}, {"Outline", ICON_OUTLINE},
+        {"Search", ICON_SEARCH}, {"Problems", ICON_WARNING}, {"Players", ICON_PLAYERS}, {"Breakpoints", ICON_BREAKPOINT},
+        {"Watch", ICON_WATCH}, {"Inspector", ICON_INSPECTOR}, {"Trace", ICON_TRACE}, {"Frame data", ICON_TABLE},
+        {"Console", ICON_CONSOLE}, {"Performance", ICON_PERF}, {"Lab", ICON_LAB}, {"Analysis", ICON_ANALYSIS},
+        {"Animation", ICON_ANIM}, {"Sprites", ICON_IMAGE}, {"Sounds", ICON_SOUND}, {"Commands", ICON_KEYBOARD},
+        {"Stage", ICON_STAGE}, {"Model", ICON_CUBE}, {"Fight screen", ICON_FIGHT}, {"Motif", ICON_PALETTE},
+        {"Storyboard", ICON_CLAPPER}, {"Roster", ICON_ROSTER}, {"Fonts", ICON_FONT}, {"Create", ICON_WAND}};
+    auto it = icons.find(name);
+    return it == icons.end() ? "" : it->second;
+}
+
 ToolWindow *FindTool(const char *name) {
     for (ToolWindow &t : g_windows)
         if (strcmp(t.name, name) == 0) return &t;
@@ -275,7 +289,7 @@ void WorkspaceMenu() {
     for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
         char key[16];
         snprintf(key, sizeof(key), "Ctrl+%d", n + 1);
-        if (ImGui::MenuItem(g_spaces[n].name, key, n == g_space)) g_spaceAsked = n;
+        if (ImGui::MenuItem((std::string(n == 0 ? ICON_BUG : n == 1 ? ICON_CODE : n == 2 ? ICON_PERSON : n == 3 ? ICON_STAGE : ICON_DISPLAY) + "  " + g_spaces[n].name).c_str(), key, n == g_space)) g_spaceAsked = n;
         ImGui::SetItemTooltip("%s", g_spaces[n].help);
     }
     ImGui::Separator();
@@ -429,15 +443,15 @@ void LayoutFrame() {
             if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + n), false)) g_spaceAsked = n;
 
     if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
+        if (ImGui::BeginMenu(ICON_FOLDER_OPEN " File")) {
             FileMenu();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Windows")) {
+        if (ImGui::BeginMenu(ICON_LIST " Windows")) {
             const char *group = "";
             for (ToolWindow &t : g_windows) {
                 if (strcmp(group, t.group) != 0) ImGui::SeparatorText(group = t.group);
-                if (ImGui::MenuItem(t.name, nullptr, t.open)) {
+                if (ImGui::MenuItem((std::string(WindowIcon(t.name)) + "  " + t.name).c_str(), nullptr, t.open)) {
                     t.open = !t.open;
                     t.dock = t.open;
                     if (t.open) Front(t);
@@ -445,23 +459,24 @@ void LayoutFrame() {
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Create")) {
+        if (ImGui::BeginMenu(ICON_WAND " Create")) {
             CreateMenu();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Workspace")) {
+        if (ImGui::BeginMenu(ICON_DISPLAY " Workspace")) {
             WorkspaceMenu();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Theme")) {
+        if (ImGui::BeginMenu(ICON_PALETTE " Theme")) {
             ThemeMenu();
             ImGui::EndMenu();
         }
         // The workspaces as tabs
         ImGui::SameLine(0, ImGui::GetFontSize() * 2);
         for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
-            const char *label = g_spaces[n].name;
-            if (ImGui::Selectable(label, n == g_space, 0, ImVec2(ImGui::CalcTextSize(label).x, 0))) g_spaceAsked = n;
+            static const char *spaceIcons[] = {ICON_BUG, ICON_CODE, ICON_PERSON, ICON_STAGE, ICON_DISPLAY};
+            std::string label = std::string(spaceIcons[n]) + " " + g_spaces[n].name;
+            if (ImGui::Selectable(label.c_str(), n == g_space, 0, ImVec2(ImGui::CalcTextSize(label.c_str()).x, 0))) g_spaceAsked = n;
             ImGui::SetItemTooltip("%s (Ctrl+%d)", g_spaces[n].help, n + 1);
         }
         ImGui::EndMainMenuBar();

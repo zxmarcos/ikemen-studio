@@ -243,7 +243,7 @@ void FontsWindow() {
     const IniSection *def = DefSection(ini);
 
     ImGui::BeginDisabled(!dirty);
-    if (ImGui::Button("Save")) {
+    if (ImGui::Button(ICON_SAVE " Save")) {
         if (fnt) {
             // The first time, the old file is kept as .bak
             std::string path = GamePath(sel), bak = path + ".bak";
@@ -264,7 +264,7 @@ void FontsWindow() {
     ImGui::SetItemTooltip(fnt ? "Writes the .fnt file (the old one is kept as .bak the first time). The game already shows every change."
                               : "Writes the font's def. The game already shows every change.");
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         if (fnt)
             fe->text = fe->file.text;
         else
@@ -274,7 +274,7 @@ void FontsWindow() {
     ImGui::EndDisabled();
     if (!fnt) {
         ImGui::SameLine();
-        if (ImGui::Button("Show in Code")) {
+        if (ImGui::Button(ICON_CODE " Show in Code")) {
             g_codeFile = sf->path;
             g_codeLine = g_codeScrollTo = def ? def->line : 1;
             g_codeHold = true;

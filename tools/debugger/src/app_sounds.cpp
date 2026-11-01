@@ -89,10 +89,10 @@ void SoundsWindow() {
     SoundFile &sf = *sp;
     SndFile &snd = sf.snd;
     ImGui::BeginDisabled(!sf.dirty);
-    if (ImGui::Button("Save")) SaveSounds(sf);
+    if (ImGui::Button(ICON_SAVE " Save")) SaveSounds(sf);
     ImGui::SetItemTooltip("Writes the SND file (the old one is kept as .bak the first time) and the game reads it again.");
     ImGui::SameLine();
-    if (ImGui::Button("Revert")) {
+    if (ImGui::Button(ICON_REVERT " Revert")) {
         sf.error.clear();
         std::string error;
         if (!Snd_Parse(ReadWholeFile(GamePath(sf.path)), snd, &error)) sf.error = sf.path + ": " + error;
@@ -101,11 +101,11 @@ void SoundsWindow() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     static int addGroup = 0;
-    if (ImGui::Button("Add WAV files...")) ImGui::OpenPopup("add");
+    if (ImGui::Button(ICON_PLUS " Add WAV files...")) ImGui::OpenPopup("add");
     if (ImGui::BeginPopup("add")) {
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
         ImGui::InputInt("Group", &addGroup, 0);
-        if (ImGui::Button("Choose the files...")) {
+        if (ImGui::Button(ICON_FOLDER_OPEN " Choose the files...")) {
             for (const std::string &f : PickFiles(kWavFilter, true)) {
                 std::string wav;
                 if (!ReadWavFile(f, wav)) continue;
@@ -123,7 +123,7 @@ void SoundsWindow() {
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Stop")) PlaySoundA(nullptr, nullptr, 0);
+    if (ImGui::Button(ICON_STOP " Stop")) PlaySoundA(nullptr, nullptr, 0);
     ImGui::TextDisabled("%s%s  %zu sounds", sf.path.c_str(), sf.dirty ? " *" : "", snd.sounds.size());
     if (!sf.error.empty()) ImGui::TextColored(Ink(kRed), "%s", sf.error.c_str());
 
@@ -141,12 +141,12 @@ void SoundsWindow() {
         ImGui::SameLine();
         bool taken = (num[0] != s.group || num[1] != s.number) && Snd_Find(snd, num[0], num[1]) >= 0;
         ImGui::BeginDisabled(taken || (num[0] == s.group && num[1] == s.number));
-        if (ImGui::Button("Renumber")) {
+        if (ImGui::Button(ICON_LIST " Renumber")) {
             s.group = num[0], s.number = num[1];
             sf.dirty = true;
         }
         ImGui::EndDisabled();
-        if (ImGui::Button("Replace...")) {
+        if (ImGui::Button(ICON_UPLOAD " Replace...")) {
             std::vector<std::string> files = PickFiles(kWavFilter, false);
             std::string wav;
             if (!files.empty() && ReadWavFile(files[0], wav)) {
@@ -155,7 +155,7 @@ void SoundsWindow() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Save as...")) {
+        if (ImGui::Button(ICON_DOWNLOAD " Save as...")) {
             std::string name = "sound_" + std::to_string(s.group) + "_" + std::to_string(s.number) + ".wav";
             std::string path = PickSaveFile(kWavFilter, "wav", name);
             if (!path.empty()) {
@@ -165,7 +165,7 @@ void SoundsWindow() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Delete")) {
+        if (ImGui::Button(ICON_TRASH " Delete")) {
             snd.sounds.erase(snd.sounds.begin() + sf.sel);
             sf.sel = -1;
             sf.dirty = true;
@@ -187,7 +187,7 @@ void SoundsWindow() {
             ImGui::PushID(i);
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton("Play")) PlayWav(s.wav);
+            if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(s.wav);
             ImGui::TableNextColumn();
             char label[48];
             snprintf(label, sizeof(label), "%d, %d", s.group, s.number);

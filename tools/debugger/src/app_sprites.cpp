@@ -221,7 +221,7 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
     ImGui::SameLine();
     float addW = ImGui::CalcTextSize("Add PNG...").x + style.FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - addW));
-    if (ImGui::SmallButton("Add PNG...")) ImGui::OpenPopup("add");
+    if (ImGui::SmallButton(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
     ImGui::SetItemTooltip("Add sprites made of PNG files");
 
     int fg = -1, fn = -1;
@@ -431,7 +431,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     bool same = num[0] == s.group && num[1] == s.number;
     bool taken = !same && Sff_FindSprite(d, num[0], num[1]) >= 0;
     ImGui::BeginDisabled(taken || same || num[0] < 0 || num[1] < 0);
-    if (ImGui::Button("Renumber")) {
+    if (ImGui::Button(ICON_LIST " Renumber")) {
         s.group = num[0], s.number = num[1];
         SpritesChanged(sf);
     }
@@ -469,7 +469,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
         if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2) ImGui::NewLine();
     };
     ImGui::Spacing();
-    if (ImGui::Button("Replace...")) {
+    if (ImGui::Button(ICON_UPLOAD " Replace...")) {
         std::vector<std::string> files = PickFiles(kPngFilter, false);
         if (!files.empty()) {
             std::vector<SffSprite> made = Sff_SpritesOfPngs(d, files, s.pal >= 0 && d.pals[s.pal].group == 1 ? SFF_PAL_SHARED : SFF_PAL_OWN, SpriteLog);
@@ -483,7 +483,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     }
     ImGui::SetItemTooltip("Its picture from a PNG file (numbers and axis kept)");
     flow("Save PNG...");
-    if (ImGui::Button("Save PNG...")) {
+    if (ImGui::Button(ICON_DOWNLOAD " Save PNG...")) {
         std::string name = "sprite_" + std::to_string(s.group) + "_" + std::to_string(s.number) + ".png";
         std::string path = PickSaveFile(kPngFilter, "png", name), error;
         if (!path.empty()) {
@@ -494,7 +494,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
         }
     }
     flow("Duplicate");
-    if (ImGui::Button("Duplicate")) {
+    if (ImGui::Button(ICON_COPY " Duplicate")) {
         SffSprite copy = s;
         while (Sff_FindSprite(d, copy.group, copy.number) >= 0) copy.number++;
         d.sprites.insert(d.sprites.begin() + sf.sel + 1, copy);
@@ -504,7 +504,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     }
     ImGui::SetItemTooltip("A copy with the next free number in its group");
     flow("Delete");
-    if (ImGui::Button("Delete")) {
+    if (ImGui::Button(ICON_TRASH " Delete")) {
         d.sprites.erase(d.sprites.begin() + sf.sel);
         sf.sel = std::min(sf.sel, (int)d.sprites.size() - 1);
         SpritesChanged(sf);
@@ -617,7 +617,7 @@ void SpritesWindow() {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - w);
         ImGui::BeginDisabled(!dirty);
         if (dirty) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        bool save = ImGui::Button("Save");
+        bool save = ImGui::Button(ICON_SAVE " Save");
         if (dirty) ImGui::PopStyleColor();
         if (save) {
             PalSave(); // the ACT files first: the game reads them with the SFF
@@ -626,7 +626,7 @@ void SpritesWindow() {
         ImGui::SetItemTooltip("Writes the SFF file and the ACT files changed (the first time, the old ones are kept as "
                               ".bak); the game reads the SFF again.");
         ImGui::SameLine();
-        if (ImGui::Button("Revert")) {
+        if (ImGui::Button(ICON_REVERT " Revert")) {
             if (sf.dirty) {
                 Sff_Load(d, GamePath(sf.path), sf.pal.empty() ? "" : GamePath(sf.pal));
                 sf.dirty = false;
@@ -648,7 +648,7 @@ void SpritesWindow() {
         ImGui::InputInt("From number", &addNumber, 0);
         ImGui::Combo("Axis", &addAxis, "At the feet\0In the centre\0Top left\0");
         ImGui::Combo("Palette", &addPal, screen ? "The shared one (1,1)\0Their own\0" : "The character's (1,1)\0Their own\0");
-        if (ImGui::Button("Choose the files...")) {
+        if (ImGui::Button(ICON_FOLDER_OPEN " Choose the files...")) {
             std::vector<std::string> files = PickFiles(kPngFilter, true);
             if (!files.empty()) AddSprites(sf, files, addGroup, addNumber, addAxis, addPal);
             ImGui::CloseCurrentPopup();

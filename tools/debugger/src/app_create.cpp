@@ -192,7 +192,7 @@ void MoveTab() {
         const SndFile *snd = SndOf(pn);
         int i = snd ? Snd_Find(*snd, m.snd[0], m.snd[1]) : -1;
         ImGui::BeginDisabled(i < 0);
-        if (ImGui::SmallButton("Play")) PlayWav(snd->sounds[i].wav);
+        if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(snd->sounds[i].wav);
         ImGui::EndDisabled();
         if (snd && i < 0) {
             ImGui::SameLine();
@@ -221,7 +221,7 @@ void MoveTab() {
 
     ImGui::Separator();
     ImGui::BeginDisabled(!taken.empty() || m.state < 0 || g_applying);
-    if (ImGui::Button("Create the move")) {
+    if (ImGui::Button(ICON_WAND " Create the move")) {
         // At the end of the first state file, after one blank line
         SourceFile &sf = LoadSource((*st)[0]);
         std::string text = sf.text;
@@ -271,7 +271,7 @@ void MoveTab() {
             ImGui::EndDisabled();
         }
         ImGui::SameLine();
-        if (ImGui::SmallButton("Show in Code")) {
+        if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
             g_codeFile = f.madeIn;
             g_codeLine = g_codeScrollTo = f.madeLine;
             g_codeHold = true;
@@ -588,7 +588,7 @@ void CharacterTab() {
     ImGui::SameLine();
     HelpMarker("With the game running, the match starts again with it there; without, the match the game starts "
                "with (F5) has it. Either way it becomes the character worked on, as if picked in Explorer.");
-    if (ImGui::Button("Create the character")) CreateCharacter(c);
+    if (ImGui::Button(ICON_WAND " Create the character")) CreateCharacter(c);
     if (!c.status.empty()) {
         ImGui::SameLine();
         ImGui::PushTextWrapPos(0);
@@ -789,7 +789,7 @@ void StageTab() {
     if (f.zoffset < 0) f.zoffset = lh * 5 / 6;
 
     ImGui::SeparatorText("Images, from the back");
-    if (ImGui::Button("Add PNG files...")) {
+    if (ImGui::Button(ICON_PLUS " Add PNG files...")) {
         for (const std::string &p : PickFiles("PNG files (*.png)\0*.png\0", true)) {
             StageLayer l;
             if (LoadLayer(p, l)) f.layers.push_back(l);
@@ -857,7 +857,7 @@ void StageTab() {
     ImGui::Checkbox("add it to select.def", &f.select);
     ImGui::SameLine();
     ImGui::Checkbox("use it in the match", &f.use);
-    if (ImGui::Button("Create the stage")) CreateStage(f);
+    if (ImGui::Button(ICON_WAND " Create the stage")) CreateStage(f);
     if (!f.status.empty()) {
         ImGui::SameLine();
         ImGui::PushTextWrapPos(0);
@@ -870,11 +870,11 @@ void StageTab() {
 } // namespace
 
 void CreateMenu() {
-    if (ImGui::MenuItem("A move...")) g_tabAsked = kTabMove, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_BOLT " A move...")) g_tabAsked = kTabMove, ShowWindow("Create");
     ImGui::SetItemTooltip("An attack's state for the selected player's character, and the command that starts it.");
-    if (ImGui::MenuItem("A character...")) g_tabAsked = kTabChar, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_PERSON " A character...")) g_tabAsked = kTabChar, ShowWindow("Create");
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
-    if (ImGui::MenuItem("A stage...")) g_tabAsked = kTabStage, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_STAGE " A stage...")) g_tabAsked = kTabStage, ShowWindow("Create");
     ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower.");
 }
 

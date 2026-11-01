@@ -288,14 +288,14 @@ void ShowInFolder(const std::string &path) {
 }
 
 void FileMenuItems(const std::string &path, const std::string &pal) {
-    if (ImGui::MenuItem("Open")) OpenPath(path, true, pal);
+    if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open")) OpenPath(path, true, pal);
     // A character's AIR file: its actions drawn and edited (the character is the one worked on)
     if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
         WorkOn(g_rowChar);
         ShowWindow("Animation");
     }
-    if (ImGui::MenuItem("Show in folder")) ShowInFolder(path);
-    if (ImGui::MenuItem("Copy path")) ImGui::SetClipboardText(path.c_str());
+    if (ImGui::MenuItem(ICON_FOLDER " Show in folder")) ShowInFolder(path);
+    if (ImGui::MenuItem(ICON_COPY " Copy path")) ImGui::SetClipboardText(path.c_str());
 }
 
 // A word at the right of the tree node just drawn, when its label leaves room
@@ -545,7 +545,7 @@ void ExplorerWindow() {
         g_filter.Build();
     ImGui::SetItemTooltip("Shows the files whose path has one of the words (comma separated); -word hides them.");
     ImGui::SameLine();
-    if (ImGui::Button("Reload")) {
+    if (ImGui::Button(ICON_RESTART " Reload")) {
         Scan(true);
         g_defs.clear();
     }

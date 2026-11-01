@@ -192,13 +192,13 @@ void TakesSection() {
     if (ImGui::Combo("##recpn", &idx, "P1\0P2\0P3\0P4\0")) g_recPn = idx + 1;
     ImGui::SameLine();
     bool busy = g_lab.rec || g_lab.play || !g_lab.waiting.empty();
-    if (ImGui::Button("Record")) {
+    if (ImGui::Button(ICON_RECORD " Record")) {
         SendRaw("ikdbg.record(" + std::to_string(g_recPn) + (g_reset ? ", true)" : ", false)"));
         g_playing = -1;
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(!busy);
-    if (ImGui::Button("Stop")) SendRaw("ikdbg.stopTake()");
+    if (ImGui::Button(ICON_STOP " Stop")) SendRaw("ikdbg.stopTake()");
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::Checkbox("Reset the round first", &g_reset);
@@ -261,7 +261,7 @@ void TakesSection() {
         }
         ImGui::EndDisabled();
         ImGui::TableNextColumn();
-        if (ImGui::SmallButton("x")) {
+        if (ImGui::SmallButton(ICON_XMARK)) {
             g_takes.erase(g_takes.begin() + n);
             if (g_playing == (int)n) g_playing = -1;
             if (g_dummy.react == (int)n) {
@@ -282,7 +282,7 @@ void CharactersSection() {
     static std::vector<std::string> list;
     static std::string filter, picked;
     static bool listed;
-    if (!listed || ImGui::SmallButton("Look again")) list = ListDefs(false), listed = true;
+    if (!listed || ImGui::SmallButton(ICON_RESTART " Look again")) list = ListDefs(false), listed = true;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
     ImGui::InputTextWithHint("##filter", "filter", &filter);
