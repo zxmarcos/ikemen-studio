@@ -569,6 +569,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         AnalysisSettingsLine(key, value);
         LayoutSettingsLine(key, value);
         ThemeSettingsLine(key, value);
+    StartSettingsLine(key, value);
         CodeSettingsLine(key, value);
         MatchSettingsLine(key, value);
     }
@@ -589,6 +590,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     AnalysisSettingsWrite(buf);
     LayoutSettingsWrite(buf);
     ThemeSettingsWrite(buf);
+    StartSettingsWrite(buf);
     CodeSettingsWrite(buf);
     MatchSettingsWrite(buf);
     buf->append("\n");
@@ -667,6 +669,7 @@ void App_Frame() {
     SearchWindow();
     ProblemsWindow();
     PaletteFrame();
+    StartPageFrame();
     StatusBar();
     if (g_autoLaunch) {
         g_autoLaunch = false;

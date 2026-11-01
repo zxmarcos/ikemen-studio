@@ -16,7 +16,9 @@ namespace {
 struct ToolWindow {
     const char *name, *group;
     const char *nearby; // opened where it is not: next to the first of these that is open ("a|b")
+    bool advanced = false; // shown with View > Advanced tools, or when something asks for it
     bool open = false;
+    bool asked = false;    // advanced, but asked for
     bool dock = false; // opened from the menu: goes next to its neighbours
     bool floating = false;
     ImVec4 rect;       // floating: its place, applied on its next frame
@@ -31,21 +33,21 @@ ToolWindow g_windows[] = {
     {"Search", "Files", "Analysis|Console|Trace"},
     {"Problems", "Files", "Search|Analysis|Console|Trace"},
     {"Players", "Debugging", "Watch|Breakpoints|Roster|Analysis"},
-    {"Breakpoints", "Debugging", "Watch|Players"},
-    {"Watch", "Debugging", "Breakpoints|Players"},
+    {"Breakpoints", "Debugging", "Watch|Players", true},
+    {"Watch", "Debugging", "Breakpoints|Players", true},
     {"Inspector", "Debugging", "Stage|Sprites|Analysis"},
-    {"Trace", "Debugging", "Frame data|Console|Lab"},
+    {"Trace", "Debugging", "Frame data|Console|Lab", true},
     {"Frame data", "Debugging", "Trace|Console|Lab"},
-    {"Console", "Debugging", "Trace|Performance"},
-    {"Performance", "Debugging", "Console|Trace|Frame data"},
+    {"Console", "Debugging", "Trace|Performance", true},
+    {"Performance", "Debugging", "Console|Trace|Frame data", true},
     {"Lab", "Character", "Trace|Frame data|Console"},
-    {"Analysis", "Character", "Players|Inspector|Console"},
+    {"Analysis", "Character", "Players|Inspector|Console", true},
     {"Animation", "Character", "Inspector|Stage"},
     {"Sprites", "Character", "Sounds|Commands|Inspector"},
     {"Sounds", "Character", "Sprites|Commands|Inspector"},
     {"Commands", "Character", "Sprites|Sounds|Inspector"},
     {"Stage", "Stage and screens", "Fight screen|Motif|Inspector"},
-    {"Model", "Stage and screens", "Stage|Fight screen|Inspector"},
+    {"Model", "Stage and screens", "Stage|Fight screen|Inspector", true},
     {"Fight screen", "Stage and screens", "Motif|Storyboard|Stage|Inspector"},
     {"Motif", "Stage and screens", "Fight screen|Storyboard|Stage|Inspector"},
     {"Storyboard", "Stage and screens", "Motif|Fight screen|Stage|Inspector"},
@@ -61,34 +63,35 @@ ToolWindow g_windows[] = {
 enum CodeFile { kFollow, kStageDef, kFightDef }; // what Code shows in a workspace
 
 struct Workspace {
-    const char *name, *help, *layout;
+    const char *name, *icon, *help, *layout;
     CodeFile code;
     std::string saved; // as the user left it ("" until then)
 };
 
 Workspace g_spaces[] = {
-    {"Debug", "A fight tick by tick: the players, their states, what ran, the code.",
+    {"Test", ICON_LAB, "A fight tick by tick: the players, their states, what ran, the code.",
      "X0.19(Y0.5(L:Players,Explorer,Outline)(L:Watch,Breakpoints))"
      "(Y0.62(X0.66(L:Game)(L:Inspector))(X0.45(L:Trace,Frame data,Lab,Console,Performance,Search,Problems)(L:Code)))", kFollow},
-    {"Code", "Writing a character: the files and the outline, the editor in the middle, the Lint, the state graph "
+    {"Code", ICON_CODE, "Writing a character: the files and the outline, the editor in the middle, the Lint, the state graph "
              "and the search below it.",
      "X0.16(Y0.6(L:Explorer)(L:Outline))(X0.68(Y0.68(L:Code)(L:Problems,Analysis,Search,Console,Trace))(Y0.45(L:Game)(L:Inspector)))",
      kFollow},
-    {"Character", "A character's animations, sprites, sounds and commands; new moves and characters.",
+    {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands; new moves and characters.",
      "X0.16(Y0.5(L:Explorer)(L:Players,Outline))"
      "(X0.62(Y0.66(L:Animation)(L:Code,Console,Search,Problems))(Y0.38(L:Game)(L:Sprites,Sounds,Commands,Create)))",
      kFollow},
-    {"Stage", "The stage on the game, its def's sections and fields, its checks and 3D model.",
+    {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its checks and 3D model.",
      "X0.15(L:Explorer)(X0.7(Y0.64(L:Game)(X0.62(L:Code)(L:Console,Problems,Performance)))(L:Stage,Model))", kStageDef},
-    {"Screenpack", "The fight screen, the motif's screens, storyboards, the roster and fonts.",
+    {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, the roster and fonts.",
      "X0.17(Y0.4(L:Explorer)(L:Roster,Fonts))"
      "(X0.7(Y0.64(L:Game)(X0.6(L:Code)(L:Console,Problems)))(L:Fight screen,Motif,Storyboard))",
      kFightDef},
 };
 
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
-const int kLayoutVersion = 4;
+const int kLayoutVersion = 5;
 int g_layoutVersion;
+bool g_advanced;          // the advanced tools are shown
 int g_space;              // the workspace shown
 int g_spaceAsked = -1;    // picked: shown from the start of the next frame
 bool g_restoreAsked;
@@ -111,6 +114,8 @@ const char *WindowIcon(const char *name) {
     auto it = icons.find(name);
     return it == icons.end() ? "" : it->second;
 }
+
+bool Hidden(const ToolWindow &t) { return t.advanced && !g_advanced && !t.asked; }
 
 ToolWindow *FindTool(const char *name) {
     for (ToolWindow &t : g_windows)
@@ -289,7 +294,7 @@ void WorkspaceMenu() {
     for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
         char key[16];
         snprintf(key, sizeof(key), "Ctrl+%d", n + 1);
-        if (ImGui::MenuItem((std::string(n == 0 ? ICON_BUG : n == 1 ? ICON_CODE : n == 2 ? ICON_PERSON : n == 3 ? ICON_STAGE : ICON_DISPLAY) + "  " + g_spaces[n].name).c_str(), key, n == g_space)) g_spaceAsked = n;
+        if (ImGui::MenuItem((std::string(g_spaces[n].icon) + "  " + g_spaces[n].name).c_str(), key, n == g_space)) g_spaceAsked = n;
         ImGui::SetItemTooltip("%s", g_spaces[n].help);
     }
     ImGui::Separator();
@@ -304,7 +309,7 @@ void WorkspaceMenu() {
 bool BeginTool(const char *name, ImGuiWindowFlags flags) {
     ToolWindow *t = FindTool(name);
     IM_ASSERT(t);
-    if (!t->open) return false;
+    if (!t->open || Hidden(*t)) return false;
     ImGuiWindow *w = ImGui::FindWindowByName(name);
     if (t->floating) {
         // Floating in this workspace, where it was
@@ -326,7 +331,9 @@ bool BeginTool(const char *name, ImGuiWindowFlags flags) {
         if (strcmp(f, name) == 0 && w && w->DockNode && w->DockNode->TabBar)
             w->DockNode->TabBar->NextSelectedTabId = w->TabId;
     // Appearing does not take the focus, which would bring the last window begun to the front
-    if (ImGui::Begin(name, &t->open, flags | ImGuiWindowFlags_NoFocusOnAppearing)) return true;
+    bool shown = ImGui::Begin(name, &t->open, flags | ImGuiWindowFlags_NoFocusOnAppearing);
+    if (!t->open) t->asked = false;
+    if (shown) return true;
     ImGui::End();
     return false;
 }
@@ -335,7 +342,17 @@ void ShowWindow(const char *name) {
     ToolWindow *t = FindTool(name);
     if (!t) return;
     if (!t->open) t->open = t->dock = true;
+    t->asked = t->advanced;
     Front(*t);
+}
+
+bool AdvancedTools() { return g_advanced; }
+
+void SetAdvancedTools(bool on) {
+    g_advanced = on;
+    for (ToolWindow &t : g_windows)
+        if (t.advanced && t.open) t.dock = true; // back with its neighbours, its node may have gone
+    ImGui::MarkIniSettingsDirty();
 }
 
 const char *ToolName(int n) { return n >= 0 && n < IM_ARRAYSIZE(g_windows) ? g_windows[n].name : nullptr; }
@@ -456,6 +473,7 @@ void LayoutFrame() {
             if (ImGui::BeginMenu(ICON_TABLE " Windows")) {
                 const char *group = "";
                 for (ToolWindow &t : g_windows) {
+                    if (Hidden(t)) continue;
                     if (strcmp(group, t.group) != 0) ImGui::SeparatorText(group = t.group);
                     if (ImGui::MenuItem((std::string(WindowIcon(t.name)) + "  " + t.name).c_str(), nullptr, t.open)) {
                         t.open = !t.open;
@@ -473,13 +491,15 @@ void LayoutFrame() {
                 ThemeMenu();
                 ImGui::EndMenu();
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_BUG " Advanced tools", nullptr, g_advanced)) SetAdvancedTools(!g_advanced);
+            ImGui::SetItemTooltip("Breakpoints, Watch, Trace, Console, Performance, Analysis and the 3D Model window.\nOff, they stay out of the way until something asks for them.");
             ImGui::EndMenu();
         }
         // The workspaces as tabs
         ImGui::SameLine(0, ImGui::GetFontSize() * 2);
         for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
-            static const char *spaceIcons[] = {ICON_BUG, ICON_CODE, ICON_PERSON, ICON_STAGE, ICON_DISPLAY};
-            std::string label = std::string(spaceIcons[n]) + " " + g_spaces[n].name;
+            std::string label = std::string(g_spaces[n].icon) + " " + g_spaces[n].name;
             if (ImGui::Selectable(label.c_str(), n == g_space, 0, ImVec2(ImGui::CalcTextSize(label.c_str()).x, 0))) g_spaceAsked = n;
             ImGui::SetItemTooltip("%s (Ctrl+%d)", g_spaces[n].help, n + 1);
         }
@@ -559,6 +579,8 @@ void LayoutFrame() {
 void LayoutSettingsLine(const std::string &key, const std::string &value) {
     if (key == "Layout") {
         g_layoutVersion = atoi(value.c_str());
+    } else if (key == "AdvancedTools") {
+        g_advanced = value == "1";
     } else if (key == "Workspace") {
         for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++)
             if (value == g_spaces[n].name) g_space = n;
@@ -572,6 +594,7 @@ void LayoutSettingsLine(const std::string &key, const std::string &value) {
 void LayoutSettingsWrite(ImGuiTextBuffer *buf) {
     if (g_entered) g_spaces[g_space].saved = Capture();
     buf->appendf("Layout=%d\n", g_layoutVersion);
+    buf->appendf("AdvancedTools=%d\n", g_advanced);
     buf->appendf("Workspace=%s\n", g_spaces[g_space].name);
     for (const Workspace &w : g_spaces)
         if (!w.saved.empty()) buf->appendf("WorkspaceLayout=%s|%s\n", w.name, w.saved.c_str());

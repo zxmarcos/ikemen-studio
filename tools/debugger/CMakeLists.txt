@@ -1,4 +1,4 @@
-﻿# Ikemen GO debugger: a separate program that starts Ikemen GO with the
+# Ikemen GO debugger: a separate program that starts Ikemen GO with the
 # ikdbg.lua mod and talks to it over stdin/stdout (see README.md).
 # Windows only. Builds with MSVC or with MSYS2's gcc:
 #   cmake -S tools/debugger -B tools/debugger/build && cmake --build tools/debugger/build --config Release
@@ -66,6 +66,7 @@ add_executable(ikemen-debugger WIN32
   src/app_check.cpp
   src/app_explorer.cpp
   src/app_palette.cpp
+  src/app_start.cpp
   src/app_navigate.cpp
   src/app_problems.cpp
   src/app_sffpal.cpp

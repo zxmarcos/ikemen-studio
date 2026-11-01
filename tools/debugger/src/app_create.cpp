@@ -869,12 +869,17 @@ void StageTab() {
 
 } // namespace
 
+void CreateAsk(int tab) {
+    g_tabAsked = tab;
+    ShowWindow("Create");
+}
+
 void CreateMenu() {
-    if (ImGui::MenuItem(ICON_BOLT " A move...")) g_tabAsked = kTabMove, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_BOLT " A move...")) CreateAsk(kTabMove);
     ImGui::SetItemTooltip("An attack's state for the selected player's character, and the command that starts it.");
-    if (ImGui::MenuItem(ICON_PERSON " A character...")) g_tabAsked = kTabChar, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_PERSON " A character...")) CreateAsk(kTabChar);
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
-    if (ImGui::MenuItem(ICON_STAGE " A stage...")) g_tabAsked = kTabStage, ShowWindow("Create");
+    if (ImGui::MenuItem(ICON_STAGE " A stage...")) CreateAsk(kTabStage);
     ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower.");
 }
 

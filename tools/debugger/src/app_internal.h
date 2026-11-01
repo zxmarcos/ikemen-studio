@@ -248,6 +248,8 @@ float CheckboxWidth(const char *label); // what ImGui::Checkbox takes
 // The windows: the menu bar, each one opened or closed, the layouts (app_layout.cpp)
 bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden
 void ShowWindow(const char *name); // opened if closed, its tab to the front, without taking the keyboard
+bool AdvancedTools();              // the tools for looking inside a character are shown (View > Advanced tools)
+void SetAdvancedTools(bool on);
 void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
 void StatusBar();                  // the bar at the bottom, at the end of a frame
 const char *ToolName(int n);       // the windows, in the Windows menu's order; nullptr past the last
@@ -481,6 +483,12 @@ void ProblemsWindow();
 void FileMenu();
 void PaletteFrame();
 
+// app_start.cpp
+void AskStartPage();
+void StartPageFrame();
+void StartSettingsLine(const std::string &key, const std::string &value);
+void StartSettingsWrite(ImGuiTextBuffer *buf);
+
 // Commands
 // A ChangeState to state on command at the top of the [Statedef -1] the engine reads first (a new
 // one in the CMD file without any): the file it went in ("": not done), line where it starts.
@@ -491,7 +499,8 @@ std::vector<std::string> CommandNames(int pn); // its CMD file's, once each, sor
 void CommandsWindow();
 
 // Create: a move, ...
-void CreateMenu(); // the menu bar's
+void CreateMenu(); // File > New
+void CreateAsk(int tab); // Create's tab to the front: 0 a move, 1 a character, 2 a stage
 void CreateToolWindow();
 
 // Stage: the stage's def file and where its BGs were drawn in the last frame (editor_stage.go)
