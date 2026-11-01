@@ -1,9 +1,11 @@
-// Animation: the selected player's AIR element, its boxes edited here and on the game; or the
-// action a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def).
+// Animation: the selected player's AIR element, its boxes edited here and on the game; the action
+// a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def); or any
+// file of actions by itself (a stage's or a screen's def, an AIR file no character uses).
 #include "app_internal.h"
 #include "gif.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
+#include "ini.h"
 #include "sffedit.h"
 
 #include <cfloat>
@@ -21,6 +23,8 @@ bool g_onionSprite = false; // their sprites
 bool g_onionBefore = true, g_onionAfter = false; // the element before, the one after
 bool g_animFollow = true; // the Animation window shows what the selected player shows
 int g_animAction = 0, g_animElem = 1;
+static std::string g_animFile; // the file of actions shown by itself, "" none
+static int g_animFileN;    // bumped when it is asked for
 static int g_boxDraw = 0;  // a drag on the preview draws a box: 1 Clsn1, 2 Clsn2, 0 none
 static int g_animTick = -1; // the tick of the action while it plays
 static struct {
@@ -152,9 +156,10 @@ AnimTarget GetAnimTarget() {
 // two), shown in Animation, with the character that uses the file worked on. False: not an AIR file in use.
 bool AnimShowLine(const std::string &path, int line) {
     auto uses = [&](int pn) { return pn > 0 && NormPath(AirPath(pn)) == NormPath(path); };
+    bool isAir = path.size() > 4 && _stricmp(path.c_str() + path.size() - 4, ".air") == 0;
     // The character worked on, else a player in the match, else a character from disk whose def is
     // next to the file (the game not running)
-    if (!uses(WorkPn())) {
+    if (isAir && !uses(WorkPn())) {
         int pn = 0;
         for (const auto &kv : g_charFiles)
             if (uses(kv.first)) pn = kv.first;
@@ -171,7 +176,6 @@ bool AnimShowLine(const std::string &path, int line) {
                 WorkOn("");
             }
         }
-        if (!uses(WorkPn())) return false;
     }
     const AirFile &air = AirOf(LoadSource(path));
     const AirAction *act = nullptr;
@@ -181,8 +185,8 @@ bool AnimShowLine(const std::string &path, int line) {
     int elem = 1;
     for (size_t i = 0; i < act->elems.size(); i++)
         if (act->elems[i].first <= line) elem = (int)i + 1;
-    g_animAction = act->no, g_animElem = elem, g_animFollow = false;
-    ShowWindow("Animation");
+    // No character's: a def's actions, or an AIR file by itself
+    AnimOpenFile(isAir && uses(WorkPn()) ? "" : path, act->no, elem);
     // Called from Code, whose editor holds the keyboard: a dock node keeps showing the tab of the window
     // with the focus, so Code would come back as soon as ShowWindow's frames are over
     ImGui::ClearActiveID();
@@ -221,7 +225,53 @@ static void KeepActionShown(const SourceFile &sf) {
     g_animAction = it->first, g_animElem = 1;
 }
 
-// The changed AIR text goes to every player using that file (the file itself is saved apart).
+void AnimOpenFile(const std::string &path, int action, int elem, bool show) {
+    g_animFile = path;
+    g_animFileN++;
+    g_animFollow = false;
+    if (action >= 0) g_animAction = action, g_animElem = std::max(elem, 1);
+    if (!path.empty()) {
+        // No action asked for: the first one
+        const AirFile &air = AirOf(LoadSource(path));
+        if (action < 0 && !air.actions.empty()) g_animAction = air.actions.begin()->first, g_animElem = 1;
+        KeepActionShown(LoadSource(path));
+        // Its sprites in Sprites, at the element's
+        if (std::string sff = SpritesFileOf(path); !sff.empty()) {
+            SpriteFile &spr = SpriteFileAt(sff);
+            auto it = air.actions.find(g_animAction);
+            bool has = it != air.actions.end() && g_animElem <= (int)it->second.elems.size();
+            std::string what = ScreenFileName(path);
+            ShowInSprites(spr, has ? Sff_FindSprite(spr.doc, it->second.elems[g_animElem - 1].group, it->second.elems[g_animElem - 1].image) : -1,
+                          what.empty() ? "file " + path.substr(path.find_last_of("/\\") + 1) : what);
+        }
+    }
+    if (show) ShowWindow("Animation");
+}
+
+void AnimFollowFile() { g_animFollow = true; }
+
+// The file shown by itself, as a screen's element would be: what shows it now, in the game or not.
+static bool FileAnim(ScreenAnim &out) {
+    if (g_animFile.empty()) return false;
+    out = ScreenAnim();
+    out.sf = &LoadSource(g_animFile);
+    std::string sff = SpritesFileOf(g_animFile);
+    out.sprites = sff.empty() ? nullptr : &SpriteFileAt(sff);
+    out.label = ScreenFileName(g_animFile);
+    out.disk = out.label.empty();
+    if (!out.disk) {
+        out.label = "The " + out.label;
+        if (g_animFollow) StageBgAnim(g_animFile, out.action, out.elem); // the BG picked
+        int elem = 0;
+        if (out.action < 0 && ScreenShowsAction(g_animFile, g_animAction, &elem)) out.action = g_animAction, out.elem = elem;
+    }
+    SourceFile *sf = out.sf;
+    out.apply = [sf] { ApplyAnims(*sf); };
+    return true;
+}
+
+// The changed AIR text goes to every player using that file (the file itself is saved apart), and
+// to the screen or stage whose def it is.
 void ApplyAnims(SourceFile &sf) {
     sf.version++; // the Code window's editor takes the new text
     char dir[MAX_PATH];
@@ -235,6 +285,23 @@ void ApplyAnims(SourceFile &sf) {
         out.close();
         SendRaw("ikdbg.anims(" + std::to_string(kv.first) + ", " + LuaQuote(tmp) + ")");
     }
+    ScreenTextEdited(sf);
+}
+
+// The actions of a def, each one shown in Animation when clicked.
+void ActionList(SourceFile &sf) {
+    const AirFile &air = AirOf(sf);
+    char title[48];
+    snprintf(title, sizeof(title), "Animations (%zu)", air.actions.size());
+    ImGui::SeparatorText(title);
+    for (const auto &[no, a] : air.actions) {
+        char row[96];
+        snprintf(row, sizeof(row), "Action %d  %s##anim", no, a.name.c_str());
+        bool shown = no == g_animAction && NormPath(g_animFile) == NormPath(sf.path);
+        if (ImGui::Selectable(row, shown)) AnimOpenFile(sf.path, no);
+    }
+    if (ImGui::SmallButton(ICON_PLUS " New##animlist")) AnimOpenFile(sf.path, -1);
+    ImGui::SetItemTooltip("Shows this file's animations in Animation: its Action menu makes a new one");
 }
 
 // Those boxes as the element's own on every element where says so, of one action or (no -1) all.
@@ -429,9 +496,9 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     ImGui::SetItemTooltip("The element after drawn faint (its sprite green), here and on the game");
     SameLineFits(CheckboxWidth("sprites"));
     ImGui::Checkbox("sprites##onion", &g_onionSprite);
-    SameLineFits(CheckboxWidth("boxes"));
-    ImGui::Checkbox("boxes##onion", &g_onion);
     if (boxes) {
+        SameLineFits(CheckboxWidth("boxes"));
+        ImGui::Checkbox("boxes##onion", &g_onion);
         // What a drag changes, here and on the game
         const ImGuiStyle &style = ImGui::GetStyle();
         float radio = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x;
@@ -779,7 +846,7 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
 static AnimTarget ScreenAnimTarget(const ScreenAnim &sa) {
     AnimTarget t;
     t.sf = sa.sf;
-    if (g_animFollow) {
+    if (g_animFollow && sa.action >= 0) {
         g_animAction = sa.action;
         if (sa.elem > 0) g_animElem = sa.elem;
     }
@@ -1337,8 +1404,8 @@ static bool InNumberList(int no, const std::string &list) {
     return false;
 }
 
-bool AnimFromSprites(int pn, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append) {
-    std::string path = AirPath(pn);
+bool AnimFromSprites(int pn, const std::string &file, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append) {
+    std::string path = pn > 0 ? AirPath(pn) : file;
     if (path.empty() || sprites.empty()) return false;
     SourceFile &sf = LoadSource(path);
     std::vector<AirNewElem> elems;
@@ -1360,19 +1427,30 @@ bool AnimFromSprites(int pn, int no, int time, const std::vector<std::pair<int, 
     if (!ok) return false;
     g_animAction = no, g_animFollow = false;
     ApplyAnims(sf);
-    ShowWindow("Animation");
+    if (pn > 0) ShowWindow("Animation");
+    else AnimOpenFile(path, no, g_animElem);
     return true;
+}
+
+std::string AnimFileOfSprites(const std::string &sff) {
+    if (!g_animFile.empty() && NormPath(SpritesFileOf(g_animFile)) == NormPath(sff)) return g_animFile;
+    return ScreenDefOfSprites(sff);
 }
 
 void AnimationWindow() {
     if (!BeginTool("Animation")) return;
-    // What it shows: the selected player's animation, or that of the screen's element picked last
-    static bool onScreen = false;
-    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0;
-    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, onScreen = false;
-    if (g_screenAnimPicked != seenPicked) seenPicked = g_screenAnimPicked, onScreen = true, g_animFollow = true;
+    // What it shows: the selected player's animation, that of the screen's element picked last, or
+    // a file by itself, whichever came last
+    enum { Player, Element, File };
+    static int source = Player;
+    static int seenSel = -2, seenSelPicked = 0, seenPicked = 0, seenFile = 0;
+    static std::string seenWork;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, source = Player;
+    if (std::string work = WorkDef(); work != seenWork) seenWork = work, source = Player;
+    if (g_screenAnimPicked != seenPicked) seenPicked = g_screenAnimPicked, source = Element, g_animFollow = true;
+    if (g_animFileN != seenFile) seenFile = g_animFileN, source = File;
     ScreenAnim sa;
-    bool screen = onScreen && SelectedScreenAnim(sa);
+    bool screen = source == Element ? SelectedScreenAnim(sa) : source == File && FileAnim(sa);
     AnimTarget t = screen ? ScreenAnimTarget(sa) : GetAnimTarget();
     // An edit: the game shows it (a character's animations, or the screen's def)
     std::function<void(SourceFile &)> apply = [&](SourceFile &s) {
@@ -1385,7 +1463,7 @@ void AnimationWindow() {
     bool disk = !screen && t.pn == kDiskPn; // a character not in the match, from disk: no game to show it
     if (!screen && !t.e && !disk) {
         ImGui::TextDisabled("Pick a player in the Game or Players window, a character in Explorer, or an animated\n"
-                            "element of a screen (Fight screen, Motif, Storyboard).");
+                            "element of a screen or a stage. A right click in Explorer opens any def's animations.");
         ImGui::End();
         return;
     }
@@ -1401,7 +1479,10 @@ void AnimationWindow() {
 
     // Whose animations, the file, Save and Revert
     ImGui::AlignTextToFramePadding();
-    if (screen) {
+    if (screen && sa.disk) {
+        ImGui::TextColored(Ink(kOrange), "from disk");
+        ImGui::SetItemTooltip("Not what the game is showing: edited from disk. Save writes it.");
+    } else if (screen) {
         ImGui::TextUnformatted(sa.label.c_str());
         if (!t.live && sa.elem == 0) {
             ImGui::SameLine();
@@ -1445,8 +1526,11 @@ void AnimationWindow() {
         if (sf.Dirty()) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
         bool save = ImGui::Button(ICON_SAVE " Save");
         if (sf.Dirty()) ImGui::PopStyleColor();
-        if (save) SaveSource(sf);
-        ImGui::SetItemTooltip(screen ? "Writes the def" : "Writes the AIR file");
+        if (save) {
+            SaveSource(sf);
+            ScreenFileSaved(sf.path);
+        }
+        ImGui::SetItemTooltip(screen ? "Writes the file" : "Writes the AIR file");
         ImGui::SameLine();
         if (ImGui::Button(ICON_REVERT " Revert")) {
             ReadSource(sf);
@@ -1522,7 +1606,7 @@ void AnimationWindow() {
     }
     ImGui::SetItemTooltip("Every action of the file, by number or name");
     ImGui::SameLine(0, em);
-    ImGui::BeginDisabled(disk);
+    ImGui::BeginDisabled(disk || (screen && sa.action < 0));
     ImGui::Checkbox("Follow", &g_animFollow);
     ImGui::EndDisabled();
     ImGui::SetItemTooltip(screen ? "Show what the element shows on the screen" : "Show what the player shows on the game");
@@ -1541,8 +1625,8 @@ void AnimationWindow() {
                    "player's element. The sprite: drag near the player to move the element's offset. Changes go to "
                    "the game at once; Save writes the AIR file. Mouse wheel on the game: zoom; right button: pan.");
     } else {
-        HelpMarker(screen ? "The action this element of the screen shows, in its def ([Begin Action]). Every change goes "
-                            "to the game at once (the def is loaded again); Save writes the def, which its window edits too."
+        HelpMarker(screen ? "The animations of a def ([Begin Action]) or of an AIR file. Every change to a def the game is "
+                            "using goes to it at once (the def is loaded again); Save writes the file, which its window edits too."
                           : "A character picked in Explorer that is not in the match: its AIR file edited from disk, the "
                             "action drawn below. Save writes it; put the character in the match to see it on the game.");
     }
@@ -1553,7 +1637,8 @@ void AnimationWindow() {
         rightAlign(ImGui::CalcTextSize("Action").x + style.FramePadding.x * 2 + ImGui::GetFrameHeight());
         if (ImGui::BeginCombo("##actmenu", "Action", ImGuiComboFlags_WidthFitPreview | ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLargest)) {
             if (ImGui::Selectable(ICON_PLUS " New...")) want = "new";
-            if (!screen && ImGui::Selectable("From another AIR...")) want = "import";
+            if (ImGui::Selectable("From another file...")) want = "import";
+            ImGui::SetItemTooltip("Actions of an AIR file or of a def (a stage's, a screen's), with their sprites");
             ImGui::Separator();
             ImGui::BeginDisabled(!t.act);
             if (!screen && t.e && ImGui::Selectable("Show on the player")) {
@@ -1578,7 +1663,7 @@ void AnimationWindow() {
                 }
             }
             ImGui::SetItemTooltip("Boxes every element has alike become the action's default");
-            if (!screen && ImGui::Selectable("Save as GIF...")) want = "gif";
+            if (ImGui::Selectable("Save as GIF...")) want = "gif";
             ImGui::Separator();
             if (ImGui::Selectable("Delete...")) want = "delete";
             ImGui::EndDisabled();
@@ -1600,8 +1685,8 @@ void AnimationWindow() {
         if (want[0] == 'n' && want[1] == 'a' && t.act) newName = t.act->name;
         if (want[0] == 'g') gifSprites = spfFor;
         if (want[0] == 'i') {
-            // An AIR file and the SFF beside it: the one named alike, else the only one
-            std::vector<std::string> files = PickFiles("Animations (*.air)\0*.air\0All files (*.*)\0*.*\0", false);
+            // A file of actions and its SFF: the one a def names, else beside it, the one named alike or any
+            std::vector<std::string> files = PickFiles("Animations (*.air, *.def)\0*.air;*.def\0All files (*.*)\0*.*\0", false);
             want = nullptr;
             if (!files.empty()) {
                 importPath = files[0];
@@ -1612,14 +1697,15 @@ void AnimationWindow() {
                 importSff.clear();
                 std::filesystem::path air2(importPath);
                 std::error_code ec;
-                int found = 0;
+                std::string named = Ini_SpritesFile(importText);
+                if (!named.empty() && std::filesystem::exists(air2.parent_path() / named, ec))
+                    importSff = (air2.parent_path() / named).string();
                 for (const auto &de : std::filesystem::directory_iterator(air2.parent_path(), ec)) {
                     std::string ext = de.path().extension().string();
+                    if (!named.empty() && !importSff.empty()) break;
                     if (_stricmp(ext.c_str(), ".sff") != 0) continue;
-                    found++;
                     if (de.path().stem() == air2.stem() || importSff.empty()) importSff = de.path().string();
                 }
-                (void)found;
                 want = "import";
             }
         }
@@ -1707,7 +1793,7 @@ void AnimationWindow() {
         ImGui::BeginDisabled(importSff.empty());
         ImGui::Checkbox("With their sprites", &importWithSprites);
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip(importSff.empty() ? "No SFF file beside that AIR file" : "From %s; numbers in use are skipped", importSff.c_str());
+        ImGui::SetItemTooltip(importSff.empty() ? "No SFF file for that file" : "From %s; numbers in use are skipped", importSff.c_str());
         char label[48];
         snprintf(label, sizeof(label), ICON_DOWNLOAD " Import %zu actions", chosen.size());
         ImGui::BeginDisabled(chosen.empty());
@@ -1801,7 +1887,10 @@ void AnimationWindow() {
             ImGui::End();
             return;
         }
-        ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
+        if (air.actions.empty())
+            ImGui::TextDisabled("%s has no [Begin Action] yet: the Action menu makes one, sprites selected in Sprites too.", sf.path.c_str());
+        else
+            ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
         ImGui::End();
         return;
     }

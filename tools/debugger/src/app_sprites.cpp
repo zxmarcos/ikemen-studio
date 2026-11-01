@@ -211,6 +211,7 @@ void SaveSprites(SpriteFile &sf) {
     sf.doc.converted = false;
     Log(LogLine::Info, "Saved " + path);
     ScreenSpritesSaved(sf.path);
+    StageSpritesSaved(sf.path);
     FontSpritesSaved(sf.path);
     for (const auto &kv : g_charFiles) {
         auto f = kv.second.find("sprite");
@@ -704,18 +705,20 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     if (!free) ImGui::TextColored(Ink(kRed), "Those numbers are in use.");
     ImGui::SetItemTooltip("Animations using the old numbers are not changed");
 
-    if (pn > 0) {
+    // A character's AIR file, or the def these sprites are a screen's or a stage's
+    std::string actions = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    if (!actions.empty()) {
         ImGui::SeparatorText("Animation");
         static int action = 0, time = 4;
         ImGui::SetNextItemWidth(em * 5);
         ImGui::InputInt("Action", &action, 0);
         ImGui::SetNextItemWidth(em * 5);
         ImGui::InputInt("Ticks each", &time, 0);
-        const AirFile &air = AirOf(LoadSource(CharFile(pn, "anim")));
+        const AirFile &air = AirOf(LoadSource(actions));
         bool exists = air.actions.count(action) != 0;
         std::vector<std::pair<int, int>> numbers;
         for (int i : sel) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
-        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, action, time, numbers, exists))
+        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, actions, action, time, numbers, exists))
             Log(LogLine::Error, "Could not write the animation");
         ImGui::SetItemTooltip("One element for each sprite, in the order of the file");
     }
@@ -851,8 +854,8 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     ImGui::Spacing();
     CropAndResize(sf);
 
-    // The character's actions showing it
-    std::string air = pn > 0 ? CharFile(pn, "anim") : "";
+    // The actions showing it: the character's, or those of the def these sprites are for
+    std::string air = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
     if (!air.empty()) {
         ImGui::SeparatorText("Used by");
         const AirFile &af = AirOf(LoadSource(air));
@@ -864,10 +867,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
                 if (++n > 30) continue;
                 char label[64];
                 snprintf(label, sizeof(label), "Action %d, element %zu##%d", kv.first, e + 1, n);
-                if (ImGui::Selectable(label)) {
-                    g_animAction = kv.first, g_animElem = (int)e + 1, g_animFollow = false;
-                    ShowWindow("Animation");
-                }
+                if (ImGui::Selectable(label)) AnimOpenFile(pn > 0 ? "" : air, kv.first, (int)e + 1);
             }
         if (n > 30) ImGui::TextDisabled("and %d more", n - 30);
         if (n == 0) {

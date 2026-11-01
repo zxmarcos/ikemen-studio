@@ -72,6 +72,21 @@ bool IniSection::Floats(const char *key, float *out, int count) const {
     return true;
 }
 
+std::string Ini_SpritesFile(const std::string &text) {
+    IniFile ini;
+    Ini_Parse(text, ini);
+    for (const IniSection &s : ini.sections) {
+        const IniField *f = nullptr;
+        if (s.lower == "files") f = s.Field("spr") ? s.Field("spr") : s.Field("sff");
+        else if (s.lower == "bgdef" || s.lower == "scenedef") f = s.Field("spr");
+        if (!f || f->value.empty()) continue;
+        std::string v = f->value;
+        if (v.size() >= 2 && v.front() == '"' && v.back() == '"') v = v.substr(1, v.size() - 2);
+        return v;
+    }
+    return "";
+}
+
 // The first word of a section's name, as Ikemen's SectionName cuts it (at the first space).
 static std::string FirstWord(const std::string &lower) { return lower.substr(0, lower.find(' ')); }
 

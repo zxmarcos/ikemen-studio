@@ -113,6 +113,26 @@ func editorKeptSnd(filename string) *Snd {
 	return nil
 }
 
+// editorHideFiles: findActiveSff and findActiveSnd find these no more, so that a reload reads the
+// files again; the function it returns gives them their names back.
+func editorHideFiles(sff *Sff, snd *Snd) func() {
+	var sffName, sndName string
+	if sff != nil {
+		sffName, sff.filename = sff.filename, ""
+	}
+	if snd != nil {
+		sndName, snd.filename = snd.filename, ""
+	}
+	return func() {
+		if sff != nil {
+			sff.filename = sffName
+		}
+		if snd != nil {
+			snd.filename = sndName
+		}
+	}
+}
+
 // editorFightSection runs in loadFightScreen for each section it reads, and with "" when it ends.
 func editorFightSection(name, subname string) {
 	if debuggerAttached() {
@@ -290,6 +310,10 @@ func editorReloadFight(textFile string, keep bool) (err error) {
 		defer os.Remove(textFile)
 	}
 	edFight.keep = keep
+	// Its FX (fightfx.sff, common.snd) are found in use: read again unless kept
+	if f := sys.ffx["f"]; f != nil && (!keep || edFight.newSff) {
+		defer editorHideFiles(f.sff, f.snd)()
+	}
 	nf, err := loadFightScreen(from)
 	if err != nil {
 		return err

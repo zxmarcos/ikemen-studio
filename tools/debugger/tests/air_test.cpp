@@ -39,7 +39,73 @@ static std::string Line(const std::string &text, int n) {
     return text.substr(start, text.find('\n', start) - start);
 }
 
+// A stage's or a screen's def: actions among other sections, which edits of the actions leave as they are.
+static const char *kDef =
+    "[Info]\n"
+    "name = \"x\"\n"
+    "\n"
+    "[Begin Action 10] ; flag\n"
+    "10,0, 0,0, 5\n"
+    "10,1, 0,0, 5\n"
+    "\n"
+    ";the BG of the flag\n"
+    "[BG Flag]\n"
+    "type = anim\n"
+    "actionno = 10\n"
+    "\n"
+    "[Begin Action 20]\n"
+    "20,0, 0,0, -1\n"
+    "\n"
+    "[BGCtrlDef x]\n"
+    "ctrlid = 1\n";
+
+static void Def() {
+    static const char *const kKept[] = {"[Info]", "name = \"x\"", "[BG Flag]", "actionno = 10", "[BGCtrlDef x]", "ctrlid = 1"};
+    auto kept = [&](const std::string &text) {
+        for (const char *line : kKept)
+            if (text.find(line) == std::string::npos) return false;
+        return true;
+    };
+    AirFile air;
+    Air_Parse(kDef, air);
+    CHECK(air.actions.size() == 2);
+    CHECK(air.actions[10].elems.size() == 2 && air.actions[10].last == 6 && air.actions[10].name == "flag");
+    CHECK(air.actions[20].elems.size() == 1 && air.actions[20].last == 14);
+
+    std::string text = kDef;
+    CHECK(Air_NewAction(text, 30, "new", {AirNewElem()}));
+    CHECK(kept(text));
+    Air_Parse(text, air);
+    CHECK(air.actions.size() == 3 && air.actions[30].elems.size() == 1 && air.actions[30].name == "new");
+    CHECK(air.actions[20].last == 14); // the section before it not taken in
+
+    text = kDef;
+    Air_Parse(text, air);
+    CHECK(Air_CopyAction(text, air.actions[10], 11));
+    CHECK(kept(text));
+    Air_Parse(text, air);
+    CHECK(air.actions[11].elems.size() == 2 && air.actions[11].elems[1].image == 1);
+
+    text = kDef;
+    Air_Parse(text, air);
+    CHECK(Air_DeleteAction(text, air.actions[10]));
+    CHECK(kept(text));
+    CHECK(text.find("10,0") == std::string::npos && text.find("20,0") != std::string::npos);
+    Air_Parse(text, air);
+    CHECK(air.actions.size() == 1);
+
+    text = kDef;
+    Air_Parse(text, air);
+    CHECK(Air_RenumberAction(text, air.actions[20], 21));
+    CHECK(kept(text));
+    CHECK(Air_DuplicateElems(text, air.actions[10], {0, 1}));
+    CHECK(kept(text));
+    Air_Parse(text, air);
+    CHECK(air.actions[10].elems.size() == 4 && air.actions.count(21) == 1);
+}
+
 int main() {
+    Def();
     AirFile air;
     Air_Parse(kAir, air);
     CHECK(air.actions.size() == 2);

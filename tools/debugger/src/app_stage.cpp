@@ -16,7 +16,7 @@
 
 namespace app {
 
-std::string g_stageDef;
+std::string g_stageDef, g_stageSff;
 std::vector<FrameBg> g_frameBgs;
 StageView g_stageView;
 bool g_stagePick;
@@ -93,9 +93,10 @@ void MoveBg(int index, int dx, int dy) {
 }
 
 // The game loads the stage again from the text being edited (a file next to the def, which the
-// game deletes once read), or from the def on disk.
-void ReloadStage(SourceFile &sf, bool fromText) {
-    std::string arg;
+// game deletes once read), or from the def on disk; sprites: its SFF too (it was saved).
+void ReloadStage(SourceFile &sf, bool fromText, bool sprites) {
+    if (!Connected()) return;
+    std::string arg = "nil";
     if (fromText) {
         std::string tmp = sf.path + ".ikdbg";
         std::ofstream out(GamePath(tmp), std::ios::binary);
@@ -106,7 +107,12 @@ void ReloadStage(SourceFile &sf, bool fromText) {
         }
         arg = LuaQuote(tmp);
     }
-    Exec("local ok, err = debugReloadStage(" + arg + ") if not ok then error(err, 0) end");
+    Exec("local ok, err = debugReloadStage(" + arg + (sprites ? ", true" : "") + ") if not ok then error(err, 0) end");
+}
+
+void StageSpritesSaved(const std::string &path) {
+    if (g_stageSff.empty() || NormPath(g_stageSff) != NormPath(path)) return;
+    if (SourceFile *sf = StageSource()) ReloadStage(*sf, true, true);
 }
 
 // After an edit of the text: the game shows it at once.
@@ -324,6 +330,38 @@ std::string StageSelection() {
     return sf && g_stageBg >= 0 ? BgLabel(StageIni(*sf), g_stageBg) : "";
 }
 
+void StageBgAnim(const std::string &def, int &action, int &elem) {
+    if (g_stageDef.empty() || NormPath(g_stageDef) != NormPath(def)) return;
+    for (const FrameBg &b : g_frameBgs)
+        if (b.index == g_stageBg && b.action >= 0) action = b.action, elem = b.elem;
+}
+
+// A BG selected: Animation and Sprites show what it shows, as the Fight screen's elements do. The
+// action as readBackGround takes it (a normal BG with a sprite has none), or the one a BGCtrl gave it.
+static void ShowBg(int index) {
+    SourceFile *sf = StageSource();
+    const IniSection *s = sf ? BgSection(StageIni(*sf), index) : nullptr;
+    std::string sff = sf ? SpritesFileOf(sf->path) : "";
+    if (!s || sff.empty()) return;
+    const IniField *type = s->Field("type"), *spr = s->Field("spriteno"), *act = s->Field("actionno");
+    bool normal = type && !type->value.empty() && tolower((unsigned char)type->value[0]) == 'n';
+    int action = act && (!normal || !spr || spr->value.empty()) ? atoi(act->value.c_str()) : -1, elem = 1;
+    for (const FrameBg &b : g_frameBgs)
+        if (b.index == index && b.action >= 0) action = b.action, elem = b.elem;
+    int g = -1, n = -1;
+    if (action >= 0) {
+        AnimOpenFile(sf->path, action, elem, false);
+        AnimFollowFile();
+        auto it = AirOf(*sf).actions.find(action);
+        if (it != AirOf(*sf).actions.end() && elem >= 1 && elem <= (int)it->second.elems.size())
+            g = it->second.elems[elem - 1].group, n = it->second.elems[elem - 1].image;
+    } else if (spr) {
+        sscanf(spr->value.c_str(), "%d , %d", &g, &n);
+    }
+    SpriteFile &sprites = SpriteFileAt(sff);
+    ShowInSprites(sprites, g >= 0 ? Sff_FindSprite(sprites.doc, g, n) : -1, "stage");
+}
+
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   ImVec2 scale) {
     static int dragBg = -1;
@@ -367,6 +405,7 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             if (clicked) {
                 g_stageBg = b.index;
                 ShowWindow("Stage");
+                ShowBg(b.index);
                 dragBg = b.index;
                 rest = ImVec2(0, 0);
             }
@@ -619,11 +658,13 @@ void StageWindow() {
             if (ImGui::Selectable(label.c_str(), selSection == i)) {
                 selSection = i;
                 g_stageBg = selBg = bg;
+                if (bg >= 0) ShowBg(bg);
             }
             if (dim || ran) ImGui::PopStyleColor();
             if (dim) ImGui::SetItemTooltip("Not drawn in the last frame (off screen, invisible or disabled).");
             if (ran) ImGui::SetItemTooltip("Ran on the stage's last step.");
         }
+        ActionList(sf);
     }
     ImGui::EndChild();
     ImGui::SameLine();

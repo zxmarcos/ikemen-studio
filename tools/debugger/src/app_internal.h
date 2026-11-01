@@ -345,8 +345,15 @@ const AirFile &AirOf(const SourceFile &sf);
 AnimTarget GetAnimTarget();
 bool AnimShowLine(const std::string &path, int line); // the action and element at that line of an AIR file, in Animation
 void ApplyAnims(SourceFile &sf);
-// A new action of those sprites (group, number), or (append) more elements at its end; shown in Animation
-bool AnimFromSprites(int pn, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append);
+// A new action of those sprites (group, number), or (append) more elements at its end, in a player's
+// AIR file (pn > 0) or in that file of actions; shown in Animation
+bool AnimFromSprites(int pn, const std::string &file, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append);
+// Animation shows a file of actions by itself: a def's, an AIR file no character uses; "": the
+// character worked on. action -1: its first one. show: its window comes to the front.
+void AnimOpenFile(const std::string &path, int action = -1, int elem = 1, bool show = true);
+void AnimFollowFile();                                 // and goes on showing what the game shows of it
+std::string AnimFileOfSprites(const std::string &sff); // the file of actions those sprites are for, "" none
+void ActionList(SourceFile &sf);                       // a def's actions as rows, each opening in Animation
 void AnimationWindow();
 
 // Sprites
@@ -463,6 +470,8 @@ bool IsTextFile(const std::string &path); // not one no window edits as text (sf
 // Opens a file in the window that edits it: Code (text), Sprites (pal: an SFF v1's palette), Sounds
 void OpenPath(const std::string &path, bool keep, const std::string &pal = "");
 void ProjectFiles(std::vector<std::string> &out); // every file of the projects, for Go to file
+std::string SpritesFileOf(const std::string &file); // the SFF of a def, or of an AIR file by itself; "" none
+std::string DefFile(const std::string &def, const char *key); // the file a def's key names, found; "" none
 void ExplorerWindow();
 // The character the windows work on (Analysis, Sounds, Commands, Sprites): the player selected in
 // the game, or the character picked in Explorer since (with the game not running: the toolbar's
@@ -544,8 +553,9 @@ struct FrameBg {
     ImVec2 k;    // picture pixels per unit of its start
     int layer;
     bool tiled;
+    int action, elem; // the action of the def it shows, -1 a sprite; its element, 1-based
 };
-extern std::string g_stageDef;
+extern std::string g_stageDef, g_stageSff; // as the game names them
 extern std::vector<FrameBg> g_frameBgs;
 // The camera the frame was drawn with and the stage's limits, in the world (a character's
 // pos * localscl); see editorStageGeometry in editor_stage.go
@@ -581,7 +591,8 @@ void StageWindow();
 SourceFile *StageSource();                   // the stage's def, nullptr when not known
 const IniFile &StageIni(const SourceFile &sf); // parsed, again when its text changes
 void StageEdited(SourceFile &sf);             // after an edit of its text: the game shows it
-void ReloadStage(SourceFile &sf, bool fromText);
+void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
+void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the
 // Game window its nodes outlined and picked
 void OnModel(const Json &j);
@@ -635,9 +646,17 @@ struct ScreenAnim {
     SpriteFile *sprites = nullptr; // the screen's SFF, nullptr: not known
     std::string label;           // as "[Lifebar] p1.front50 (fight screen)"
     int action = -1, elem = 0;   // shown now (elem 0: not on screen)
+    bool disk = false;           // a file the game is not using
     std::function<void()> apply; // after an edit of sf's text: the game shows it
 };
 bool SelectedScreenAnim(ScreenAnim &out);
+std::string ScreenFileName(const std::string &def);      // what the game uses that def as ("stage"), "" not in use
+bool ScreenShowsAction(const std::string &def, int action, int *elem); // something of that def in use shows it now
+void ScreenTextEdited(SourceFile &sf);                   // that def's text changed: the game shows it, if it is using it
+void ScreenFileSaved(const std::string &path);           // a file a screen reads besides its def (fightfx.air) was saved
+std::string ScreenDefOfSprites(const std::string &sff);  // the def in use whose SFF that is, "" none
+std::string ScreenSpritesOf(const std::string &def);     // the SFF the game has for a def in use, "" none
+void StageBgAnim(const std::string &def, int &action, int &elem); // what the BG selected shows, when def is the stage's
 extern int g_screenAnimPicked; // bumped when such an element is picked
 extern int g_screenPicked;     // bumped when any element of a screen is picked
 // The SFF of the screen whose element was picked last; what: as "motif"; sprite: the index of the

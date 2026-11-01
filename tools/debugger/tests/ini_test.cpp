@@ -124,7 +124,16 @@ static void TestKfm() {
     for (int i : bgs) CHECK(f.sections[i].Field("type") != nullptr);
 }
 
+static void TestSpritesFile() {
+    CHECK(Ini_SpritesFile("[Files]\nspr = \"a.sff\"\nsnd = a.snd\n") == "a.sff");  // a motif's
+    CHECK(Ini_SpritesFile("[Info]\nname = x\n[Files]\nsff = fight.sff\n") == "fight.sff"); // a fight screen's
+    CHECK(Ini_SpritesFile("[BGdef]\nspr = stage.sff\n") == "stage.sff");
+    CHECK(Ini_SpritesFile("[SceneDef]\nspr = intro.sff\n") == "intro.sff");
+    CHECK(Ini_SpritesFile("[Info]\nspr = no.sff\n").empty());
+}
+
 int main() {
+    TestSpritesFile();
     TestParse();
     TestEdits();
     TestSelectors();

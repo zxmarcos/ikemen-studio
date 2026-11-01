@@ -111,6 +111,28 @@ stops being linked to the others that shared its picture. No layers, by choice:
 people draw sprites in programs made for it, and export and import go there and
 back.
 
+**Stages' and screenpacks' animations and sprites as a character's** (2026-11-01).
+Animation shows, besides a player's and a picked element's, a file of actions by
+itself (`AnimOpenFile`, `g_animFile`): a stage's def, a screen's def, an AIR file
+no character uses (`fightfx.air`), from Explorer's menu, the Stage and Fight
+screen/Motif/Storyboard windows' Animations list (every action, on screen or
+not: KO, PERFECT, WINNER...), Code's Animation button, or a BG picked (the frame's
+`bg` says its action and element, `stage` its SFF; `ShowBg`). It needs neither the
+game nor the element on screen: a file the game is not using says "from disk".
+`SpritesFileOf` finds its SFF (the game's for a def in use, else the def's `spr`,
+a fight def's `sff`, `fightfx.sff` for `fightfx.air`, one named alike). `ApplyAnims`
+ends in `ScreenTextEdited`, so every edit of a def in use reloads it;
+`ScreenFileSaved` has the fight screen read `fightfx.air` when saved (the engine
+reads it from disk: no live preview of it). The whole Action menu works on them
+(sprites into new actions too, `AnimFileOfSprites`). Saving a stage's SFF reloads
+it: `findActiveSff` would lend the old one, so `editorHideFiles` takes the name
+off it while loading (the fight screen's FX the same way, also `common.snd`).
+The Stage and Screenpack workspaces now hold Game over Animation and the
+stage/screen window over Assets. An action a BG uses cannot be deleted live: the
+engine refuses ("Invalid BG action"), keeps the stage, and the Checks say so.
+The engine stays on NOW LOADING with `stages/interactivestage.def` under
+`test_ui.ps1` (its `attachedChar`): a copy without that line plays.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all

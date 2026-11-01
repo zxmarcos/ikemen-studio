@@ -51,8 +51,8 @@ ToolWindow g_windows[] = {
     {"Trace", "", "", true, "Testing"},
     {"Analysis", "", "", true, "Testing"},
     {"Performance", "", "", true, "Testing"},
-    {"Animation", "Making", "Inspector|Stage editor"},
-    {"Assets", "Making", "Inspector|Animation"},
+    {"Animation", "Making", "Code|Inspector|Stage editor"},
+    {"Assets", "Making", "Inspector|Stage editor|Screenpack|Animation"},
     {"Sprites", "", "", false, "Assets"},
     {"Sounds", "", "", false, "Assets"},
     {"Commands", "", "", false, "Assets"},
@@ -86,13 +86,13 @@ Workspace g_spaces[] = {
      "X0.16(L:Project)(X0.68(Y0.72(L:Code)(L:Output))(L:Game))", kFollow},
     {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands; new moves and characters.",
      "X0.15(L:Project,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets,Create)))", kFollow},
-    {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its checks and 3D model.",
-     "X0.15(L:Project)(X0.7(Y0.72(L:Game)(L:Code,Output))(L:Stage editor))", kStageDef},
-    {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, the roster and fonts.",
-     "X0.15(L:Project)(X0.7(Y0.72(L:Game)(L:Code,Output))(L:Screenpack))", kFightDef},
+    {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its animations, sprites, checks and 3D model.",
+     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
+    {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, their animations and sprites, the roster and fonts.",
+     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
 };
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
-const int kLayoutVersion = 6;
+const int kLayoutVersion = 7;
 int g_layoutVersion;
 bool g_advanced;          // the advanced tools are shown
 int g_space;              // the workspace shown

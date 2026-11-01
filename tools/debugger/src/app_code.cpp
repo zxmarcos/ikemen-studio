@@ -626,11 +626,15 @@ void CodeWindow() {
     ImGui::Checkbox("Follow the state", &follow);
     ImGui::SameLine();
     if (ImGui::SmallButton("Statedef")) JumpTo(stateSrc);
-    // An AIR file: the action and element under the cursor, drawn in Animation (which has "Show in Code" back)
-    if (shown && shown->path.size() > 4 && _stricmp(shown->path.c_str() + shown->path.size() - 4, ".air") == 0) {
+    // An AIR file, or a def with actions: the action and element under the cursor, drawn in Animation
+    // (which has "Show in Code" back)
+    bool hasActions = shown && shown->path.size() > 4 &&
+                      (_stricmp(shown->path.c_str() + shown->path.size() - 4, ".air") == 0 ||
+                       (_stricmp(shown->path.c_str() + shown->path.size() - 4, ".def") == 0 && !AirOf(*shown).actions.empty()));
+    if (hasActions) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Animation") && !AnimShowLine(shown->path, dbg::Editor_CursorLine(shown->ed)))
-            Log(LogLine::Info, "No character's def in the match or next to " + shown->path + " uses it, or it has no action.");
+            Log(LogLine::Info, shown->path + " has no action there.");
         ImGui::SetItemTooltip("Show the action and element under the cursor in Animation");
     }
     if (dirty) {

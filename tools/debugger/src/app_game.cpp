@@ -172,6 +172,7 @@ void PollFrames() {
     }
     const Json &stage = j["stage"];
     g_stageDef = stage["def"].str();
+    g_stageSff = stage["sff"].str();
     StageView &sv = g_stageView;
     sv.ok = !stage["cam"].isNull();
     sv.free = stage["free"].truthy();
@@ -191,7 +192,7 @@ void PollFrames() {
     for (const auto &b : stage["bg"].items)
         g_frameBgs.push_back({b[size_t(0)].i(),
                               ImVec4((float)b[1].num(), (float)b[2].num(), (float)b[3].num(), (float)b[4].num()),
-                              ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy()});
+                              ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy(), b[9].i(), b[10].i()});
     ReadModelGeometry(stage["mdl"]);
     ReadScreenGeometry(j);
     UpdateInputHistory();

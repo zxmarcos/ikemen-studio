@@ -20,6 +20,8 @@ type editorStageBg struct {
 	k     [2]float32 // pixels per unit of the BG's start
 	layer int32
 	tiled bool
+	// The action of the def it shows ([Begin Action], -1: a sprite) and its element, 1-based
+	action, elem int32
 }
 
 type EditorStage struct {
@@ -188,12 +190,14 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 		k:     [2]float32{xcs * bgscl * sys.widthScale, ycs * bgscl * sys.heightScale},
 		layer: b.layerno,
 		tiled: b.anim.tile.xflag != 0 || b.anim.tile.yflag != 0,
+		action: b.actionno,
+		elem:   a.curelem + 1,
 	})
 }
 
 // editorStageGeometry adds the stage to the frame geometry and starts the next frame's list:
 //
-//	"stage": {"def" (alone out of a match), "free": the editor's camera is on,
+//	"stage": {"def" and "sff" (alone out of a match), "free": the editor's camera is on,
 //	  "cam": [x, y, s, gl, gameWidth, widthScale, heightScale]: a point (X, Y) of the world (a
 //	    character's pos * localscl) is at picture pixel ((X - x) * s + gameWidth/2) * widthScale,
 //	    (Y * s - y + gl) * heightScale,
@@ -204,7 +208,7 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 //	  "time": the stage's time, "ranAt": the stage time of its last step,
 //	  "bgc": [[ran on that step, starttime, endtime, looptime, [BG indices]], ...] the BGCtrls
 //	    (the def's [BGCtrl ...] sections, in order),
-//	  "bg": [[index, x, y, w, h, kx, ky, layer, tiled], ...],
+//	  "bg": [[index, x, y, w, h, kx, ky, layer, tiled, action, elem], ...],
 //	  "mdl": its 3D model's nodes outlined (editorModelGeometry)}
 func editorStageGeometry(b []byte) []byte {
 	s := sys.stage
@@ -225,6 +229,10 @@ func editorStageGeometry(b []byte) []byte {
 	c := &sys.cam
 	b = append(b, `,"stage":{"def":`...)
 	b = editorJSONString(b, s.def)
+	if s.sff != nil {
+		b = append(b, `,"sff":`...)
+		b = editorJSONString(b, s.sff.filename)
+	}
 	if !editorInMatch() {
 		// The last match's stage, not drawn: only which one it is
 		return append(b, '}')
@@ -299,6 +307,10 @@ func editorStageGeometry(b []byte) []byte {
 			b = strconv.AppendInt(b, int64(d.layer), 10)
 			b = append(b, ',')
 			b = strconv.AppendBool(b, d.tiled)
+			for _, v := range [...]int32{d.action, d.elem} {
+				b = append(b, ',')
+				b = strconv.AppendInt(b, int64(v), 10)
+			}
 			b = append(b, ']')
 		}
 	}
@@ -329,9 +341,10 @@ func editorMoveStageBg(index int, dx, dy float32) error {
 
 // editorReloadStage loads the stage's def again and puts it in place of the one in use;
 // the match goes on (the camera keeps its position, the stage goes on: editorKeepStage; its
-// SFF and model are not read again). textFile, when not empty, is read instead of the def, then
-// deleted: unsaved text, written next to it (its files are found from where it is).
-func editorReloadStage(textFile string) (err error) {
+// SFF and model are not read again, the SFF unless sprites: it was saved). textFile, when not
+// empty, is read instead of the def, then deleted: unsaved text, written next to it (its files are
+// found from where it is).
+func editorReloadStage(textFile string, sprites bool) (err error) {
 	old := sys.stage
 	if old == nil {
 		return fmt.Errorf("no stage")
@@ -350,6 +363,9 @@ func editorReloadStage(textFile string) (err error) {
 	modelPlayback := editorModelPlayback(old.model)
 	edStage.reloading = true
 	defer func() { edStage.reloading = false }()
+	if sprites {
+		defer editorHideFiles(old.sff, nil)()
+	}
 	ns, err := loadStage(from, false)
 	if err != nil {
 		return err
@@ -454,6 +470,7 @@ func editorStageFunctions(l *lua.LState) {
 		/*Load the stage's def file again and use it at once; the match goes on.
 		@function debugReloadStage
 		@tparam[opt] string textFile Read this file instead, then delete it (unsaved text, in the def's folder).
+		@tparam[opt] boolean sprites Read the SFF again (after an edit of the SFF).
 		@treturn boolean ok
 		@treturn string error*/
 		if !debuggerAttached() {
@@ -463,7 +480,7 @@ func editorStageFunctions(l *lua.LState) {
 		if !nilArg(l, 1) {
 			textFile = strArg(l, 1)
 		}
-		return result(l, editorReloadStage(textFile))
+		return result(l, editorReloadStage(textFile, !nilArg(l, 2) && boolArg(l, 2)))
 	})
 	luaRegister(l, "debugSwapStage", func(l *lua.LState) int {
 		/*Put another stage in place of the one in use; the match goes on.

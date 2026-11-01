@@ -135,10 +135,16 @@ its tab; without room for every name, the tabs show their icons.
   the right.
 - **Character**: Project and Fighters on the left; Animation in the middle
   (Code and Output in tabs); Game above Assets and Create on the right.
-- **Stage**: Project on the left; Game, with Code (the stage's def) and Output
-  below it; Stage editor on the right.
-- **Screenpack**: Project on the left; Game, with Code (the fight screen's def)
-  and Output below it; Screenpack on the right.
+- **Stage**: Project on the left; Game, with Animation, Code (the stage's def)
+  and Output below it; Stage editor above Assets on the right.
+- **Screenpack**: Project on the left; Game, with Animation, Code (the fight
+  screen's def) and Output below it; Screenpack above Assets on the right.
+
+Animation and Sprites work on stages and screenpacks as on characters: the Stage,
+Fight screen, Motif and Storyboard windows list every `[Begin Action]` of their def,
+on screen or not; a background picked on the game shows its action and sprite; a
+right click in Explorer opens any def's animations or an AIR file such as
+`fightfx.air`, with the game running or not.
 
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code

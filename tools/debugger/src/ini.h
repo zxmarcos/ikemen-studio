@@ -32,6 +32,10 @@ struct IniFile {
 
 void Ini_Parse(const std::string &text, IniFile &out);
 
+// The SFF a def's text names, as written: a motif's or a storyboard's spr, a fight screen's sff,
+// a stage's spr; "" none.
+std::string Ini_SpritesFile(const std::string &text);
+
 // Edits ('\n' line ends). Each returns false when it could not be done (the section moved).
 // A field's line is replaced (its comment kept; an empty value removes it), or added after the
 // section's last field.

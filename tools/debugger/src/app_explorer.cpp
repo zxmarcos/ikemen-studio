@@ -292,8 +292,11 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
     // A character's AIR file: its actions drawn and edited (the character is the one worked on)
     if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
         WorkOn(g_rowChar);
-        ShowWindow("Animation");
+        AnimOpenFile("");
     }
+    // Actions of their own: a stage's or a screen's def, an AIR file no character uses
+    bool actions = g_rowChar.empty() && (ExtOf(path) == "air" || (ExtOf(path) == "def" && !SpritesFileOf(path).empty()));
+    if (actions && ImGui::MenuItem("Open in Animation")) AnimOpenFile(path);
     if (ImGui::MenuItem(ICON_FOLDER " Show in folder")) ShowInFolder(path);
     if (ImGui::MenuItem(ICON_COPY " Copy path")) ImGui::SetClipboardText(path.c_str());
 }
@@ -310,10 +313,10 @@ void RowNote(const char *text, ImU32 color, const std::string &label) {
 bool Passes(const std::string &path) { return !g_filter.IsActive() || g_filter.PassFilter(path.c_str()); }
 
 // A def's files that pass the filter (all of them when its project's name does)
-bool AnyPasses(const std::string &def, bool all) {
+bool AnyPasses(const std::string &def, bool all, int depth = 0) {
     if (all || Passes(def)) return true;
     for (const DefEntry &f : DefFiles(def))
-        if (Passes(f.path)) return true;
+        if (Passes(f.path) || (depth < 2 && f.exists && ExtOf(f.path) == "def" && AnyPasses(f.path, false, depth + 1))) return true;
     return false;
 }
 
@@ -435,6 +438,25 @@ bool Group(const char *label, size_t count, bool open = true) {
 } // namespace
 
 bool IsTextFile(const std::string &path) { return !IsBinary(path); }
+
+std::string DefFile(const std::string &def, const char *key) {
+    for (const DefEntry &f : DefFiles(def))
+        if (f.key == key) return f.path;
+    return "";
+}
+
+std::string SpritesFileOf(const std::string &file) {
+    if (std::string inUse = ScreenSpritesOf(file); !inUse.empty()) return inUse;
+    if (ExtOf(file) == "air") {
+        // The fight screen's FX; else the SFF named alike
+        if (std::string fight = FightScreenDef(); !fight.empty() && NormPath(DefFile(fight, "fightfx.air")) == NormPath(file))
+            return DefFile(fight, "fightfx.sff");
+        std::string alike = file.substr(0, file.size() - 3) + "sff";
+        return GameFileExists(alike) ? alike : "";
+    }
+    if (std::string spr = DefFile(file, "spr"); !spr.empty()) return spr;
+    return DefFile(file, "sff");
+}
 
 std::string SelectDef() {
     if (!g_selectDef.empty()) return g_selectDef;

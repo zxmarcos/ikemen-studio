@@ -181,6 +181,10 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
 // keep: the game keeps the SFF, SND and fonts in use (an edit of the text, not of the files);
 // sprites: the SFF all the same (it was saved).
 static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = false, bool sprites = false) {
+    if (!Connected()) {
+        d.pending = false;
+        return;
+    }
     std::string arg = "nil";
     if (fromText) {
         // One file per reload: the game deletes each once read, maybe after the next is written
@@ -462,6 +466,7 @@ static void ScreenWindow(ScreenDef &d) {
             }
             if (!drawn) ImGui::PopStyleColor();
         }
+        ActionList(sf);
     }
     ImGui::EndChild();
     ImGui::SameLine();
@@ -626,6 +631,52 @@ void ScreenSpritesSaved(const std::string &path) {
     for (ScreenDef *d : g_screens)
         if (!d->sff.empty() && NormPath(d->sff) == NormPath(path))
             if (SourceFile *sf = d->Source()) Reload(*d, *sf, true, true, true);
+    // The fight screen's FX: the SFF they read when the fight screen is loaded
+    if (SourceFile *sf = g_fight.Source())
+        if (NormPath(DefFile(g_fight.def, "fightfx.sff")) == NormPath(path)) Reload(g_fight, *sf, true, true, true);
+}
+
+static ScreenDef *ScreenOfDef(const std::string &def) {
+    for (ScreenDef *d : g_screens)
+        if (!d->def.empty() && NormPath(d->def) == NormPath(def)) return d;
+    return nullptr;
+}
+
+std::string ScreenFileName(const std::string &def) {
+    if (ScreenDef *d = ScreenOfDef(def)) return d->what;
+    return !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(def) ? "stage" : "";
+}
+
+bool ScreenShowsAction(const std::string &def, int action, int *elem) {
+    if (ScreenDef *d = ScreenOfDef(def)) {
+        for (const FrameFightItem &f : d->items)
+            if (f.action == action) return *elem = f.elem, true;
+    } else if (!g_stageDef.empty() && NormPath(g_stageDef) == NormPath(def)) {
+        for (const FrameBg &b : g_frameBgs)
+            if (b.action == action) return *elem = b.elem, true;
+    }
+    return false;
+}
+
+void ScreenTextEdited(SourceFile &sf) {
+    if (ScreenDef *d = ScreenOfDef(sf.path)) Edited(*d, sf);
+    else if (!g_stageDef.empty() && NormPath(g_stageDef) == NormPath(sf.path)) StageEdited(sf);
+}
+
+void ScreenFileSaved(const std::string &path) {
+    if (g_fight.def.empty() || NormPath(DefFile(g_fight.def, "fightfx.air")) != NormPath(path)) return;
+    if (SourceFile *sf = g_fight.Source()) Reload(g_fight, *sf, true, true);
+}
+
+std::string ScreenDefOfSprites(const std::string &sff) {
+    for (ScreenDef *d : g_screens)
+        if (!d->def.empty() && NormPath(d->sff) == NormPath(sff)) return d->def;
+    return !g_stageSff.empty() && NormPath(g_stageSff) == NormPath(sff) ? g_stageDef : "";
+}
+
+std::string ScreenSpritesOf(const std::string &def) {
+    if (ScreenDef *d = ScreenOfDef(def)) return d->sff;
+    return !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(def) ? g_stageSff : "";
 }
 
 } // namespace app
