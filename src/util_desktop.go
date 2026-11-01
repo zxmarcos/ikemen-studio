@@ -27,6 +27,9 @@ func ShowErrorDialog(message string) {
 
 // Returns true if the user chose to retry
 func ShowRetryDialog(message string) bool {
+	if retry, answered := editorRetryLoad(message); answered {
+		return retry
+	}
 	return dialog.Message("%s", message).Title("I.K.E.M.E.N RetryLoadOnError").YesNo()
 }
 

@@ -305,6 +305,7 @@ func editorFrameGeometry(winW, winH int32) []byte {
 	b = debugTriggerGeometry(b)
 	b = editorStageGeometry(b)
 	b = editorScreenGeometry(b)
+	b = editorLoadGeometry(b)
 	b = append(b, '}')
 	f.geom = b
 	return b

@@ -130,9 +130,16 @@ off it while loading (the fight screen's FX the same way, also `common.snd`).
 The Stage and Screenpack workspaces now hold Game over Animation and the
 stage/screen window over Assets. An action a BG uses cannot be deleted live: the
 engine refuses ("Invalid BG action"), keeps the stage, and the Checks say so.
-The engine stays on NOW LOADING with `stages/interactivestage.def` under
-`test_ui.ps1` (its `attachedChar`): a copy without that line plays. The engine from
-before this work does the same; the cause is not known yet.
+`stages/interactivestage.def` of the release does not load on this engine: its
+attached character's `.zss` writes `shader` in an Explod, which upstream's develop
+now calls `shader.name` (one word; the file is the release's, so not changed here).
+It looked stuck on NOW LOADING because the engine's own dialog (`RetryLoadOnError`) was
+waiting behind the hidden window: found with a goroutine dump, `pprof.Lookup
+("goroutine")` from a temporary file. With `-ikdbg` the question comes to the Game
+window (`src/editor_load.go`, `editorRetryLoad`, one line in `ShowRetryDialog`): the
+error with Retry and Give up, the game waiting and its frames going on. An attached
+character gives some of readEntity's fields as a Go nil, which even `type()` cannot
+read: they are dropped there. The mod's hook now reports with a traceback.
 
 A def's fields know what they name (`Ini_FieldRef`, tested; `src/app_refs.cpp`): the
 tables' third column shows a field's sprite or action as a thumbnail, red when it
@@ -182,8 +189,8 @@ reported. A versus screen wants the roster's character, so a name it has not
 loaded takes its first one (logged): `f_getCharRef` would add it apart, without
 portraits. A Turns match right after another of the same run ends at once: not
 found why (a first one is fine), so Go to restarts the game for it. The team choice
-is what reaches the fight screen's Simul, Tag and Turns sections: Simul and Tag
-tested at 2 a side, both teams given the same mode. `test_ui.ps1` got `mark` and
+is what reaches the fight screen's Simul, Tag and Turns sections: each tested at 2 a
+side with both teams in that mode. `test_ui.ps1` got `mark` and
 `until:text`: waits on the log, since a busy machine took a load from 10 s to 32 s.
 
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
@@ -409,6 +416,7 @@ src/editor_select.go     engine side: select.def's characters and stages emptied
 src/editor_font.go       engine side: every font loaded, a font's file read again in place
 src/editor_objects.go    engine side: a character's explods and projectiles (debugObjects)
 src/editor_lab.go        engine side: a player's keys held, recorded, played; a character swapped
+src/editor_load.go       engine side: a match that could not load, asked on the Game window, not in a dialog
 src/editor_model.go      engine side: the stage's 3D model (nodes, materials, animations, lights), the glTF names kept, nodes outlined and picked, Save
 tools/debugger/
   CMakeLists.txt         ImGui static lib + ikemen-debugger.exe; copies mod/ikdbg.lua next to the exe

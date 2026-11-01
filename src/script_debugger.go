@@ -138,6 +138,7 @@ func debuggerFunctions(l *lua.LState) {
 	editorPaletteFunctions(l)
 	editorStageFunctions(l)
 	editorFightFunctions(l)
+	editorLoadFunctions(l)
 	editorMotifFunctions(l)
 	editorStoryboardFunctions(l)
 	editorSelectFunctions(l)

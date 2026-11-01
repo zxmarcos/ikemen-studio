@@ -136,7 +136,8 @@ local function forEachEntity(f)
 	while playerIndexExist(i) do
 		local back = id()
 		if playerIndex(i) then
-			f(i)
+			-- A stage's attached character without an animation fails to be read: left out
+			pcall(f, i)
 		end
 		playerId(back)
 		i = i + 1
@@ -165,6 +166,10 @@ local function readEntity()
 		ss = stateSource and stateSource() or nil, c1 = hasClsn1(),
 		nex = numExplod and numExplod() or nil, npr = numProj and numProj() or nil,
 	}
+	-- A stage's attached character has fields the engine gives as a Go nil, which type() cannot read
+	for k, v in pairs(e) do
+		if not pcall(type, v) then e[k] = nil end
+	end
 	if ikdbg.watch[e.id] then
 		local v, fv = {_array = true}, {_array = true}
 		for n = 0, 59 do v[n + 1] = var(n) end
@@ -764,8 +769,8 @@ end
 -- An error in the frame hook would stop the engine: report it (once per message) instead.
 local reported = {}
 hook.add('loop', 'ikdbg', function()
-	local ok, err = pcall(frame)
-	if ok then ok, err = pcall(ikdbg.goalTick) end
+	local ok, err = xpcall(frame, debug.traceback)
+	if ok then ok, err = xpcall(ikdbg.goalTick, debug.traceback) end
 	if not ok and not reported[tostring(err)] then
 		reported[tostring(err)] = true
 		send('@IKRES', {ok = false, r = 'ikdbg: ' .. tostring(err)})

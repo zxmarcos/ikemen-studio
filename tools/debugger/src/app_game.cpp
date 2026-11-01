@@ -9,6 +9,8 @@
 
 namespace app {
 
+static std::string g_loadError; // why the match could not load, while the game waits for an answer
+
 int g_trigId = -1;
 std::map<int, std::vector<std::pair<int, int>>> g_trigTicks;
 
@@ -195,6 +197,7 @@ void PollFrames() {
                               ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy(), b[9].i(), b[10].i()});
     ReadModelGeometry(stage["mdl"]);
     ReadScreenGeometry(j);
+    g_loadError = j["loadError"].str();
     GoToFrame();
     UpdateInputHistory();
     const Json &tg = j["tg"];
@@ -366,6 +369,22 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     return BoxHandles(g_boxDrag, draw, hovered, t, airToScreen, screenToAir, fe.k.x < 0);
 }
 
+// A match that could not load: the game's own question, here since its window is hidden.
+static void LoadErrorBar() {
+    if (g_loadError.empty()) return;
+    ImGui::PushStyleColor(ImGuiCol_Text, Ink(kRed));
+    ImGui::TextWrapped(ICON_ERROR " The match could not load: %s", g_loadError.c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::Button(ICON_RESTART " Retry")) {
+        ClearEngineProblems(); // what is still wrong is logged again
+        SendRaw("debugRetryLoad(true)");
+    }
+    ImGui::SetItemTooltip("Fix the file (Save writes it), then load again; the game is waiting.");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_XMARK " Give up")) SendRaw("debugRetryLoad(false)");
+    ImGui::SetItemTooltip("The game stops on the error.");
+}
+
 // A line above the picture: what is selected and where to edit it, or what a click would do
 static void SelectionLine(bool focused) {
     ImGui::AlignTextToFramePadding();
@@ -452,6 +471,7 @@ void GameWindow() {
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
     }
     if (g_frameTex && g_bridge.Running()) SelectionLine(focused);
+    if (g_bridge.Running()) LoadErrorBar();
     if (!g_frameTex || !g_bridge.Running()) {
         if (!g_bridge.Running()) {
             EmptyNote("The game shows here, and everything on it can be clicked.");
