@@ -212,6 +212,15 @@ static std::vector<int> PickedElems(const AnimTarget &t) {
     return out;
 }
 
+// The action shown gone from the text (deleted, a new one undone): the nearest one takes its place.
+static void KeepActionShown(const SourceFile &sf) {
+    const AirFile &air = AirOf(sf);
+    if (air.actions.empty() || air.actions.count(g_animAction)) return;
+    auto it = air.actions.lower_bound(g_animAction);
+    if (it == air.actions.end()) --it;
+    g_animAction = it->first, g_animElem = 1;
+}
+
 // The changed AIR text goes to every player using that file (the file itself is saved apart).
 void ApplyAnims(SourceFile &sf) {
     sf.version++; // the Code window's editor takes the new text
@@ -1426,6 +1435,7 @@ void AnimationWindow() {
         if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
             sf.text = step < 0 ? history.Undo() : history.Redo();
             apply(sf);
+            KeepActionShown(sf);
             g_elemPicks.clear();
             ImGui::End(); // what was parsed is old
             return;
@@ -1767,9 +1777,16 @@ void AnimationWindow() {
     if (ImGui::BeginPopup("delete")) {
         ImGui::Text("Delete action %d?", g_animAction);
         if (ImGui::Button(ICON_TRASH " Delete") && t.act) {
-            if (Air_DeleteAction(sf.text, *t.act)) apply(sf);
+            bool gone = Air_DeleteAction(sf.text, *t.act);
+            if (gone) apply(sf);
             g_animFollow = false;
             ImGui::CloseCurrentPopup();
+            if (gone) {
+                KeepActionShown(sf);
+                ImGui::EndPopup();
+                ImGui::End(); // what was parsed is old
+                return;
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button(ICON_XMARK " Cancel")) ImGui::CloseCurrentPopup();
