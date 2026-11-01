@@ -2,7 +2,7 @@
 
 Handoff notes for whoever continues this work (people or Claude sessions).
 [README.md](README.md) describes the debugger for its users.
-Last updated 2026-10-26.
+Last updated 2026-11-01.
 
 ## Where it is going
 
@@ -224,8 +224,8 @@ commits, from when it was `debugger-bridge` on top of e9bfe112:
 | Commit | What |
 |---|---|
 | d0910b9c | Engine side: `src/script_debugger.go` (new, ~210 lines), and one or two lines each in `compiler.go`, `bytecode.go`, `script.go` |
-| bad11d05 | `tools/debugger`: the debugger program, the mod, the scripts and these notes |
-| cfeb7559 | `CLAUDE.md`: rules and environment for Claude sessions in this clone |
+| ec0c018c | `tools/debugger`: the debugger program, the mod, the scripts and these notes |
+| 5738b9aa | `CLAUDE.md`: rules and environment for Claude sessions in this clone |
 
 
 Files:
