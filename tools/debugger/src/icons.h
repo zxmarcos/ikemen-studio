@@ -70,3 +70,4 @@
 #define ICON_UPLOAD "\xef\x82\x93" // upload
 #define ICON_ELLIPSIS "\xef\x85\x81" // ellipsis
 #define ICON_ROBOT "\xef\x95\x84" // robot
+#define ICON_CARET "\xef\x83\x97" // caret-down

@@ -121,35 +121,41 @@ void Toolbar() {
     ImGui::SetItemTooltip("Shift+F5");
     ImGui::EndDisabled();
 
-    // The match it starts with
-    flow(em * 35);
-    auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
+    // The match it starts with: one line, the fields in the popup it opens
+    flow(em * 18);
+    auto side = [](const std::string &name, bool ai) { return (name.empty() ? std::string("?") : name) + (ai ? " (AI)" : ""); };
+    std::string summary = s.p1.empty() && s.p2.empty() ? std::string("Title screen")
+                                                       : side(s.p1, s.ai1) + "  vs  " + side(s.p2, s.ai2) +
+                                                             (s.stage.empty() ? "" : "  on " + s.stage);
+    if (ImGui::Button((std::string(ICON_GAME "  ") + summary + "  " ICON_CARET + "###match").c_str())) ImGui::OpenPopup("match");
+    ImGui::SetItemTooltip("The match the game starts with (Launch, Restart): who fights, and where");
+    if (ImGui::BeginPopup("match")) {
+        auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine(em * 6);
+            ImGui::SetNextItemWidth(em * 10);
+            ImGui::InputText((std::string("##") + label).c_str(), &name);
+            ImGui::SameLine();
+            ImGui::Checkbox(id, &ai);
+            ImGui::SetItemTooltip("The computer plays this side");
+        };
+        player("Player 1", s.p1, s.ai1, "AI##1");
+        player("Player 2", s.p2, s.ai2, "AI##2");
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(label);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(em * 7);
-        ImGui::InputText((std::string("##") + label).c_str(), &name);
-        ImGui::SameLine();
-        ImGui::Checkbox(id, &ai);
-    };
-    player("P1", s.p1, s.ai1, "AI##1");
-    ImGui::SameLine(0, em);
-    player("P2", s.p2, s.ai2, "AI##2");
-    ImGui::SameLine(0, em);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Stage");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(em * 7);
-    ImGui::InputText("##stage", &s.stage);
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_BOOKMARKS " Matches")) ImGui::OpenPopup("matches");
-    ImGui::SetItemTooltip("Matches saved by name: pick one, or save the one set");
-    if (ImGui::BeginPopup("matches")) {
-        MatchesPopup();
+        ImGui::TextUnformatted("Stage");
+        ImGui::SameLine(em * 6);
+        ImGui::SetNextItemWidth(em * 10);
+        ImGui::InputText("##stage", &s.stage);
+        ImGui::TextDisabled("Leave both players empty to start at the title screen.");
+        ImGui::TextDisabled("Explorer's menu on a character or a stage sets them too.");
+        ImGui::Separator();
+        if (ImGui::TreeNode(ICON_BOOKMARKS " Saved matches")) {
+            MatchesPopup();
+            ImGui::TreePop();
+        }
         ImGui::EndPopup();
     }
-    HelpMarker("The match the game starts with (Launch, Restart). Leave P1 or P2 empty to start at the title "
-               "screen. AI: that side plays by itself. Explorer's menu on a character or a stage sets them too.");
 
     // The game's time
     flow(em * 26);
@@ -158,28 +164,24 @@ void Toolbar() {
     ImGui::SameLine();
     if (ImGui::Button(ICON_STEP " Step (F10)")) SendRaw("ikdbg.step(1)");
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FAST " +10 (F11)")) SendRaw("ikdbg.step(10)");
-    ImGui::SetItemTooltip("Ten ticks");
-    ImGui::SameLine();
-    static float speed = 1;
-    char speedLabel[16];
-    snprintf(speedLabel, sizeof(speedLabel), "%gx", speed);
-    ImGui::SetNextItemWidth(em * 4.5f);
-    if (ImGui::BeginCombo("##speed", speedLabel)) {
+    if (ImGui::Button(ICON_ELLIPSIS)) ImGui::OpenPopup("more");
+    ImGui::SetItemTooltip("More: speed, ten ticks at once, save and load state, reset the round");
+    if (ImGui::BeginPopup("more")) {
+        static float speed = 1;
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Speed");
+        ImGui::SameLine();
         for (float v : {0.25f, 0.5f, 1.0f, 2.0f, 4.0f}) {
             char label[16];
             snprintf(label, sizeof(label), "%gx", v);
-            if (ImGui::Selectable(label, v == speed)) {
+            ImGui::SameLine();
+            if (ImGui::Selectable(label, v == speed, 0, ImVec2(em * 2.5f, 0))) {
                 speed = v;
                 Exec("setAccel(" + std::to_string(v) + ")");
             }
         }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip("The game's speed");
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_ELLIPSIS " More")) ImGui::OpenPopup("more");
-    if (ImGui::BeginPopup("more")) {
+        ImGui::Separator();
+        if (ImGui::Button(ICON_FAST " Ten ticks (F11)")) SendRaw("ikdbg.step(10)");
         static int stepN = 60;
         ImGui::SetNextItemWidth(em * 5);
         ImGui::InputInt("##n", &stepN, 0);
@@ -209,7 +211,8 @@ void Toolbar() {
 
     // The rest of the session
     flow(em * 6);
-    if (ImGui::Button(ICON_GEAR " Settings")) ImGui::OpenPopup("session");
+    if (ImGui::Button(ICON_GEAR)) ImGui::OpenPopup("session");
+    ImGui::SetItemTooltip("Settings: the game's executable, extra flags, connection state");
     if (ImGui::BeginPopup("session")) {
         ImGui::SetNextItemWidth(em * 28);
         ImGui::InputTextWithHint("Ikemen GO", "Ikemen_GO.exe", &s.exe);

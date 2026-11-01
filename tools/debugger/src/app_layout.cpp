@@ -445,30 +445,34 @@ void LayoutFrame() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu(ICON_FOLDER_OPEN " File")) {
             FileMenu();
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu(ICON_LIST " Windows")) {
-            const char *group = "";
-            for (ToolWindow &t : g_windows) {
-                if (strcmp(group, t.group) != 0) ImGui::SeparatorText(group = t.group);
-                if (ImGui::MenuItem((std::string(WindowIcon(t.name)) + "  " + t.name).c_str(), nullptr, t.open)) {
-                    t.open = !t.open;
-                    t.dock = t.open;
-                    if (t.open) Front(t);
-                }
+            ImGui::Separator();
+            if (ImGui::BeginMenu(ICON_WAND " New")) {
+                CreateMenu();
+                ImGui::EndMenu();
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu(ICON_WAND " Create")) {
-            CreateMenu();
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu(ICON_DISPLAY " Workspace")) {
-            WorkspaceMenu();
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu(ICON_PALETTE " Theme")) {
-            ThemeMenu();
+        if (ImGui::BeginMenu(ICON_LIST " View")) {
+            if (ImGui::BeginMenu(ICON_TABLE " Windows")) {
+                const char *group = "";
+                for (ToolWindow &t : g_windows) {
+                    if (strcmp(group, t.group) != 0) ImGui::SeparatorText(group = t.group);
+                    if (ImGui::MenuItem((std::string(WindowIcon(t.name)) + "  " + t.name).c_str(), nullptr, t.open)) {
+                        t.open = !t.open;
+                        t.dock = t.open;
+                        if (t.open) Front(t);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(ICON_DISPLAY " Workspace")) {
+                WorkspaceMenu();
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(ICON_PALETTE " Theme")) {
+                ThemeMenu();
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
         // The workspaces as tabs
