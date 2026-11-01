@@ -81,6 +81,29 @@ int main() {
     CHECK(Air_SetElem(text, air.actions[0].elems[3], 0, 3, 1, 1, 9));
     CHECK(Line(text, 12) == "0,3, 1,1, 9 ; last");
 
+    // Flip, blending, scale, angle: read as anim.go does, written without the defaults
+    {
+        AirFile st;
+        Air_Parse("[Begin Action 1]\n0,0, 0,0, 1, HV, AS128D64, 1.5, 2, 30\n0,1, 0,0, 1,, A1\n0,2, 0,0, 1,, as\n0,3, 0,0, 1,, S\n0,4, 0,0, 1,, SS200\n", st);
+        const auto &e = st.actions[1].elems;
+        CHECK(e[0].style.flipH && e[0].style.flipV && e[0].style.blend == kAirAdd && e[0].style.src == 128 && e[0].style.dst == 64);
+        CHECK(e[0].style.xscale == 1.5f && e[0].style.yscale == 2 && e[0].style.angle == 30);
+        CHECK(e[1].style.blend == kAirAdd && e[1].style.src == 255 && e[1].style.dst == 128 && !e[1].style.flipH);
+        CHECK(e[2].style.blend == kAirAdd && e[2].style.src == 255 && e[2].style.dst == 0); // "as" alone: Mugen's defaults
+        CHECK(e[3].style.blend == kAirSub && e[3].style.src == 255 && e[3].style.dst == 255);
+        CHECK(e[4].style.blend == kAirSub && e[4].style.src == 200 && e[4].style.dst == 255);
+        std::string t = "[Begin Action 1]\n0,0, 3,4, 5 ; note\n";
+        Air_Parse(t, st);
+        AirStyle s;
+        s.flipH = true, s.blend = kAirSub, s.src = 100, s.dst = 255, s.angle = 45;
+        CHECK(Air_SetStyle(t, st.actions[1].elems[0], s));
+        CHECK(Line(t, 2) == "0,0, 3,4, 5, H, SS100D255, , , 45 ; note");
+        Air_Parse(t, st);
+        CHECK(st.actions[1].elems[0].style.angle == 45 && st.actions[1].elems[0].style.xscale == 1);
+        CHECK(Air_SetStyle(t, st.actions[1].elems[0], AirStyle()));
+        CHECK(Line(t, 2) == "0,0, 3,4, 5 ; note");
+    }
+
     // Duplicate, move, delete: an element keeps its own boxes
     text = kAir;
     Air_Parse(text, air);

@@ -335,6 +335,7 @@ std::string AirPath(int pn);
 std::string CharFile(int pn, const char *key);
 const AirFile &AirOf(const SourceFile &sf);
 AnimTarget GetAnimTarget();
+bool AnimShowLine(const std::string &path, int line); // the action and element at that line of an AIR file, in Animation
 void ApplyAnims(SourceFile &sf);
 void AnimationWindow();
 

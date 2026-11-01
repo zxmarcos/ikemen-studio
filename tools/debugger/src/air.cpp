@@ -41,6 +41,56 @@ std::string Clean(const std::string &line) {
 
 bool StartsWith(const std::string &s, const char *prefix) { return s.compare(0, strlen(prefix), prefix) == 0; }
 
+std::string Trim(const std::string &s) {
+    size_t a = s.find_first_not_of(" \t\r"), b = s.find_last_not_of(" \t\r");
+    return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+}
+
+// The alphas after the letters of a blending field, "128d64": the defaults stay when absent
+void ReadAlphas(const std::string &a, size_t i, int defSrc, int defDst, AirStyle &st) {
+    st.src = defSrc, st.dst = defDst;
+    auto number = [&](int &out) {
+        if (i >= a.size() || !isdigit((unsigned char)a[i])) return;
+        long n = 0;
+        for (; i < a.size() && isdigit((unsigned char)a[i]); i++) n = std::min(n * 10 + (a[i] - '0'), 99999L);
+        out = (int)std::min(n, 255L);
+    };
+    number(st.src);
+    if (i < a.size() && a[i] == 'd') {
+        i++;
+        number(st.dst);
+    }
+}
+
+// The fields after the fifth value (lower case, ", H, AS128D64, 1.5, 1.5, 30"): as ReadAnimFrame does
+void ReadStyle(const char *rest, AirStyle &st) {
+    std::vector<std::string> f;
+    for (const char *p = rest; *p == ',' && f.size() < 5;) {
+        const char *end = strchr(p + 1, ',');
+        f.push_back(Trim(end ? std::string(p + 1, end) : std::string(p + 1)));
+        p = end ? end : p + strlen(p);
+    }
+    if (f.size() > 0)
+        for (char ch : f[0]) {
+            if (ch == 'h') st.flipH = true;
+            if (ch == 'v') st.flipV = true;
+        }
+    if (f.size() > 1 && !f[1].empty()) {
+        size_t ia = f[1].find_first_of("as");
+        std::string a = ia == std::string::npos ? "" : f[1].substr(ia);
+        if (a == "a1") st.blend = kAirAdd, st.src = 255, st.dst = 128;
+        else if (a.compare(0, 3, "sas") == 0) st.blend = kAirSubAdd, ReadAlphas(a, 3, 255, 255, st);
+        else if (a.compare(0, 2, "sa") == 0) st.blend = kAirSubAdd, st.src = st.dst = 255;
+        else if (a.compare(0, 2, "as") == 0) st.blend = kAirAdd, ReadAlphas(a, 2, 255, 0, st);
+        else if (a.compare(0, 2, "ss") == 0) st.blend = kAirSub, ReadAlphas(a, 2, 255, 255, st);
+        else if (a.compare(0, 1, "a") == 0) st.blend = kAirAdd, st.src = st.dst = 255;
+        else if (a.compare(0, 1, "s") == 0) st.blend = kAirSub, st.src = st.dst = 255;
+    }
+    if (f.size() > 2 && !f[2].empty()) st.xscale = (float)atof(f[2].c_str());
+    if (f.size() > 3 && !f[3].empty()) st.yscale = (float)atof(f[3].c_str());
+    if (f.size() > 4 && !f[4].empty()) st.angle = (float)atof(f[4].c_str());
+}
+
 // "group, image, x, y, time[, ...]": an element line
 bool ReadElem(const std::string &s, AirElem &e) {
     if (s.empty() || !(isdigit((unsigned char)s[0]) || s[0] == '-')) return false;
@@ -58,6 +108,7 @@ bool ReadElem(const std::string &s, AirElem &e) {
         }
     }
     e.group = v[0], e.image = v[1], e.x = v[2], e.y = v[3], e.time = v[4];
+    ReadStyle(p, e.style);
     return true;
 }
 
@@ -232,6 +283,55 @@ bool Air_SetElem(std::string &text, const AirElem &elem, int group, int image, i
     char buf[96];
     snprintf(buf, sizeof(buf), "%d,%d, %d,%d, %d", group, image, x, y, time);
     line = line.substr(0, pos) + buf + line.substr(end);
+    text = JoinLines(lines);
+    return true;
+}
+
+std::string Air_BlendText(const AirStyle &st) {
+    char buf[24];
+    bool full = st.src == 255 && st.dst == 255;
+    switch (st.blend) {
+    case kAirAdd:
+        if (full) return "A";
+        if (st.src == 255 && st.dst == 128) return "A1";
+        snprintf(buf, sizeof(buf), "AS%dD%d", st.src, st.dst); // Mugen's default destination here is 0: always written
+        return buf;
+    case kAirSub:
+        if (full) return "S";
+        snprintf(buf, sizeof(buf), "SS%dD%d", st.src, st.dst);
+        return buf;
+    case kAirSubAdd:
+        if (full) return "SA";
+        snprintf(buf, sizeof(buf), "SAS%dD%d", st.src, st.dst);
+        return buf;
+    }
+    return "";
+}
+
+bool Air_SetStyle(std::string &text, const AirElem &elem, const AirStyle &st) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (elem.line < 1 || elem.line > (int)lines.size()) return false;
+    std::string &line = lines[elem.line - 1];
+    size_t semi = line.find(';');
+    std::string code = line.substr(0, semi), comment = semi == std::string::npos ? "" : line.substr(semi);
+    // The five values stay as they are
+    size_t end = 0;
+    for (int commas = 0; end < code.size(); end++)
+        if (code[end] == ',' && ++commas == 5) break;
+    code = code.substr(0, end);
+    while (!code.empty() && (code.back() == ' ' || code.back() == '\t' || code.back() == '\r')) code.pop_back();
+    auto num = [](float v) {
+        char b[24];
+        snprintf(b, sizeof(b), "%g", v);
+        return std::string(b);
+    };
+    std::string f[5] = {std::string(st.flipH ? "H" : "") + (st.flipV ? "V" : ""), Air_BlendText(st),
+                        st.xscale == 1 && st.yscale == 1 ? "" : num(st.xscale), st.xscale == 1 && st.yscale == 1 ? "" : num(st.yscale),
+                        st.angle == 0 ? "" : num(st.angle)};
+    int n = 5;
+    while (n > 0 && f[n - 1].empty()) n--;
+    for (int i = 0; i < n; i++) code += (i ? ", " : ", ") + f[i];
+    line = code + (comment.empty() ? "" : " " + comment);
     text = JoinLines(lines);
     return true;
 }

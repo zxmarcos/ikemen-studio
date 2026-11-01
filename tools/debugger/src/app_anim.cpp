@@ -5,6 +5,7 @@
 
 #include <cfloat>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 
 namespace app {
@@ -19,6 +20,39 @@ bool g_animFollow = true; // the Animation window shows what the selected player
 int g_animAction = 0, g_animElem = 1;
 
 std::map<int, std::pair<std::string, double>> g_swapWanted;
+
+// Blending of the preview's sprite: GL 1.4's blend equation and constant colour, which Windows' opengl32 only
+// gives through wglGetProcAddress. The draw callbacks set it before the sprite and put ImGui's state back.
+namespace {
+struct AnimBlendFns {
+    void(APIENTRY *equation)(GLenum) = nullptr;
+    void(APIENTRY *color)(GLfloat, GLfloat, GLfloat, GLfloat) = nullptr;
+};
+AnimBlendFns g_blendFns;
+
+AnimBlendFns LoadBlendFns() {
+    AnimBlendFns f;
+    f.equation = (void(APIENTRY *)(GLenum))(void *)wglGetProcAddress("glBlendEquation");
+    f.color = (void(APIENTRY *)(GLfloat, GLfloat, GLfloat, GLfloat))(void *)wglGetProcAddress("glBlendColor");
+    g_blendFns = f;
+    return f;
+}
+
+const GLenum kFuncAdd = 0x8006, kFuncReverseSubtract = 0x800B, kConstantAlpha = 0x8003;
+
+// The data: the AirBlend, and the destination's alpha above its 8 bits
+void SetBlend(const ImDrawList *, const ImDrawCmd *cmd) {
+    intptr_t data = (intptr_t)cmd->UserCallbackData;
+    g_blendFns.equation((data & 255) == kAirAdd ? kFuncAdd : kFuncReverseSubtract);
+    g_blendFns.color(0, 0, 0, ((data >> 8) & 255) / 255.0f);
+    glBlendFunc(GL_SRC_ALPHA, kConstantAlpha);
+}
+
+void EndBlend(const ImDrawList *, const ImDrawCmd *) {
+    g_blendFns.equation(kFuncAdd);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+} // namespace
 
 void OnFiles(const Json &j) {
     for (const auto &p : j["players"].items) {
@@ -102,6 +136,48 @@ AnimTarget GetAnimTarget() {
     t.elem = std::max(1, std::min(g_animElem, (int)t.act->elems.size()));
     t.live = t.fe && t.fe->action == g_animAction && t.fe->elem == t.elem;
     return t;
+}
+
+// The action and element a line of an AIR file belongs to (the action before it when the line is between
+// two), shown in Animation, with the character that uses the file worked on. False: not an AIR file in use.
+bool AnimShowLine(const std::string &path, int line) {
+    auto uses = [&](int pn) { return pn > 0 && NormPath(AirPath(pn)) == NormPath(path); };
+    // The character worked on, else a player in the match, else a character from disk whose def is
+    // next to the file (the game not running)
+    if (!uses(WorkPn())) {
+        int pn = 0;
+        for (const auto &kv : g_charFiles)
+            if (uses(kv.first)) pn = kv.first;
+        if (pn) {
+            WorkOn(CharFile(pn, "def"));
+        } else {
+            std::string dir = path.substr(0, path.find_last_of("/\\") + 1);
+            std::error_code ec;
+            for (const auto &de : std::filesystem::directory_iterator(GamePath(dir), ec)) {
+                std::string name = de.path().filename().string();
+                if (name.size() < 5 || _stricmp(name.c_str() + name.size() - 4, ".def") != 0) continue;
+                WorkOn(dir + name);
+                if (uses(WorkPn())) break;
+                WorkOn("");
+            }
+        }
+        if (!uses(WorkPn())) return false;
+    }
+    const AirFile &air = AirOf(LoadSource(path));
+    const AirAction *act = nullptr;
+    for (const auto &kv : air.actions)
+        if (kv.second.line <= line && (!act || kv.second.line > act->line)) act = &kv.second;
+    if (!act) return false;
+    int elem = 1;
+    for (size_t i = 0; i < act->elems.size(); i++)
+        if (act->elems[i].first <= line) elem = (int)i + 1;
+    g_animAction = act->no, g_animElem = elem, g_animFollow = false;
+    ShowWindow("Animation");
+    // Called from Code, whose editor holds the keyboard: a dock node keeps showing the tab of the window
+    // with the focus, so Code would come back as soon as ShowWindow's frames are over
+    ImGui::ClearActiveID();
+    ImGui::SetWindowFocus("Animation");
+    return true;
 }
 
 // The changed AIR text goes to every player using that file (the file itself is saved apart).
@@ -430,9 +506,32 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     int si = spf ? Sff_FindSprite(spf->doc, el.group, el.image) : -1;
     if (si >= 0) {
         const SffSprite &s = spf->doc.sprites[si];
-        if (GLuint tex = SpriteTexture(*spf, si))
-            draw->AddImage(TexRef(tex), at((float)(el.x - s.x), (float)(el.y - s.y)),
-                           at((float)(el.x - s.x + s.w), (float)(el.y - s.y + s.h)));
+        if (GLuint tex = SpriteTexture(*spf, si)) {
+            // As the game draws it: flip (which mirrors the offset too), scale and angle around the sprite's axis,
+            // then the blending
+            const AirStyle &st = el.style;
+            float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
+            float sx = st.xscale * fx, sy = st.yscale * fy;
+            float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
+            auto corner = [&](float cx, float cy) {
+                float px = cx * sx, py = cy * sy;
+                return at(el.x * fx + px * cs + py * sn, el.y * fy - px * sn + py * cs);
+            };
+            float x0 = (float)-s.x, y0 = (float)-s.y, x1 = (float)(s.w - s.x), y1 = (float)(s.h - s.y);
+            bool blend = st.blend != kAirOpaque;
+            if (blend) {
+                static AnimBlendFns fns = LoadBlendFns();
+                if (fns.equation && fns.color) draw->AddCallback(SetBlend, (void *)(intptr_t)(st.blend | st.dst << 8));
+                else blend = false;
+            }
+            draw->AddImageQuad(TexRef(tex), corner(x0, y0), corner(x1, y0), corner(x1, y1), corner(x0, y1), ImVec2(0, 0),
+                               ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1),
+                               blend ? IM_COL32(255, 255, 255, st.src) : IM_COL32_WHITE);
+            if (blend) {
+                draw->AddCallback(EndBlend, nullptr);
+                draw->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, nullptr);
+            }
+        }
     } else if (el.group >= 0) {
         char note[64];
         snprintf(note, sizeof(note), "sprite %d, %d is not in the SFF", el.group, el.image);
@@ -717,6 +816,47 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     done |= ImGui::IsItemDeactivatedAfterEdit();
     ImGui::SameLine();
     ImGui::TextDisabled(v[4] < 0 ? "forever" : "ticks");
+
+    // Flip, blending, scale and angle: the fields after the time
+    AirStyle st = el.style;
+    bool styled = false;
+    FieldLabel("Flip");
+    styled |= ImGui::Checkbox("H", &st.flipH);
+    ImGui::SetItemTooltip("Mirrors the sprite around its axis (the x offset is mirrored too, as the game does)");
+    ImGui::SameLine();
+    styled |= ImGui::Checkbox("V", &st.flipV);
+    ImGui::SetItemTooltip("Turns the sprite upside down (the y offset is mirrored too)");
+    FieldLabel("Blend");
+    const char *blends[] = {"Opaque", "Add", "Subtract", "Sub-add"};
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::Combo("##blend", &st.blend, blends, 4)) {
+        if (st.blend == kAirAdd && !el.style.blend) st.src = 255, st.dst = 255;
+        styled = true;
+    }
+    ImGui::SetItemTooltip("A, S or SA in the AIR; with alphas, AS, SS or SAS");
+    if (st.blend != kAirOpaque) {
+        FieldLabel("Alpha");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        int al[2] = {st.src, st.dst};
+        if (ImGui::DragInt2("##alpha", al, 0.5f, 0, 255)) st.src = al[0], st.dst = al[1], styled = true;
+        done |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SetItemTooltip("Source, destination (0 to 255): the sprite times the first plus (or minus) the background times the second.\n"
+                              "255, 255 is a plain A or S; 255, 128 is A1.");
+    }
+    FieldLabel("Scale");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    float sc[2] = {st.xscale, st.yscale};
+    if (ImGui::DragFloat2("##scale", sc, 0.01f, -16.0f, 16.0f, "%.2f")) st.xscale = sc[0], st.yscale = sc[1], styled = true;
+    done |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SetItemTooltip("x, y; 1 is the sprite's size. Scaled around the sprite's axis.");
+    FieldLabel("Angle");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::DragFloat("##angle", &st.angle, 0.5f, -360.0f, 360.0f, "%.1f deg")) styled = true;
+    done |= ImGui::IsItemDeactivatedAfterEdit();
+    if (styled) {
+        Air_SetStyle(sf.text, el, st);
+        if (!ImGui::IsAnyItemActive()) done = true; // a click on a box or the combo is one edit
+    }
     if (done) apply(sf);
     if (ImGui::BeginPopup("pick")) {
         static int group = 0;
