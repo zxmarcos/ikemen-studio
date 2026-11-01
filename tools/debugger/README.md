@@ -157,7 +157,13 @@ title, options, select, versus, hiscore, storyboards, victory, results, continue
 a moment of a match (round call, Fight!, KO, Double KO, Perfect, Time over, Winner,
 Draw, the pause menu), with the teams chosen for it (Single, Simul, Turns, Tag), so
 the fight screen's team sections can be seen too. **Let it go on** goes on from there.
-The first time, the game starts again in its menus.
+The first time, the game starts again in its menus. **Show > Screen shapes** draws what
+16:9 and 4:3 screens show of the picture.
+
+A right click on a def in Explorer gives **Package as zip** (the def and every file it
+names, saying what is missing), and on the motif **Copy as a new screenpack**
+(`data/<name>/`, which the next launch uses). A match that cannot load shows why on
+the Game window, with Retry for after the file is fixed.
 
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code

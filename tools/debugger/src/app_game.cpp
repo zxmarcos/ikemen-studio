@@ -369,6 +369,25 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     return BoxHandles(g_boxDrag, draw, hovered, t, airToScreen, screenToAir, fe.k.x < 0);
 }
 
+// Over the picture: what other screens show of it. Each shape as wide or as tall as the picture allows.
+static void SafeAreas(ImDrawList *draw, const std::function<ImVec2(float, float)> &toScreen) {
+    float w = g_frameScr.x, h = g_frameScr.y;
+    if (w <= 0 || h <= 0) return;
+    auto shape = [&](float x0, float y0, float x1, float y1, ImU32 col, const char *label) {
+        ImVec2 a = toScreen(x0, y0), b = toScreen(x1, y1);
+        draw->AddRect(a, b, col, 0.0f, 1.5f);
+        draw->AddText(ImVec2(a.x + 4, a.y + 2), col, label);
+    };
+    auto aspect = [&](float ratio, ImU32 col, const char *label) {
+        float sw = std::min(w, h * ratio), sh = sw / ratio;
+        shape((w - sw) / 2, (h - sh) / 2, (w + sw) / 2, (h + sh) / 2, col, label);
+    };
+    aspect(16.0f / 9.0f, IM_COL32(80, 220, 255, 220), "16:9");
+    aspect(4.0f / 3.0f, IM_COL32(255, 200, 60, 220), "4:3");
+    float mx = w * 0.05f, my = h * 0.05f;
+    shape(mx, my, w - mx, h - my, IM_COL32(255, 255, 255, 110), "safe");
+}
+
 // A match that could not load: the game's own question, here since its window is hidden.
 static void LoadErrorBar() {
     if (g_loadError.empty()) return;
@@ -431,7 +450,7 @@ void GameWindow() {
     }
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     ForwardKeys(focused);
-    static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false, showHistory = false;
+    static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false, showHistory = false, showGuides = false;
     // What a click on the picture selects, and what is drawn over it; the line goes on in a second
     // one when the window is narrow
     ImGui::AlignTextToFramePadding();
@@ -457,6 +476,9 @@ void GameWindow() {
         ImGui::Checkbox("Input history", &showHistory);
         ImGui::SetItemTooltip("P1's last keys down the left side, P2's down the right, each with the ticks it lasted\n"
                               "(newest on top), as training modes show them.");
+        ImGui::Checkbox("Screen shapes", &showGuides);
+        ImGui::SetItemTooltip("What players see of the picture at 4:3 and 16:9, and the area a TV may cut (5% each side),\n"
+                              "for lifebars and menus that must stay in view.");
         ImGui::Separator();
         ImGui::Checkbox("Only the selected one", &onlySelected);
         ImGui::Checkbox("Follow it when zoomed in", &g_followSel);
@@ -571,6 +593,7 @@ void GameWindow() {
         hovered = false;
         clicked = false;
     }
+    if (showGuides) SafeAreas(draw, toScreen);
 
     // Dragging a player or helper moves it (debugMoveBy takes pixels of the game picture)
     static int dragId = -1;

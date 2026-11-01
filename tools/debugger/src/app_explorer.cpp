@@ -5,8 +5,13 @@
 
 #include <shellapi.h>
 
+#include <filesystem>
+#include <fstream>
+
 #include "imgui_internal.h"
+#include "imgui_stdlib.h"
 #include "ini.h"
+#include "pack.h"
 
 namespace app {
 
@@ -72,12 +77,18 @@ std::string Unquote(std::string s) {
 }
 
 bool NamesFile(const std::string &section, const std::string &key) {
-    if (section == "files") return true;
+    auto ends = [&](const char *tail) {
+        size_t n = strlen(tail);
+        return key.size() >= n && key.compare(key.size() - n, n, tail) == 0;
+    };
+    if (section == "files" || section == "shaders") return true;
     // A stage's 3D model is [BGdef] model, its environment map [Model] environment
     if (section == "bgdef" || section == "scenedef") return key == "spr" || key == "snd" || key == "model";
-    if (section == "music") return key == "bgmusic";
+    if (section == "music") return key == "bgmusic" || ends(".bgm");
     if (section == "model") return key == "environment";
-    return false;
+    if (section == "def") return key == "file";                     // a font's
+    if (section == "info") return key.compare(0, 12, "attachedchar") == 0; // a stage's
+    return key == "bgm" || key == "storyboard" || ends(".storyboard");
 }
 
 std::string MotifPath();
@@ -275,6 +286,106 @@ int PlayerOf(const std::string &def) {
 std::string g_rowChar; // the character whose files the tree is drawing
 
 // ---------------------------------------------------------------------------
+// A project as a whole: a zip of it, a copy of the screenpack
+// ---------------------------------------------------------------------------
+
+// A def's files and those of the defs among them, each once. The engine's common states are not the project's.
+void DefClosure(const std::string &def, std::map<std::string, DefEntry> &out) {
+    for (const DefEntry &f : DefFiles(def)) {
+        if (f.key == "stcommon" || out.count(NormPath(f.path))) continue;
+        out[NormPath(f.path)] = f;
+        if (f.exists && ExtOf(f.path) == "def") DefClosure(f.path, out);
+    }
+}
+
+void PackageDef(const std::string &def) {
+    std::map<std::string, DefEntry> found;
+    found[NormPath(def)] = {"def", def, true};
+    DefClosure(def, found);
+    std::string stem = BaseName(def);
+    std::string path = PickSaveFile("Zip archives (*.zip)\0*.zip\0", "zip", stem.substr(0, stem.find_last_of('.')) + ".zip");
+    if (path.empty()) return;
+    std::vector<PackFile> files;
+    std::string missing;
+    size_t bytes = 0;
+    int absent = 0;
+    for (const auto &[key, f] : found) {
+        if (!f.exists) {
+            absent++;
+            missing += (missing.empty() ? "" : ", ") + f.path;
+            continue;
+        }
+        // Named as on disk: NormPath's lower case would not be found on Linux
+        std::string name = f.path;
+        std::replace(name.begin(), name.end(), '\\', '/');
+        files.push_back({name, ReadWholeFile(GamePath(f.path))});
+        bytes += files.back().data.size();
+    }
+    std::ofstream out(path, std::ios::binary);
+    out << Zip_Build(files);
+    out.close();
+    Log(out ? LogLine::Info : LogLine::Error, (out ? "Packaged " : "Could not write ") + std::to_string(files.size()) + " files, " +
+        std::to_string(bytes / 1024) + " KB, in " + path);
+    if (absent) Log(LogLine::Error, std::to_string(absent) + " files the def names are not found: " + missing);
+    // In the def's own folder, unless that is shared by others
+    std::string dir = DirOf(def);
+    if (dir.empty() || NormPath(dir) == "data/" || NormPath(dir) == "stages/") return;
+    std::error_code ec;
+    int extra = 0;
+    std::string names;
+    for (const auto &e : std::filesystem::recursive_directory_iterator(GamePath(dir), ec)) {
+        if (!e.is_regular_file(ec)) continue;
+        std::string rel = dir + std::filesystem::relative(e.path(), GamePath(dir), ec).generic_string();
+        if (found.count(NormPath(rel))) continue;
+        if (extra++ < 8) names += (names.empty() ? "" : ", ") + BaseName(rel);
+    }
+    if (extra) Log(LogLine::Info, std::to_string(extra) + " files of " + dir + " left out, nothing names them: " + names + (extra > 8 ? "..." : ""));
+}
+
+// A copy of the screenpack in data/<name>/, its own from then on: the motif's folder as it is, and the
+// files of data/ it names next to it, which the engine looks in first. Sounds, fonts and music
+// elsewhere stay shared. The defs naming the old folder ("ikemen1/system.sff") name the new one.
+bool CopyScreenpack(const std::string &name, std::string *result) {
+    std::string motif = MotifPath(), from = DirOf(motif), to = "data/" + name + "/";
+    if (name.empty() || name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos) {
+        *result = "The name takes letters, digits, '_' and '-' only.";
+        return false;
+    }
+    std::error_code ec;
+    if (std::filesystem::exists(GamePath(to), ec)) {
+        *result = to + " is there already.";
+        return false;
+    }
+    std::map<std::string, DefEntry> found;
+    found[NormPath(motif)] = {"motif", motif, true};
+    DefClosure(motif, found);
+    std::string fromName = from;
+    if (!fromName.empty()) fromName.pop_back();
+    fromName = BaseName(fromName) + "/";
+    int copied = 0;
+    for (const auto &[key, f] : found) {
+        if (!f.exists) continue;
+        bool inside = NormPath(f.path).compare(0, NormPath(from).size(), NormPath(from)) == 0;
+        if (!inside && NormPath(DirOf(f.path)) != "data/") continue;
+        std::string rel = inside ? f.path.substr(from.size()) : BaseName(f.path), target = to + rel, data = ReadWholeFile(GamePath(f.path));
+        if (ExtOf(f.path) == "def" && fromName != "data/")
+            for (size_t at = 0; (at = data.find(fromName, at)) != std::string::npos; at += name.size() + 1) data.replace(at, fromName.size(), name + "/");
+        std::filesystem::create_directories(std::filesystem::path(GamePath(target)).parent_path(), ec);
+        std::ofstream out(GamePath(target), std::ios::binary);
+        out << data;
+        if (!out) {
+            *result = "Could not write " + target;
+            return false;
+        }
+        copied++;
+    }
+    *result = std::to_string(copied) + " files in " + to;
+    return true;
+}
+
+bool g_askScreenpack;
+
+// ---------------------------------------------------------------------------
 // The tree
 // ---------------------------------------------------------------------------
 
@@ -297,6 +408,9 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
     // Actions of their own: a stage's or a screen's def, an AIR file no character uses
     bool actions = g_rowChar.empty() && (ExtOf(path) == "air" || (ExtOf(path) == "def" && !SpritesFileOf(path).empty()));
     if (actions && ImGui::MenuItem("Open in Animation")) AnimOpenFile(path);
+    if (ExtOf(path) == "def" && ImGui::MenuItem(ICON_DOWNLOAD " Package as zip...")) PackageDef(path);
+    ImGui::SetItemTooltip("A zip of this def and every file it names, for sharing it; says what is missing");
+    if (NormPath(path) == NormPath(MotifPath()) && ImGui::MenuItem(ICON_COPY " Copy as a new screenpack...")) g_askScreenpack = true;
     if (ImGui::MenuItem(ICON_FOLDER " Show in folder")) ShowInFolder(path);
     if (ImGui::MenuItem(ICON_COPY " Copy path")) ImGui::SetClipboardText(path.c_str());
 }
@@ -585,6 +699,31 @@ void ExplorerWindow() {
         g_defs.clear();
     }
     ImGui::SetItemTooltip("Reads the folders and the defs again");
+    if (g_askScreenpack) g_askScreenpack = false, ImGui::OpenPopup("screenpack");
+    if (ImGui::BeginPopup("screenpack")) {
+        static std::string name, status;
+        ImGui::TextUnformatted("A copy of the screenpack, its own from then on");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere(), status.clear();
+        bool ok = ImGui::InputTextWithHint("##name", "data/...", &name, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        ok |= ImGui::Button(ICON_CHECK " Copy");
+        if (ok) {
+            if (CopyScreenpack(name, &status)) {
+                // The motif of the next launch, without touching config.ini
+                std::string &extra = g_settings.extra;
+                size_t r = extra.find("-r ");
+                if (r != std::string::npos) extra.erase(r, extra.find(' ', r + 3) == std::string::npos ? std::string::npos : extra.find(' ', r + 3) + 1 - r);
+                extra += (extra.empty() || extra.back() == ' ' ? "" : " ") + ("-r data/" + name + "/system.def");
+                Log(LogLine::Info, "New screenpack: " + status + ". The game starts with it from the next launch (-r in the session's arguments).");
+                Scan(true);
+                g_defs.clear();
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        if (!status.empty()) ImGui::TextColored(Ink(kRed), "%s", status.c_str());
+        ImGui::EndPopup();
+    }
     if (ImGui::BeginChild("tree")) {
         if (Group("Characters", g_chars.size())) {
             for (const Project &p : g_chars) CharNode(p);

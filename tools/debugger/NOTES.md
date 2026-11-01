@@ -193,6 +193,18 @@ is what reaches the fight screen's Simul, Tag and Turns sections: each tested at
 side with both teams in that mode. `test_ui.ps1` got `mark` and
 `until:text`: waits on the log, since a busy machine took a load from 10 s to 32 s.
 
+Whole projects (`app_explorer.cpp`, a def's menu in Explorer; `src/pack.cpp`, tested,
+and read back by Windows): Package as zip takes a def and what it names, defs among
+them (`DefClosure`; `NamesFile` now also knows `[Shaders]`, a font's `file`, an
+attached character, storyboards and music), says what is not found and what in its
+own folder nothing names. Files are stored, not compressed. Names are as on disk:
+`NormPath`'s lower case would not be found on Linux. Copy as a new screenpack makes
+`data/<name>/`: the motif's folder, the files of `data/` it names (next to the
+motif, where the engine looks first), and `<old folder>/` replaced in the defs' text
+(credits.def's `spr = ikemen1/system.sff`). Sounds, fonts and music elsewhere stay
+shared. It adds `-r data/<name>/system.def` to the session's arguments and leaves
+config.ini alone. Show > Screen shapes draws 16:9, 4:3 and a 5% margin over the picture.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -455,6 +467,7 @@ tools/debugger/
   src/gif.cpp/.h         animated GIF files
   src/palfile.cpp/.h     palettes in other programs' files, tools on colours, PalFX's sums
   src/pixels.cpp/.h      a picture of indices: lines, fill, rectangles, flips
+  src/pack.cpp/.h        zip files of a project's files, stored
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
