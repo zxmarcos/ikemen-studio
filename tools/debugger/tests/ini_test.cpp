@@ -157,6 +157,21 @@ static void TestRefs() {
     std::vector<std::pair<int, int>> users = Ini_ActionUsers(f, 5);
     CHECK(users.size() == 3); // p*.ko.anim, actionno, the BGCtrl Anim's value
     CHECK(Ini_ActionUsers(f, 6).empty());
+    // What the scripts look up in the character shown, not in the def
+    IniFile g;
+    Ini_Parse("[Select Info]\np1.face.anim = 0\np1.face.done.anim = 181\np1.face.spr = 9000,1\np2.palmenu.preview.anim = 181\n"
+              "p1.face.random.anim = 3\np1.cursor.active.anim = 4\n"
+              "[VS Screen]\np1.anim = 0\np1.done.anim = 181\np1.bg0.anim = 5\n",
+              g);
+    auto refIn = [&](int s, const char *key) {
+        for (const IniField &k : g.sections[s].fields)
+            if (k.key == key) return Ini_FieldRef(g.sections[s], k);
+        return (IniRefKind)-1;
+    };
+    for (const char *key : {"p1.face.anim", "p1.face.done.anim", "p1.face.spr", "p2.palmenu.preview.anim"}) CHECK(refIn(0, key) == kIniRefNone);
+    CHECK(refIn(0, "p1.face.random.anim") == kIniRefAction && refIn(0, "p1.cursor.active.anim") == kIniRefAction);
+    CHECK(refIn(1, "p1.anim") == kIniRefNone && refIn(1, "p1.done.anim") == kIniRefNone);
+    CHECK(refIn(1, "p1.bg0.anim") == kIniRefAction);
 }
 
 int main() {

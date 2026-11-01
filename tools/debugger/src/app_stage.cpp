@@ -63,7 +63,20 @@ const IniFile &StageIni(const SourceFile &sf) {
     return ini;
 }
 
-SourceFile *StageSource() { return g_stageDef.empty() ? nullptr : &LoadSource(g_stageDef); }
+static std::string g_stageOpened; // the stage picked in Explorer
+
+// The match's stage; the game not running, the one picked in Explorer, else the last match's or the toolbar's.
+SourceFile *StageSource() {
+    std::string def = g_stageDef;
+    if (!Connected() && !g_stageOpened.empty()) def = g_stageOpened;
+    if (def.empty()) def = SettingsStageDef();
+    return def.empty() ? nullptr : &LoadSource(def);
+}
+
+void StageOpen(const std::string &def) {
+    g_stageOpened = def;
+    g_stageBg = -1;
+}
 
 // The section of a BG (by its index in the stage), nullptr when the def does not have it.
 const IniSection *BgSection(const IniFile &ini, int index) {
@@ -87,6 +100,7 @@ void MoveBg(int index, int dx, int dy) {
     start[0] += dx, start[1] += dy;
     if (!Ini_SetField(sf->text, *s, "start", Ini_Floats(start, 2))) return;
     sf->version++;
+    if (!Connected()) return;
     char lua[96];
     snprintf(lua, sizeof(lua), "debugStageBgMove(%d, %d, %d)", index, dx, dy);
     SendRaw(lua);
@@ -522,6 +536,10 @@ void StageProblems(std::vector<Problem> &out) {
 void ChecksSection(SourceFile &sf, const IniFile &ini) {
     bool sffRead = false;
     const std::vector<StageFinding> &found = StageChecks(sf, ini, &sffRead);
+    FindingsSection(sf, found, sffRead);
+}
+
+void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead) {
     int count[3] = {};
     for (const auto &f : found) count[f.level]++;
     char header[96];
@@ -563,10 +581,11 @@ void StageWindow() {
     SourceFile *sfp = StageSource();
     if (!sfp) {
         if (g_bridge.Running()) ImGui::TextDisabled("Needs the game's frames (patched Ikemen GO), in a match.");
-        else EmptyNote("The stage of the match can be edited here once the game is running.");
+        else EmptyNote("Pick a stage in Explorer, or start the game: the stage of the match is edited here.");
         ImGui::End();
         return;
     }
+    bool live = Connected() && !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(sfp->path);
     SourceFile &sf = *sfp;
     const IniFile &ini = StageIni(sf);
     std::vector<int> bgs = ini.StageBgs();
@@ -602,6 +621,8 @@ void StageWindow() {
         ImGui::End(); // what was parsed is old
         return;
     }
+    // What needs the game's picture
+    ImGui::BeginDisabled(!live);
     flow("Limits", box);
     ImGui::Checkbox("Limits", &g_stageLimits);
     ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"
@@ -613,23 +634,30 @@ void StageWindow() {
                           "The game's camera, and what the players can do, stay as they are.");
     flow("Fit the stage", pad);
     if (ImGui::Button(ICON_SEARCH " Fit the stage")) FitStage();
+    ImGui::EndDisabled();
     // The game restarted, or another tool turned it off
     static int offFrames;
     offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
     if (offFrames > 60) g_freeCam = false;
-    ImGui::TextDisabled("%s%s  %zu BGs, %zu drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), g_frameBgs.size());
     std::vector<int> ctrls = ini.StageBgCtrls();
     const StageView &sv = g_stageView;
-    int running = 0;
-    for (const auto &c : sv.ctrls) running += c.ran;
-    ImGui::Text("stage time %d", sv.time);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%zu BGCtrls, %d running", ctrls.size(), running);
-    flow("Restart the stage", pad);
-    if (ImGui::SmallButton(ICON_RESTART " Restart the stage")) SendRaw("debugStageReset()");
-    ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
-    if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
-        ImGui::TextColored(Ink(kYellow), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
+    if (live) {
+        ImGui::TextDisabled("%s%s  %zu BGs, %zu drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), g_frameBgs.size());
+        int running = 0;
+        for (const auto &c : sv.ctrls) running += c.ran;
+        ImGui::Text("stage time %d", sv.time);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu BGCtrls, %d running", ctrls.size(), running);
+        flow("Restart the stage", pad);
+        if (ImGui::SmallButton(ICON_RESTART " Restart the stage")) SendRaw("debugStageReset()");
+        ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
+        if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
+            ImGui::TextColored(Ink(kYellow), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
+    } else {
+        ImGui::TextColored(Ink(kOrange), "from disk");
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s%s  %zu BGs, %zu BGCtrls", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), ctrls.size());
+    }
 
     bool hasModel = false;
     for (const IniSection &s : ini.sections)
@@ -660,7 +688,7 @@ void StageWindow() {
             for (const auto &f : g_frameBgs) drawn = drawn || f.index == bg;
             bool ran = ctrl >= 0 && ctrl < (int)sv.ctrls.size() && sv.ctrls[ctrl].ran;
             std::string label = (bg >= 0 || ctrl >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
-            bool dim = bg >= 0 && !drawn;
+            bool dim = live && bg >= 0 && !drawn;
             if (dim) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             if (ran) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kGreen));
             if (ImGui::Selectable(label.c_str(), selSection == i)) {

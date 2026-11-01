@@ -37,6 +37,7 @@
 #include "sff.h"
 #include "snd.h"
 #include "ini.h"
+#include "stagecheck.h"
 #include "gltf.h"
 #include "undo.h"
 #include "editor.hpp"
@@ -483,6 +484,8 @@ bool IsTextFile(const std::string &path); // not one no window edits as text (sf
 // Opens a file in the window that edits it: Code (text), Sprites (pal: an SFF v1's palette), Sounds
 void OpenPath(const std::string &path, bool keep, const std::string &pal = "");
 void ProjectFiles(std::vector<std::string> &out); // every file of the projects, for Go to file
+std::string ScreenpackDef();                        // the motif's def: the game's, else config.ini's
+bool DefNamesFile(const std::string &def, const std::string &name); // the file a def names is found
 std::string SpritesFileOf(const std::string &file); // the SFF of a def, or of an AIR file by itself; "" none
 std::string DefFile(const std::string &def, const char *key); // the file a def's key names, found; "" none
 void ExplorerWindow();
@@ -606,6 +609,9 @@ const IniFile &StageIni(const SourceFile &sf); // parsed, again when its text ch
 void StageEdited(SourceFile &sf);             // after an edit of its text: the game shows it
 void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
 void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
+void StageOpen(const std::string &def);          // the Stage window shows that def while the game is not running
+// A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
+void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the
 // Game window its nodes outlined and picked
 void OnModel(const Json &j);
@@ -685,6 +691,7 @@ std::string ScreenSelection(const char **window); // the element selected, as te
 bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                    ImVec2 scale);
 void ScreenWindows(); // Fight screen, Motif
+void ScreenProblems(std::vector<Problem> &out); // the checks of the fight screen and the motif
 const IniSection *MotifSection(const char *lower); // a section of the motif's def, nullptr if none
 
 // Roster: the motif's select.def

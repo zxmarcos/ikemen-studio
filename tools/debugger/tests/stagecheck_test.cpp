@@ -153,9 +153,74 @@ static void TestReleaseStages() {
     if (!read) printf("(the release's stages were not found: run from the game's folder)\n");
 }
 
+static void TestScreenMistakes() {
+    std::string text = "[Files]\n"                  // 1
+                       "spr = gone.sff\n"           // 2 not found
+                       "font1 = there.def, 0, 1\n"  // 3
+                       "[Music]\n"                  // 4
+                       "title.bgm = gone.mp3\n"     // 5
+                       "title.bgm.loop = 1\n"       // 6
+                       "[Round]\n"                  // 7
+                       "a.anim = 5\n"               // 8
+                       "b.anim = 6\n"               // 9 no such action
+                       "c.anim = -1\n"              // 10 none
+                       "d.spr = 1, 0\n"             // 11
+                       "e.spr = 2, 0\n"             // 12 no such sprite
+                       "f.face.spr = 9000, 1\n"     // 13 a character's
+                       "g.snd = 1, 0\n"             // 14
+                       "h.snd = 2, 0\n"             // 15 no such sound
+                       "i.snd = F7, 0\n"            // 16 the common sounds
+                       "[Begin Action 5]\n"         // 17
+                       "1,0, 0,0, 3\n"              // 18
+                       "3,0, 0,0, 3\n"              // 19 no such sprite
+                       "-1,0, 0,0, 3\n"             // 20 blank
+                       "[Begin Action 7]\n"         // 21 nothing names it
+                       "1,0, 0,0, -1\n";
+    SffDoc sff;
+    SffSprite s;
+    s.group = 1, s.number = 0;
+    sff.sprites.push_back(s);
+    auto sound = [](int g, int n) { return g == 1 && n == 0; };
+    auto exists = [](const std::string &f) { return f == "there.def"; };
+    std::vector<StageFinding> f = Screen_Check(text, &sff, sound, exists);
+    for (const auto &x : f) printf("  %d %d %s\n", (int)x.level, x.line, x.text.c_str());
+    CHECK(Has(f, StageFinding::Warning, 2, "gone.sff"));
+    CHECK(Has(f, StageFinding::Warning, 5, "gone.mp3"));
+    CHECK(Has(f, StageFinding::Warning, 9, "[Begin Action 6]"));
+    CHECK(Has(f, StageFinding::Warning, 12, "sprite 2, 0"));
+    CHECK(Has(f, StageFinding::Warning, 15, "sound 2, 0"));
+    CHECK(Has(f, StageFinding::Warning, 19, "sprite 3, 0"));
+    CHECK(Has(f, StageFinding::Note, 21, "7"));
+    CHECK(f.size() == 7); // nothing else: not lines 3, 8, 10, 11, 13, 14, 16, 18, 20
+}
+
+// The release's screens: what they name is there, or a warning says so (read here, the engine loads them)
+static void TestReleaseScreens() {
+    const char *const defs[][3] = {{"data/fight.def", "data/fight.sff", "data/"}, {"data/ikemen1/system.def", "data/ikemen1/system.sff", "data/ikemen1/"}};
+    for (const auto &d : defs) {
+        std::string text;
+        if (!ReadText(d[0], text)) continue;
+        SffDoc sff;
+        bool read = Sff_Load(sff, d[1]);
+        std::string dir = d[2];
+        auto exists = [&](const std::string &f) {
+            for (const std::string &base : {dir, std::string("data/"), std::string(), std::string("font/"), std::string("sound/")}) {
+                std::ifstream in(base + f);
+                if (in) return true;
+            }
+            return false;
+        };
+        std::vector<StageFinding> found = Screen_Check(text, read ? &sff : nullptr, {}, exists);
+        printf("%s (%zu sprites):\n", d[0], sff.sprites.size());
+        for (const auto &x : found) printf("  %s %d: %s\n", x.level == StageFinding::Note ? "note" : "warning", x.line, x.text.c_str());
+    }
+}
+
 int main() {
     TestMistakes();
     TestReleaseStages();
+    TestScreenMistakes();
+    TestReleaseScreens();
     if (g_failed) {
         printf("stagecheck-test: %d failed\n", g_failed);
         return 1;

@@ -12,6 +12,7 @@
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 #include "ini.h"
+#include "stagecheck.h"
 
 namespace app {
 
@@ -36,6 +37,11 @@ struct ScreenDef {
     IniFile ini;
     bool parsed = false;
     int animAction = -1; // the action the element selected showed when last on screen
+    // Its checks, again when its text or its SFF changes
+    std::vector<StageFinding> found;
+    std::string foundText;
+    unsigned foundSprites = 0;
+    bool foundDone = false, foundRead = false;
 
     SourceFile *Source() { return def.empty() ? nullptr : &LoadSource(def); }
     SpriteFile *Sprites() { return def.empty() || sff.empty() ? nullptr : &SpriteFileAt(sff); }
@@ -413,12 +419,45 @@ static bool PositionDrag(ScreenDef &d, SourceFile &sf, const IniSection &s, cons
     return changed;
 }
 
+static const std::vector<StageFinding> &Checks(ScreenDef &d, SourceFile &sf) {
+    SpriteFile *spr = d.Sprites();
+    const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
+    unsigned sprites = spr ? spr->version : 0;
+    if (d.foundDone && d.foundText == sf.text && d.foundSprites == sprites) return d.found;
+    std::string snd = DefFile(sf.path, "snd");
+    const SndFile *sounds = snd.empty() ? nullptr : SndAt(snd);
+    std::function<bool(int, int)> hasSound;
+    if (sounds) hasSound = [sounds](int g, int n) { return Snd_Find(*sounds, g, n) >= 0; };
+    d.found = Screen_Check(sf.text, sff, hasSound, [&](const std::string &name) { return DefNamesFile(sf.path, name); });
+    d.foundText = sf.text, d.foundSprites = sprites, d.foundDone = true, d.foundRead = sff != nullptr;
+    return d.found;
+}
+
+// The game not running: the screenpack it would use, read from disk.
+static void DefsFromDisk() {
+    if (Connected()) return;
+    for (ScreenDef *d : g_screens) d->items.clear();
+    if (g_motif.def.empty()) g_motif.def = ScreenpackDef();
+    if (g_fight.def.empty()) g_fight.def = DefFile(g_motif.def, "fight");
+    for (ScreenDef *d : {&g_motif, &g_fight})
+        if (!d->def.empty() && d->sff.empty()) d->sff = SpritesFileOf(d->def);
+}
+
+void ScreenProblems(std::vector<Problem> &out) {
+    DefsFromDisk();
+    for (ScreenDef *d : {&g_fight, &g_motif}) {
+        SourceFile *sf = d->Source();
+        if (!sf) continue;
+        for (const StageFinding &f : Checks(*d, *sf)) out.push_back({(int)f.level, "Screen", sf->path, f.line, f.text});
+    }
+}
+
 static void ScreenWindow(ScreenDef &d) {
     Pump(d);
     if (!BeginTool(d.window)) return;
     SourceFile *sfp = d.Source();
     if (!sfp) {
-        if (!g_bridge.Running()) EmptyNote("What the game is showing can be edited here once it is running.");
+        if (!g_bridge.Running()) EmptyNote("The storyboard playing is edited here once the game is running.");
         else ImGui::TextDisabled(d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)."
                                  : d.motif                      ? "Needs the game's frames (patched Ikemen GO)."
                                                                 : "Needs the game's frames (patched Ikemen GO), in a match.");
@@ -428,6 +467,10 @@ static void ScreenWindow(ScreenDef &d) {
     SourceFile &sf = *sfp;
     const IniFile &ini = d.Ini(sf);
     float em = ImGui::GetFontSize();
+    if (!Connected()) {
+        ImGui::TextColored(Ink(kOrange), "from disk");
+        ImGui::SameLine();
+    }
 
     ImGui::BeginDisabled(!sf.Dirty());
     bool save = ImGui::Button(ICON_SAVE " Save (Ctrl+S)");
@@ -461,6 +504,10 @@ static void ScreenWindow(ScreenDef &d) {
     ImGui::TextDisabled("%s%s  %zu elements drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", d.items.size());
     if (d.motif)
         ImGui::TextDisabled("Some values are read once, when a screen or the game starts: they show then.");
+    {
+        const std::vector<StageFinding> &found = Checks(d, sf);
+        FindingsSection(sf, found, d.foundRead);
+    }
 
     // Left: the sections (not the animations), with how many of their elements are on screen
     if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
@@ -581,6 +628,7 @@ static void ScreenWindow(ScreenDef &d) {
 }
 
 void ScreenWindows() {
+    DefsFromDisk();
     ScreenWindow(g_fight);
     ScreenWindow(g_motif);
     ScreenWindow(g_story);

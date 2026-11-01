@@ -36,6 +36,7 @@ void Gather(std::vector<Problem> &out) {
     for (const Problem &p : g_engine) out.push_back(p);
     LintProblems(out);
     StageProblems(out);
+    ScreenProblems(out);
 }
 
 } // namespace

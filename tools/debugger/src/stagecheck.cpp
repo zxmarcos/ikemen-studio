@@ -77,6 +77,69 @@ float Num(const IniSection *s, const char *key, float otherwise) {
 
 } // namespace
 
+std::vector<StageFinding> Screen_Check(const std::string &text, const SffDoc *sff, const std::function<bool(int, int)> &hasSound,
+                                       const std::function<bool(const std::string &)> &exists) {
+    std::vector<StageFinding> out;
+    IniFile ini;
+    Ini_Parse(text, ini);
+    AirFile air;
+    Air_Parse(text, air);
+    auto unquoted = [](std::string v) {
+        v = v.substr(0, v.find(',')); // a font's value goes on after its file
+        while (!v.empty() && v.back() == ' ') v.pop_back();
+        return v.size() >= 2 && v.front() == '"' && v.back() == '"' ? v.substr(1, v.size() - 2) : v;
+    };
+    std::set<int> used;
+    for (const IniSection &s : ini.sections) {
+        std::string what = "[" + s.name + "] ";
+        for (const IniField &f : s.fields) {
+            bool names = s.lower == "files" ||
+                         (s.lower == "music" && f.key.size() > 4 && f.key.compare(f.key.size() - 4, 4, ".bgm") == 0);
+            if (names) {
+                std::string v = unquoted(f.value);
+                if (!v.empty() && !exists(v)) out.push_back({StageFinding::Warning, f.line, what + f.key + ": " + v + " is not found"});
+                continue;
+            }
+            IniRefKind kind = Ini_FieldRef(s, f);
+            // "S1, 0" and "F7, 0" name another file's sounds
+            if (kind == kIniRefNone || f.value.empty() || !(isdigit((unsigned char)f.value[0]) || f.value[0] == '-')) continue;
+            std::vector<int> v = Ints(f.value);
+            if (v.empty() || v[0] < 0) continue;
+            if (kind == kIniRefAction) {
+                used.insert(v[0]);
+                if (!air.actions.count(v[0]))
+                    out.push_back({StageFinding::Warning, f.line, what + f.key + ": there is no [Begin Action " + std::to_string(v[0]) + "]"});
+            } else if (kind == kIniRefSprite && v.size() >= 2 && v[0] < 9000 && sff && Sff_FindSprite(*sff, v[0], v[1]) < 0) {
+                out.push_back({StageFinding::Warning, f.line,
+                               what + f.key + ": sprite " + std::to_string(v[0]) + ", " + std::to_string(v[1]) + " is not in the SFF"});
+            } else if (kind == kIniRefSound && v.size() >= 2 && hasSound && !hasSound(v[0], v[1])) {
+                out.push_back({StageFinding::Warning, f.line,
+                               what + f.key + ": sound " + std::to_string(v[0]) + ", " + std::to_string(v[1]) + " is not in the SND"});
+            }
+        }
+    }
+    int unused = 0, firstUnused = 0;
+    std::string list;
+    for (const auto &[no, a] : air.actions) {
+        if (sff)
+            for (const AirElem &e : a.elems)
+                if (e.group >= 0 && e.group < 9000 && Sff_FindSprite(*sff, e.group, e.image) < 0)
+                    out.push_back({StageFinding::Warning, e.line,
+                                   "[Begin Action " + std::to_string(no) + "]: sprite " + std::to_string(e.group) + ", " + std::to_string(e.image) +
+                                       " is not in the SFF"});
+        if (used.count(no)) continue;
+        if (!unused) firstUnused = a.line;
+        if (unused++ < 12) list += (list.empty() ? "" : ", ") + std::to_string(no);
+    }
+    if (unused)
+        out.push_back({StageFinding::Note, firstUnused,
+                       std::to_string(unused) + " actions no field names (the scripts may show them): " + list + (unused > 12 ? "..." : "")});
+    std::stable_sort(out.begin(), out.end(), [](const StageFinding &a, const StageFinding &b) {
+        return a.level != b.level ? a.level < b.level : a.line < b.line;
+    });
+    return out;
+}
+
 std::vector<StageFinding> Stage_Check(const std::string &text, const SffDoc *sff,
                                       const std::function<bool(const std::string &)> &exists) {
     std::vector<StageFinding> out;

@@ -90,9 +90,22 @@ std::string Ini_SpritesFile(const std::string &text) {
 // The first word of a section's name, as Ikemen's SectionName cuts it (at the first space).
 static std::string FirstWord(const std::string &lower) { return lower.substr(0, lower.find(' ')); }
 
+// The motif's fields the scripts look up in the character shown (start.f_animGet): its portrait on the
+// select screen, its animation on the versus screen; not numbers of this def. A portrait's random and
+// slot pictures are the motif's own.
+static bool OfTheCharacter(const IniSection &s, const std::string &key) {
+    bool select = s.lower == "select info", versus = s.lower == "vs screen" || s.lower == "victory screen";
+    size_t dot = key.find('.');
+    if ((!select && !versus) || key.size() < 3 || key[0] != 'p' || !isdigit((unsigned char)key[1]) || dot == std::string::npos) return false;
+    std::string rest = key.substr(dot + 1);
+    if (rest.find(".random.") != std::string::npos || rest.find(".slot.") != std::string::npos) return false;
+    if (rest.compare(0, 4, "face") == 0 || rest.compare(0, 15, "palmenu.preview") == 0) return true;
+    return versus && (rest == "anim" || rest == "spr" || rest == "done.anim" || rest == "done.spr");
+}
+
 IniRefKind Ini_FieldRef(const IniSection &s, const IniField &f) {
     if (s.lower == "files" || s.lower == "bgdef" || s.lower == "scenedef" || s.lower == "music" ||
-        s.lower.compare(0, 13, "begin action ") == 0)
+        s.lower.compare(0, 13, "begin action ") == 0 || OfTheCharacter(s, f.key))
         return kIniRefNone;
     auto named = [&](const char *name) {
         std::string k = name, tail = "." + k;

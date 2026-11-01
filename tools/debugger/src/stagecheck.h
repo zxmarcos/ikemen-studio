@@ -20,3 +20,10 @@ struct StageFinding {
 // next to the def first). sff: the stage's sprites, nullptr when they could not be read.
 std::vector<StageFinding> Stage_Check(const std::string &text, const SffDoc *sff,
                                       const std::function<bool(const std::string &)> &exists);
+
+// The checks of a screen's def (fight.def, system.def, a storyboard): files of [Files] and [Music] that
+// are not found, the actions, sprites and sounds its fields name that do not exist, actions showing
+// sprites the SFF has not, actions no field names. sff: nullptr when it could not be read; hasSound:
+// empty when its SND could not be. A character's portrait (group 9000) is not of this SFF.
+std::vector<StageFinding> Screen_Check(const std::string &text, const SffDoc *sff, const std::function<bool(int, int)> &hasSound,
+                                       const std::function<bool(const std::string &)> &exists);

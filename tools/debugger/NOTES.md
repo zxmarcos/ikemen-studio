@@ -131,7 +131,8 @@ The Stage and Screenpack workspaces now hold Game over Animation and the
 stage/screen window over Assets. An action a BG uses cannot be deleted live: the
 engine refuses ("Invalid BG action"), keeps the stage, and the Checks say so.
 The engine stays on NOW LOADING with `stages/interactivestage.def` under
-`test_ui.ps1` (its `attachedChar`): a copy without that line plays.
+`test_ui.ps1` (its `attachedChar`): a copy without that line plays. The engine from
+before this work does the same; the cause is not known yet.
 
 A def's fields know what they name (`Ini_FieldRef`, tested; `src/app_refs.cpp`): the
 tables' third column shows a field's sprite or action as a thumbnail, red when it
@@ -142,6 +143,22 @@ not of this SFF: not an error. Animation says how many fields use an action
 Animation (`TrackAnims`, by file). Sounds shows any SND (`ShowInSounds`, Explorer
 too), with a clipper: fight.snd and system.snd are not small; saving one reloads
 the screens using it without keeping their files (`ScreenSoundsSaved`).
+
+Without the game, the Stage, Fight screen and Motif windows work from disk
+(`StageSource`, `DefsFromDisk`: the stage picked in Explorer, the motif of
+config.ini and its fight def), saying "from disk", what needs the picture
+disabled. Reloads do nothing then, so no `.ikdbg` file is left behind. With the
+game, the Stage window shows the match's stage, whatever Explorer picks. Storyboards
+open in Animation and Code from disk, but their window still needs one playing.
+
+Screens have checks too (`Screen_Check`, in their windows and Problems): files of
+[Files] and [Music], the actions, sprites and sounds fields name, actions' sprites,
+actions nothing names. Fields the scripts look up in the character shown are not
+the def's: `start.f_animGet` reads `pN.face*` on the select screen and `pN.anim`,
+`pN.done.anim` on the versus screen from the character (action 0, 181), and group 9000
+is a portrait (`OfTheCharacter`); `face.random` and `face.slot` are the motif's own. The
+release gives `[Round] dko.anim` naming action 534, which does not exist: its comment
+says it is a dummy on purpose.
 
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's

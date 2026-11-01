@@ -258,7 +258,7 @@ static bool FileAnim(ScreenAnim &out) {
     std::string sff = SpritesFileOf(g_animFile);
     out.sprites = sff.empty() ? nullptr : &SpriteFileAt(sff);
     out.label = ScreenFileName(g_animFile);
-    out.disk = out.label.empty();
+    out.disk = out.label.empty() || !Connected();
     if (!out.disk) {
         out.label = "The " + out.label;
         if (g_animFollow) StageBgAnim(g_animFile, out.action, out.elem); // the BG picked

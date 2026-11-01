@@ -147,7 +147,10 @@ right click in Explorer opens any def's animations or an AIR file such as
 `fightfx.air`, with the game running or not. In those windows a field naming a
 sprite or an action shows it beside its value (a click picks another), one naming a
 sound plays it, and Ctrl+Z undoes. Sounds opens any SND file (`fight.snd`,
-`system.snd`, `common.snd`) from Explorer.
+`system.snd`, `common.snd`) from Explorer. Stage, Fight screen and Motif work with
+the game stopped too, on the stage picked in Explorer and the screenpack of
+`config.ini`, and their Checks say which files, actions, sprites and sounds are
+missing.
 
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code

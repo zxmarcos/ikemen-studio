@@ -412,12 +412,23 @@ void StageNode(const Project &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
-    bool open = ImGui::TreeNodeEx(p.def.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth, "%s", p.name.c_str());
+    SourceFile *shown = Connected() ? nullptr : StageSource(); // the game not running: the Stage window's
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (shown && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
+    bool open = ImGui::TreeNodeEx(p.def.c_str(), flags, "%s", p.name.c_str());
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) StageOpen(p.def);
     bool playing = NormPath(p.def) == NormPath(g_stageDef);
     if (playing) RowNote("playing", ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Use as the stage")) g_settings.stage = p.def.compare(0, 7, "stages/") == 0 ? p.def.substr(7) : p.def;
         ImGui::SetItemTooltip("In the match the game starts with (Launch, Restart).");
+        ImGui::BeginDisabled(Connected());
+        if (ImGui::MenuItem("Open in the Stage window")) {
+            StageOpen(p.def);
+            ShowWindow("Stage");
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(Connected() ? "With the game running, the window shows the match's stage." : "Its sections and fields, edited from disk.");
         ImGui::Separator();
         FileMenuItems(p.def, "");
         ImGui::EndPopup();
@@ -438,6 +449,10 @@ bool Group(const char *label, size_t count, bool open = true) {
 } // namespace
 
 bool IsTextFile(const std::string &path) { return !IsBinary(path); }
+
+std::string ScreenpackDef() { return MotifPath(); }
+
+bool DefNamesFile(const std::string &def, const std::string &name) { return GameFileExists(Resolve(def, name, false)); }
 
 std::string DefFile(const std::string &def, const char *key) {
     for (const DefEntry &f : DefFiles(def))
