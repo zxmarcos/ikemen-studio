@@ -796,7 +796,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     // sprite (group, image), offset (x, y), time
     int v[5] = {el.group, el.image, el.x, el.y, el.time};
     bool done = false;
-    float pickW = ImGui::CalcTextSize("Pick...").x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
+    float pickW = ImGui::CalcTextSize(ICON_IMAGE " Pick...").x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
     FieldLabel("Sprite");
     ImGui::SetNextItemWidth(std::max(em * 5, ImGui::GetContentRegionAvail().x - pickW));
     if (ImGui::DragInt2("##sprite", &v[0], 0.2f)) Air_SetElem(sf.text, el, v[0], v[1], v[2], v[3], v[4]);
@@ -1016,7 +1016,7 @@ void AnimationWindow() {
     {
         ImGui::SameLine();
         ImGui::TextDisabled("· %s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
-        float w = ImGui::CalcTextSize("Save").x + ImGui::CalcTextSize("Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
         rightAlign(w);
         ImGui::BeginDisabled(!sf.Dirty());
         if (sf.Dirty()) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));

@@ -538,7 +538,7 @@ void ExplorerWindow() {
     for (const Entity &e : g_ents)
         if (!e.helper) AirPath(e.pn);
     const ImGuiStyle &st = ImGui::GetStyle();
-    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize("Reload").x + st.FramePadding.x * 2 + st.ItemSpacing.x));
+    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(ICON_RESTART " Reload").x + st.FramePadding.x * 2 + st.ItemSpacing.x));
     if (ImGui::InputTextWithHint("##filter", "Filter", g_filter.InputBuf,
                                  IM_ARRAYSIZE(g_filter.InputBuf)))
         g_filter.Build();

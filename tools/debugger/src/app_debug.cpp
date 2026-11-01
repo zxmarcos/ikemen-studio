@@ -250,7 +250,7 @@ void PlayersWindow() {
     if (ImGui::BeginTable("players", 14, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         float em = ImGui::GetFontSize();
-        ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 5.5f);
+        ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 3.5f);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, em * 8);
         for (const char *h : {"State", "Prev", "Anim", "Elem", "Time", "Type", "Ctrl", "Pos", "Vel", "Life", "Power",
                               "Explods, projs"}) {
@@ -287,7 +287,7 @@ void PlayersWindow() {
             ImGui::TableNextColumn();
             ImGui::Text("%.2f, %.2f", e.vx, e.vy);
             ImGui::TableNextColumn();
-            ImGui::Text("%d/%d", e.life, e.lifemax);
+            ImGui::Text("%d", e.life);
             ImGui::TableNextColumn();
             ImGui::Text("%d", e.pow);
             ImGui::TableNextColumn();
@@ -372,7 +372,14 @@ void InspectorWindow() {
     }
     if (Connected()) Watch(e->id);
     ImGui::Text("%s  %s", Who(e->pn, e->helper, e->id).c_str(), e->name.c_str());
-    if (ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingFixedFit)) {
+    // The values take all that is left: their widths change each tick
+    auto fields = [](const char *id) {
+        if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingFixedFit)) return false;
+        ImGui::TableSetupColumn("label");
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        return true;
+    };
+    if (fields("fields")) {
         Field("State", "%d (prev %d)", e->st, e->pst);
         Field("Anim", "%d", e->anim);
         Field("Elem", "%d of %d, %d ticks in", e->elem, e->elemn, e->etime);
@@ -387,7 +394,7 @@ void InspectorWindow() {
         if (AdvancedTools()) ImGui::SetNextItemOpen(true, ImGuiCond_Once);
         return ImGui::CollapsingHeader(label);
     };
-    if (section("Details") && ImGui::BeginTable("details", 2, ImGuiTableFlags_SizingFixedFit)) {
+    if (section("Details") && fields("details")) {
         Field("Time", "%d", e->time);
         Field("AnimTime", "%d", e->atime);
         Field("Types", "%s / %s / %s", e->stt.c_str(), e->mvt.c_str(), e->phy.c_str());
@@ -1075,8 +1082,10 @@ bool ControllerInput(float em) {
                "as a negative state runs: a ChangeState is taken at once. CNS: a [State] header and "
                "\"trigger1 = 1\" are added when missing; several [State] blocks run in order. ZSS: statements, "
                "with if, let and the character's functions.");
+    ImGui::PushFont(dbg::Editor_Font(), 0.0f);
     bool enter = ImGui::InputTextMultiline("##ctrl", &text, ImVec2(-FLT_MIN, -FLT_MIN),
                                            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AllowTabInput);
+    ImGui::PopFont();
     if (enter) ImGui::SetKeyboardFocusHere(-1); // Ctrl+Enter leaves the text: back to it
     if ((run || enter) && e && Connected() && !text.empty()) {
         Log(LogLine::Info, std::string(zss ? "> (ZSS) " : "> (CNS) ") + text);
@@ -1110,6 +1119,7 @@ void ConsoleWindow() {
     float footer = mode == 0 ? ImGui::GetFrameHeightWithSpacing()
                              : ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeight() * 6;
     if (ImGui::BeginChild("log", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar)) {
+        ImGui::PushFont(dbg::Editor_Font(), 0.0f);
         for (const auto &l : g_log) {
             if (l.kind == LogLine::Engine && !showEngine) continue;
             ImVec4 color = l.kind == LogLine::Error    ? Ink(kRed)
@@ -1119,6 +1129,7 @@ void ConsoleWindow() {
                                                        : ImGui::GetStyleColorVec4(ImGuiCol_Text);
             ImGui::TextColored(color, "%s", l.text.c_str());
         }
+        ImGui::PopFont();
         if (toBottom || (g_logScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetFontSize() * 4))
             ImGui::SetScrollHereY(1.0f);
         g_logScroll = toBottom = false;
@@ -1141,9 +1152,12 @@ void ConsoleWindow() {
         return 0;
     };
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::InputTextWithHint("##lua", "Lua, e.g.  player(2); return stateNo(), var(3)", &input,
-                                 ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory,
-                                 callback)) {
+    ImGui::PushFont(dbg::Editor_Font(), 0.0f);
+    bool entered = ImGui::InputTextWithHint("##lua", "Lua, e.g.  player(2); return stateNo(), var(3)", &input,
+                                            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory,
+                                            callback);
+    ImGui::PopFont();
+    if (entered) {
         if (!input.empty()) {
             Log(LogLine::Info, "> " + input);
             Exec(input);

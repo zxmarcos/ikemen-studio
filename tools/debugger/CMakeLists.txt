@@ -29,20 +29,27 @@ target_link_libraries(imgui PUBLIC opengl32)
 add_library(lodepng STATIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/lodepng.cpp")
 target_include_directories(lodepng PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng")
 
-# Font Awesome Free 6.5.2 (fonts: SIL OFL 1.1, icons: CC BY 4.0, third_party/fontawesome/LICENSE.txt),
-# embedded as a byte array so the exe needs no file next to it.
-set(_fa "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fontawesome/fa-solid-900.ttf")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_fa}")
-file(READ "${_fa}" _fa_hex HEX)
-string(LENGTH "${_fa_hex}" _fa_len)
-math(EXPR _fa_size "${_fa_len} / 2")
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _fa_bytes "${_fa_hex}")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icon_font.cpp"
-  "extern const unsigned char kIconFont[] = {${_fa_bytes}};\nextern const unsigned kIconFontSize = ${_fa_size};\n")
+# The fonts, embedded as byte arrays so the exe needs no file next to it. Font Awesome Free 6.5.2
+# (fonts: SIL OFL 1.1, icons: CC BY 4.0, third_party/fontawesome/LICENSE.txt); in third_party/fonts,
+# Roboto 2.138 (Apache 2.0) for the interface and JetBrains Mono 2.304 (SIL OFL 1.1) for code.
+set(_fonts_cpp "${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp")
+file(WRITE "${_fonts_cpp}" "")
+function(embed_font name path)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${path}")
+  file(READ "${path}" _hex HEX)
+  string(LENGTH "${_hex}" _len)
+  math(EXPR _size "${_len} / 2")
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
+  file(APPEND "${_fonts_cpp}"
+    "extern const unsigned char ${name}[] = {${_bytes}};\nextern const unsigned ${name}Size = ${_size};\n")
+endfunction()
+embed_font(kIconFont "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fontawesome/fa-solid-900.ttf")
+embed_font(kUiFont "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/Roboto-Regular.ttf")
+embed_font(kCodeFont "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/JetBrainsMono-Regular.ttf")
 
 add_executable(ikemen-debugger WIN32
   src/main.cpp
-  "${CMAKE_CURRENT_BINARY_DIR}/icon_font.cpp"
+  "${_fonts_cpp}"
   src/app.cpp
   src/app_game.cpp
   src/app_anim.cpp

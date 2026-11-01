@@ -279,7 +279,9 @@ void MoveTab() {
     }
     if (ImGui::CollapsingHeader("The text it writes")) {
         std::string text = Make_MoveState(m, Cns_IsZss((*st)[0]));
+        ImGui::PushFont(dbg::Editor_Font(), 0.0f);
         ImGui::InputTextMultiline("##text", &text, ImVec2(-FLT_MIN, em * 18), ImGuiInputTextFlags_ReadOnly);
+        ImGui::PopFont();
     }
 }
 

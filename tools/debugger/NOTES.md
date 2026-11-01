@@ -314,7 +314,8 @@ tools/debugger/
   src/json.h             small JSON parser for the protocol
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
-  third_party/fontawesome Font Awesome Free 6.5.2 Solid (fonts OFL, icons CC BY 4.0): CMake embeds the TTF (build/icon_font.cpp), main.cpp merges it into ImGui's font; src/icons.h has the ICON_* names (UTF-8, generated from the font's CSS). Use them by literal concatenation: ICON_SAVE " Save"; windows' titles stay plain text (they are the layout's ids)
+  third_party/fontawesome Font Awesome Free 6.5.2 Solid (fonts OFL, icons CC BY 4.0): CMake embeds the TTF (build/fonts.cpp), main.cpp merges it into the interface's font; src/icons.h has the ICON_* names (UTF-8, generated from the font's CSS). Use them by literal concatenation: ICON_SAVE " Save", and measure a button by that same label; windows' titles stay plain text (they are the layout's ids)
+  third_party/fonts      Roboto 2.138 (Apache 2.0) for the interface, JetBrains Mono 2.304 (OFL) for code: embedded the same way, size 14 (main.cpp). Roboto over Inter because its digits are all as wide, so numbers that change each tick stay still; stb_truetype reads no OpenType features and no variable fonts, hence static TTFs. dbg::Editor_Font() gives the code font: PushFont(dbg::Editor_Font(), 0.0f) for code outside the editor (Console, Create's preview). Neither has kana or kanji
   scripts/               build.ps1/build.sh, msys_setup.ps1, test_ui.ps1, probe.ps1, gen_names (Go: ikemen_names.inc)
 ```
 

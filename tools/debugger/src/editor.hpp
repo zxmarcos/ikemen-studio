@@ -18,6 +18,9 @@ namespace dbg {
 /* A text editor for the files of a character (CNS, ZSS, CMD, AIR, DEF): line numbers, syntax colours,
    completion and documentation of triggers, controllers and their parameters (Ctrl+Space: all that fit). */
 struct CodeEditor;
+/* The font of code, monospaced: main.cpp gives it and the Console and other code on the screen take it too. */
+void Editor_SetFont(ImFont *font);
+ImFont *Editor_Font();
 CodeEditor *Editor_Create();
 void Editor_Destroy(CodeEditor *ed);
 /*

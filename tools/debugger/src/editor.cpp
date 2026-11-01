@@ -1159,6 +1159,18 @@ struct CodeEditor {
     std::vector<unsigned char> colors;  /* of the line being drawn */
 };
 
+static ImFont *g_font;
+
+void Editor_SetFont(ImFont *font)
+{
+    g_font = font;
+}
+
+ImFont *Editor_Font()
+{
+    return g_font;
+}
+
 /* The font measures of a frame. */
 struct Metrics {
     ImFont *font;
@@ -2758,7 +2770,7 @@ bool Editor_Draw(CodeEditor *ed, const char *id, std::string &text, unsigned int
     }
 
     /* the editors' own text size (popped before each return) */
-    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * zoom);
+    ImGui::PushFont(g_font, ImGui::GetStyle().FontSizeBase * zoom);
     Metrics m;
     InitMetrics(&m);
     if (ed->measured_size != m.size) {

@@ -219,7 +219,7 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
         if (on) ImGui::PopStyleColor();
     }
     ImGui::SameLine();
-    float addW = ImGui::CalcTextSize("Add PNG...").x + style.FramePadding.x * 2;
+    float addW = ImGui::CalcTextSize(ICON_PLUS " Add PNG...").x + style.FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - addW));
     if (ImGui::SmallButton(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
     ImGui::SetItemTooltip("Add sprites made of PNG files");
@@ -423,11 +423,12 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
         num[0] = s.group, num[1] = s.number;
     }
     Label("Number");
-    float renW = ImGui::CalcTextSize("Renumber").x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SetNextItemWidth(std::max(em * 5, ImGui::GetContentRegionAvail().x - renW));
+    float renW = ImGui::CalcTextSize(ICON_LIST " Renumber").x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
+    bool fits = ImGui::GetContentRegionAvail().x - renW >= em * 5; // else the button goes below
+    ImGui::SetNextItemWidth(fits ? ImGui::GetContentRegionAvail().x - renW : -FLT_MIN);
     ImGui::InputInt2("##num", num);
     ImGui::SetItemTooltip("Group, number");
-    ImGui::SameLine();
+    if (fits) ImGui::SameLine();
     bool same = num[0] == s.group && num[1] == s.number;
     bool taken = !same && Sff_FindSprite(d, num[0], num[1]) >= 0;
     ImGui::BeginDisabled(taken || same || num[0] < 0 || num[1] < 0);
@@ -609,7 +610,7 @@ void SpritesWindow() {
                         dirty ? " *" : "", d.sprites.size());
     ImGui::SetItemTooltip("%s: %zu sprites, %zu palettes", sf.path.c_str(), d.sprites.size(), d.pals.size());
     {
-        float w = ImGui::CalcTextSize("Save").x + ImGui::CalcTextSize("Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < w)
             ImGui::NewLine();
