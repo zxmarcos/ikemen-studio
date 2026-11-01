@@ -319,6 +319,11 @@ bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function
     return true;
 }
 
+std::string StageSelection() {
+    SourceFile *sf = StageSource();
+    return sf && g_stageBg >= 0 ? BgLabel(StageIni(*sf), g_stageBg) : "";
+}
+
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   ImVec2 scale) {
     static int dragBg = -1;
@@ -344,12 +349,24 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             corners(g_frameBgs[i], lo, hi);
             if (m.x >= lo.x && m.x < hi.x && m.y >= lo.y && m.y < hi.y) hover = i;
         }
+        // A tiled BG is sent as one tile: past it, it is still there along the axes it repeats on
+        for (int i = (int)g_frameBgs.size() - 1; i >= 0 && hover < 0 && ini; i--) {
+            const IniSection *s = g_frameBgs[i].tiled ? BgSection(*ini, g_frameBgs[i].index) : nullptr;
+            const IniField *tile = s ? s->Field("tile") : nullptr;
+            if (!tile) continue;
+            int x = 0, y = 0;
+            sscanf(tile->value.c_str(), "%d , %d", &x, &y);
+            ImVec2 lo, hi;
+            corners(g_frameBgs[i], lo, hi);
+            if ((x || (m.x >= lo.x && m.x < hi.x)) && (y || (m.y >= lo.y && m.y < hi.y))) hover = i;
+        }
         if (hover >= 0) {
             const FrameBg &b = g_frameBgs[hover];
             ImGui::SetTooltip("%s  layer %d%s\nDrag: move it (its start)", ini ? BgLabel(*ini, b.index).c_str() : "",
                               b.layer, b.tiled ? ", tiled" : "");
             if (clicked) {
                 g_stageBg = b.index;
+                ShowWindow("Stage");
                 dragBg = b.index;
                 rest = ImVec2(0, 0);
             }
@@ -538,9 +555,6 @@ void StageWindow() {
     flow("Reload", pad);
     if (ImGui::Button(ICON_RESTART " Reload")) ReloadStage(sf, true);
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
-    flow("Pick on the Game window", box);
-    if (ImGui::Checkbox("Pick on the Game window", &g_stagePick) && g_stagePick) g_screenPick = false;
-    ImGui::SetItemTooltip("The mouse picks and drags BGs, and the limits' handles, on the Game window instead of the players.");
     flow("Limits", box);
     ImGui::Checkbox("Limits", &g_stageLimits);
     ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"

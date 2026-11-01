@@ -248,6 +248,8 @@ float CheckboxWidth(const char *label); // what ImGui::Checkbox takes
 // The windows: the menu bar, each one opened or closed, the layouts (app_layout.cpp)
 bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden
 void ShowWindow(const char *name); // opened if closed, its tab to the front, without taking the keyboard
+enum PickMode { kPickFighters, kPickStage, kPickScreen }; // what a click on the Game window selects
+void SetPickMode(PickMode mode);
 bool AdvancedTools();              // the tools for looking inside a character are shown (View > Advanced tools)
 void SetAdvancedTools(bool on);
 void LayoutFrame();                // the menu bar and the dock space, at the start of a frame
@@ -534,6 +536,7 @@ struct StageView {
 };
 extern StageView g_stageView;
 extern bool g_stagePick; // the Game window picks and drags the stage's BGs, not the players
+std::string StageSelection();              // the BG selected, as text
 extern int g_stageBg;    // the BG selected, -1 none
 // On the Game window: the BGs' outlines; in pick mode, hover, click and drag. True when it has
 // the mouse. scale: screen pixels per picture pixel.
@@ -575,6 +578,8 @@ unsigned DrawModelPreview(const ModelPreviewArgs &a); // the picture's texture, 
 void ReadModelGeometry(const Json &mdl); // the frame geometry's stage "mdl"
 extern bool g_modelPick;                 // the Game window picks the model's nodes, not the players
 void ModelPickToggle();                  // its checkbox on the Game window's toolbar
+bool ModelPicking();                     // the Game window picks the model's nodes
+void ModelPickOff();
 bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   const std::function<ImVec2(ImVec2)> &toPicture);
 
@@ -610,6 +615,7 @@ void ScreenSpritesSaved(const std::string &path); // the screens using that SFF 
 
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players
+std::string ScreenSelection(const char **window); // the element selected, as text, and the window that edits it
 // On the Game window, as StageOverlay
 bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                    ImVec2 scale);

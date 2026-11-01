@@ -364,6 +364,45 @@ bool BoxEditOverlay(ImDrawList *draw, bool hovered, const std::function<ImVec2(f
     return BoxHandles(g_boxDrag, draw, hovered, t, airToScreen, screenToAir, fe.k.x < 0);
 }
 
+// A line above the picture: what is selected and where to edit it, or what a click would do
+static void SelectionLine(bool focused) {
+    ImGui::AlignTextToFramePadding();
+    auto action = [](const char *label, const char *window) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(label)) ShowWindow(window);
+    };
+    if (g_stagePick) {
+        std::string bg = StageSelection();
+        if (bg.empty()) {
+            ImGui::TextDisabled("Click a background to select it, drag to move it.");
+        } else {
+            ImGui::Text("%s", bg.c_str());
+            action(ICON_PEN " Edit", "Stage");
+        }
+    } else if (g_screenPick) {
+        const char *window = nullptr;
+        std::string item = ScreenSelection(&window);
+        if (item.empty()) {
+            ImGui::TextDisabled("Click a lifebar, a text or a menu item to select it, drag to move it.");
+        } else {
+            ImGui::Text("%s", item.c_str());
+            action(ICON_PEN " Edit", window);
+        }
+    } else if (ModelPicking()) {
+        ImGui::TextDisabled("Click a part of the 3D model to select it.");
+    } else if (const Entity *e = FindEntity(g_selId)) {
+        ImGui::Text("%s  %s  state %d, anim %d", Who(e->pn, e->helper, e->id).c_str(), e->name.c_str(), e->st, e->anim);
+        action(ICON_ANIM " Animation", "Animation");
+        action(ICON_IMAGE " Sprites", "Sprites");
+        action(ICON_CODE " Code", "Code");
+    } else {
+        ImGui::TextDisabled("Click a fighter to select it, drag to move it.");
+    }
+    ImGui::SameLine();
+    if (focused) ImGui::TextColored(Ink(kGreen), ICON_GAME " keys go to the game");
+    else ImGui::TextDisabled(ICON_GAME " click the picture to play");
+}
+
 void GameWindow() {
     if (!BeginTool("Game", ImGuiWindowFlags_NoNavInputs)) {
         ForwardKeys(false);
@@ -372,38 +411,42 @@ void GameWindow() {
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     ForwardKeys(focused);
     static bool showBoxes = true, showAxes = true, onlySelected = false, showKeys = false, showHistory = false;
-    // The toolbar goes on in a second line when the window is narrow
-    ImGui::Checkbox("Boxes", &showBoxes);
-    SameLineFits(CheckboxWidth("Axes"));
-    ImGui::Checkbox("Axes", &showAxes);
-    SameLineFits(CheckboxWidth("Keys"));
-    ImGui::Checkbox("Keys", &showKeys);
-    ImGui::SetItemTooltip("Under each player, the keys it holds (its own, the AI's, a dummy's or a take's).");
-    SameLineFits(CheckboxWidth("History"));
-    ImGui::Checkbox("History", &showHistory);
-    ImGui::SetItemTooltip("P1's last keys down the left side, P2's down the right, each with the ticks it lasted\n"
-                          "(newest on top), as training modes show them.");
-    SameLineFits(CheckboxWidth("Only the selected one"));
-    ImGui::Checkbox("Only the selected one", &onlySelected);
-    SameLineFits(CheckboxWidth("Follow it"));
-    ImGui::Checkbox("Follow it", &g_followSel);
-    ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
+    // What a click on the picture selects, and what is drawn over it; the line goes on in a second
+    // one when the window is narrow
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Select");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Fighters", !g_stagePick && !g_screenPick && !ModelPicking())) SetPickMode(kPickFighters);
+    ImGui::SetItemTooltip("A click selects a player or helper, a drag moves it.");
     SameLineFits(CheckboxWidth("Stage"));
-    if (ImGui::Checkbox("Stage", &g_stagePick) && g_stagePick) g_screenPick = false;
-    ImGui::SetItemTooltip("The mouse picks and drags the stage's BGs instead of the players (window Stage).");
-    SameLineFits(CheckboxWidth("Screenpack"));
-    if (ImGui::Checkbox("Screenpack", &g_screenPick) && g_screenPick) g_stagePick = false;
-    ImGui::SetItemTooltip("The mouse picks and drags the fight screen's elements (lifebars, time...) and the motif's\n(menus, select screen...) instead of the players (windows Fight screen, Motif).");
+    if (ImGui::RadioButton("Stage", g_stagePick)) SetPickMode(kPickStage);
+    ImGui::SetItemTooltip("A click selects one of the stage's backgrounds, a drag moves it; the limits' handles too.");
+    SameLineFits(CheckboxWidth("Screen"));
+    if (ImGui::RadioButton("Screen", g_screenPick)) SetPickMode(kPickScreen);
+    ImGui::SetItemTooltip("A click selects an element of the fight screen or the menus (lifebars, time...), a drag\nmoves it with its group, Alt+drag alone.");
     ModelPickToggle();
-    if (g_frameTex) {
+    SameLineFits(CheckboxWidth(ICON_WATCH " Show " ICON_CARET));
+    if (ImGui::Button(ICON_WATCH " Show " ICON_CARET)) ImGui::OpenPopup("show");
+    ImGui::SetItemTooltip("What is drawn over the game");
+    if (ImGui::BeginPopup("show")) {
+        ImGui::Checkbox("Collision boxes", &showBoxes);
+        ImGui::Checkbox("Axes", &showAxes);
+        ImGui::Checkbox("Keys", &showKeys);
+        ImGui::SetItemTooltip("Under each player, the keys it holds (its own, the AI's, a dummy's or a take's).");
+        ImGui::Checkbox("Input history", &showHistory);
+        ImGui::SetItemTooltip("P1's last keys down the left side, P2's down the right, each with the ticks it lasted\n"
+                              "(newest on top), as training modes show them.");
+        ImGui::Separator();
+        ImGui::Checkbox("Only the selected one", &onlySelected);
+        ImGui::Checkbox("Follow it when zoomed in", &g_followSel);
+        ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
+        ImGui::EndPopup();
+    }
+    if (g_frameTex && AdvancedTools()) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
-        ImGui::SameLine();
-        if (focused)
-            ImGui::TextColored(Ink(kGreen), "keys go to the game");
-        else
-            ImGui::TextDisabled("click the picture to play");
     }
+    if (g_frameTex && g_bridge.Running()) SelectionLine(focused);
     if (!g_frameTex || !g_bridge.Running()) {
         ImGui::TextDisabled(!g_bridge.Running()    ? "Launch the game (Launch, on the toolbar)."
                             : !g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
@@ -486,7 +529,8 @@ void GameWindow() {
     draw->ChannelsSplit(2);
     draw->ChannelsSetCurrent(1);
     bool boxesShown = false;
-    bool boxMouse = BoxEditOverlay(draw, hovered, toScreen, toPicture, boxesShown);
+    bool fighters = !g_stagePick && !g_screenPick && !ModelPicking();
+    bool boxMouse = BoxEditOverlay(draw, hovered && fighters, toScreen, toPicture, boxesShown);
     draw->ChannelsSetCurrent(0);
     // The fight screen's and the motif's elements, in front of the stage; in pick mode they take the mouse
     if (ScreenOverlay(draw, hovered && !boxMouse, clicked, toScreen, ImVec2(kx, ky))) {
@@ -608,6 +652,12 @@ void GameWindow() {
     draw->PopClipRect();
     if (focused) draw->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), IM_COL32(90, 200, 90, 200), 0, thick);
     ImGui::End();
+}
+
+void SetPickMode(PickMode mode) {
+    g_stagePick = mode == kPickStage;
+    g_screenPick = mode == kPickScreen;
+    ModelPickOff();
 }
 
 } // namespace app

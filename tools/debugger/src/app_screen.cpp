@@ -226,6 +226,14 @@ static bool MoveField(ScreenDef &d, SourceFile &sf, const std::string &section, 
     return Ini_SetField(sf.text, *s, key.c_str(), Ini_Floats(v, 2));
 }
 
+std::string ScreenSelection(const char **window) {
+    ScreenDef *d = g_lastScreen;
+    if (!d || d->section.empty()) return "";
+    SourceFile *sf = d->Source();
+    *window = d->window;
+    return ItemLabel(sf ? &d->Ini(*sf) : nullptr, d->section, d->prefix);
+}
+
 // ---------------------------------------------------------------------------
 // On the Game window
 // ---------------------------------------------------------------------------
@@ -430,14 +438,10 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + extra) ImGui::NewLine();
     };
-    float box = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
+    float pad = ImGui::GetStyle().FramePadding.x * 2;
     flow("Reload", pad);
     if (ImGui::Button(ICON_RESTART " Reload")) Reload(d, sf, true);
     ImGui::SetItemTooltip("The game loads the %s again (from the text here), e.g. after its files changed.", d.what);
-    flow("Pick on the Game window", box);
-    if (ImGui::Checkbox("Pick on the Game window", &g_screenPick) && g_screenPick) g_stagePick = false;
-    ImGui::SetItemTooltip("The mouse picks and drags the fight screen's and the motif's elements on the Game window\n"
-                          "instead of the players.");
     ImGui::TextDisabled("%s%s  %zu elements drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", d.items.size());
     if (d.motif)
         ImGui::TextDisabled("Some values are read once, when a screen or the game starts: they show then.");

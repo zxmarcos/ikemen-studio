@@ -310,6 +310,9 @@ ImGuiID NearNode(const ToolWindow &self) {
 // or follows the state
 bool g_codeAsked = true;
 
+// A click on the game selects what the workspace is about
+void PickFor(const Workspace &w) { SetPickMode(w.code == kStageDef ? kPickStage : w.code == kFightDef ? kPickScreen : kPickFighters); }
+
 void CodeFor(const Workspace &w) {
     std::string file = w.code == kStageDef ? g_stageDef : w.code == kFightDef ? FightScreenDef() : "";
     if (w.code != kFollow && file.empty()) return;
@@ -637,6 +640,7 @@ void LayoutFrame() {
         const Workspace &w = g_spaces[g_space];
         if (g_firstRun || w.saved.empty()) Enter(w.layout, size);
         else OpenFrom(w.saved);
+        PickFor(w);
         g_entered = true;
         g_firstRun = false;
         g_layoutVersion = kLayoutVersion;
@@ -647,6 +651,7 @@ void LayoutFrame() {
         g_space = g_spaceAsked;
         const Workspace &w = g_spaces[g_space];
         Enter(w.saved.empty() ? w.layout : w.saved, size);
+        PickFor(w);
         g_codeAsked = true;
         ImGui::MarkIniSettingsDirty();
     }

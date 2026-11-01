@@ -2052,6 +2052,9 @@ void ReadModelGeometry(const Json &mdl) {
 // On the Game window
 // ---------------------------------------------------------------------------
 
+bool ModelPicking() { return g_modelPick; }
+void ModelPickOff() { g_modelPick = false; }
+
 void ModelPickToggle() {
     static bool stage, screen;
     // The other pick modes, turned on, turn this one off
