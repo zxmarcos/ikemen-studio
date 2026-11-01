@@ -160,6 +160,103 @@ int main() {
     CHECK(!Air_DeleteElems(text, air.actions[0], {}));
     CHECK(!Air_DuplicateElems(text, air.actions[0], {9}));
 
+    // Interpolate lines belong to the element after them, and go with it
+    static const char *kInterp =
+        "[Begin Action 100]\n"
+        "0,0, 0,0, 5\n"
+        "Interpolate Offset\n"
+        "Interpolate Scale\n"
+        "0,1, 10,0, 5\n"
+        "0,2, 20,0, 5\n"
+        "\n"
+        "[Begin Action 101]\n"
+        "Copy Action 100\n";
+    text = kInterp;
+    Air_Parse(text, air);
+    CHECK(air.actions[100].elems[1].interp == (kAirInterpOffset | kAirInterpScale));
+    CHECK(air.actions[100].elems[0].interp == 0 && air.actions[100].elems[2].interp == 0);
+    CHECK(air.actions[101].copyOf == 100 && air.actions[100].copyOf == -1);
+    CHECK(Air_MoveElem(text, air.actions[100], 1, 1));
+    Air_Parse(text, air);
+    CHECK(air.actions[100].elems[1].image == 2 && air.actions[100].elems[1].interp == 0);
+    CHECK(air.actions[100].elems[2].image == 1 && air.actions[100].elems[2].interp == (kAirInterpOffset | kAirInterpScale));
+    CHECK(Air_DeleteElem(text, air.actions[100], 2));
+    Air_Parse(text, air);
+    CHECK(text.find("Interpolate") == std::string::npos);
+    CHECK(Air_SetInterpolate(text, air.actions[100].elems[1], kAirInterpAngle | kAirInterpBlend));
+    Air_Parse(text, air);
+    CHECK(air.actions[100].elems[1].interp == (kAirInterpAngle | kAirInterpBlend));
+    CHECK(Air_SetInterpolate(text, air.actions[100].elems[1], kAirInterpOffset));
+    Air_Parse(text, air);
+    CHECK(air.actions[100].elems[1].interp == kAirInterpOffset && air.actions[100].elems.size() == 2);
+    CHECK(Air_SetInterpolate(text, air.actions[100].elems[1], 0));
+    CHECK(text.find("Interpolate") == std::string::npos);
+
+    // New actions and elements, names
+    text = kAir;
+    Air_Parse(text, air);
+    CHECK(air.actions[5].name == "the next one" && air.actions[0].name == "comment");
+    CHECK(Air_NewAction(text, 200, "Punch", {{10, 0, 0, 0, 4}, {10, 1, 0, 0, 6}}));
+    Air_Parse(text, air);
+    CHECK(air.actions[200].name == "Punch" && air.actions[200].elems.size() == 2 && air.actions[200].elems[1].time == 6);
+    CHECK(Air_InsertElems(text, air.actions[200], 0, {{10, 9, 1, 2, 3}}));
+    Air_Parse(text, air);
+    CHECK(air.actions[200].elems.size() == 3 && air.actions[200].elems[1].image == 9 && air.actions[200].elems[2].image == 1);
+    CHECK(Air_InsertElems(text, air.actions[200], -1, {{10, 8, 0, 0, 3}}));
+    Air_Parse(text, air);
+    CHECK(air.actions[200].elems[0].image == 8);
+    CHECK(Air_SetActionName(text, air.actions[200], "Jab"));
+    Air_Parse(text, air);
+    CHECK(air.actions[200].name == "Jab");
+    CHECK(Air_SetActionName(text, air.actions[0], "Stand"));
+    Air_Parse(text, air);
+    CHECK(air.actions[0].name == "Stand" && air.actions[0].elems.size() == 4);
+    CHECK(Air_SetActionName(text, air.actions[0], ""));
+    Air_Parse(text, air);
+    CHECK(air.actions[0].name == "");
+
+    // From another file
+    {
+        std::string other = kAir;
+        AirFile from;
+        Air_Parse(other, from);
+        text = "[Begin Action 1]\n1,1, 0,0, 1\n";
+        CHECK(Air_CopyActionFrom(text, other, from.actions[5], 9));
+        Air_Parse(text, air);
+        CHECK(air.actions[9].elems.size() == 1 && air.actions[9].elems[0].group == 5 && air.actions[9].name == "the next one");
+    }
+
+    // Scaled: offsets and boxes, a default group once
+    text = kAir;
+    Air_Parse(text, air);
+    CHECK(Air_ScaleAction(text, air.actions[0], 2, 2));
+    Air_Parse(text, air);
+    CHECK(air.actions[0].elems[0].clsn[1][0].x1 == -26 && air.actions[0].elems[0].clsn[1][1].y1 == -186);
+    CHECK(air.actions[0].elems[2].clsn[0][0].x2 == 80);
+
+    // Optimize: boxes alike become the default; not when one element differs
+    static const char *kSame =
+        "[Begin Action 7]\n"
+        "Clsn2: 1\n"
+        " Clsn2[0] = 0,0,10,10\n"
+        "1,0, 0,0, 3\n"
+        "Clsn2: 1\n"
+        " Clsn2[0] = 0,0,10,10\n"
+        "1,1, 0,0, 3\n"
+        "Clsn2: 1\n"
+        " Clsn2[0] = 0,0,10,10\n"
+        "1,2, 0,0, 3\n";
+    text = kSame;
+    Air_Parse(text, air);
+    CHECK(Air_Optimize(text, air.actions[7]) == 4);
+    Air_Parse(text, air);
+    CHECK(air.actions[7].elems.size() == 3);
+    CHECK(air.actions[7].elems[2].clsn[1].size() == 1 && !air.actions[7].elems[2].own[1] && air.actions[7].elems[2].clsn[1][0].x2 == 10);
+    CHECK(Air_Optimize(text, air.actions[7]) == 0);
+    text = kAir;
+    Air_Parse(text, air);
+    CHECK(Air_Optimize(text, air.actions[0]) == 0);
+
     printf(g_failed ? "air-test: %d failed\n" : "air-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

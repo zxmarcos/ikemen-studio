@@ -1,7 +1,10 @@
 // Animation: the selected player's AIR element, its boxes edited here and on the game; or the
 // action a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def).
 #include "app_internal.h"
+#include "gif.h"
 #include "imgui_internal.h"
+#include "imgui_stdlib.h"
+#include "sffedit.h"
 
 #include <cfloat>
 #include <cmath>
@@ -18,6 +21,13 @@ bool g_onionSprite = false; // their sprites
 bool g_onionBefore = true, g_onionAfter = false; // the element before, the one after
 bool g_animFollow = true; // the Animation window shows what the selected player shows
 int g_animAction = 0, g_animElem = 1;
+static int g_boxDraw = 0;  // a drag on the preview draws a box: 1 Clsn1, 2 Clsn2, 0 none
+static int g_animTick = -1; // the tick of the action while it plays
+static struct {
+    bool on = false;
+    int action = 0, elem = 0; // index
+} g_animGhost;             // an element of any action drawn faint over the one shown, to compare
+static std::vector<AirBox> g_boxClip[2]; // boxes copied, Clsn1 and Clsn2
 
 std::map<int, std::pair<std::string, double>> g_swapWanted;
 
@@ -218,6 +228,28 @@ void ApplyAnims(SourceFile &sf) {
     }
 }
 
+// Those boxes as the element's own on every element where says so, of one action or (no -1) all.
+template <class Where>
+static void SetBoxesWhere(SourceFile &sf, int no, int g, const std::vector<AirBox> &boxes, Where where) {
+    auto same = [&](const std::vector<AirBox> &a) {
+        if (a.size() != boxes.size()) return false;
+        for (size_t i = 0; i < a.size(); i++)
+            if (a[i].x1 != boxes[i].x1 || a[i].y1 != boxes[i].y1 || a[i].x2 != boxes[i].x2 || a[i].y2 != boxes[i].y2) return false;
+        return true;
+    };
+    for (int guard = 0; guard < 20000; guard++) { // each edit moves the lines after it: read it all again
+        AirFile f;
+        Air_Parse(sf.text, f);
+        const AirElem *next = nullptr;
+        for (const auto &kv : f.actions) {
+            if (no >= 0 && kv.first != no) continue;
+            for (const AirElem &e : kv.second.elems)
+                if (!next && where(e) && !same(e.clsn[g])) next = &e;
+        }
+        if (!next || !Air_SetOwnBoxes(sf.text, *next, g, boxes)) break;
+    }
+}
+
 // A box added to the element's Clsn1 (g 0) or Clsn2 (g 1): at, or under the last one.
 void AddBox(const AnimTarget &t, int g, const AirBox *at = nullptr) {
     const AirElem &el = t.act->elems[t.elem - 1];
@@ -402,6 +434,16 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         ImGui::SameLine();
         ImGui::RadioButton("sprite##drag", &g_animDrag, 1);
         ImGui::SetItemTooltip("A drag moves the element's sprite (its offset from the axis)");
+        SameLineFits(ImGui::CalcTextSize("Draw: Clsn1 Clsn2").x + style.FramePadding.x * 4 + style.ItemSpacing.x * 2);
+        ImGui::TextDisabled("Draw:");
+        for (int g = 1; g <= 2; g++) {
+            ImGui::SameLine();
+            bool on = g_boxDraw == g;
+            if (on) ImGui::PushStyleColor(ImGuiCol_Button, g == 1 ? IM_COL32(200, 50, 50, 255) : IM_COL32(50, 100, 220, 255));
+            if (ImGui::SmallButton(g == 1 ? "Clsn1" : "Clsn2")) g_boxDraw = on ? 0 : g;
+            if (on) ImGui::PopStyleColor();
+            ImGui::SetItemTooltip(g == 1 ? "A drag on the preview draws a box that hits; a right click stops" : "A drag on the preview draws a box that can be hit; a right click stops");
+        }
     }
     {
         char zoom[16];
@@ -427,6 +469,8 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     const AirAction &act = *t.act;
     // The element shown: the one selected, or the one playing
     int shown = t.elem - 1;
+    float progress = 0; // through the element shown, for its interpolation
+    g_animTick = -1;
     if (playing) {
         if (forAct != &act) started = ImGui::GetTime();
         long tick = (long)((ImGui::GetTime() - started) * 60), at = 0;
@@ -439,12 +483,14 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
             if ((int)i >= loop) loopTotal += std::max(1, act.elems[i].time);
         }
         if (!endless && tick >= total && loopTotal > 0) tick = total - loopTotal + (tick - total) % loopTotal;
+        g_animTick = (int)tick;
         for (shown = 0; shown < (int)act.elems.size(); shown++) {
             const AirElem &e = act.elems[shown];
             if (e.time < 0 || tick < at + std::max(1, e.time)) break;
             at += std::max(1, e.time);
         }
         shown = std::min(shown, (int)act.elems.size() - 1);
+        if (act.elems[shown].time > 0) progress = (float)(tick - at) / act.elems[shown].time;
     }
     forAct = &act;
     // The box of every element (sprites and boxes, from the axis), to fit them all
@@ -525,19 +571,46 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         if (g_onionAfter && after != shown && !(g_onionBefore && after == before)) faint(after, kOnionAfter);
         if (g_onionBefore && before != shown) faint(before, kOnionBefore);
     }
+    // The element kept as a ghost, from any action
+    if (g_animGhost.on && spf && t.sf) {
+        const AirFile &air = AirOf(*t.sf);
+        auto it = air.actions.find(g_animGhost.action);
+        if (it != air.actions.end() && g_animGhost.elem < (int)it->second.elems.size()) {
+            const AirElem &o = it->second.elems[g_animGhost.elem];
+            int oi = Sff_FindSprite(spf->doc, o.group, o.image);
+            if (GLuint tex = oi >= 0 ? SpriteTexture(*spf, oi) : 0) {
+                const SffSprite &s = spf->doc.sprites[oi];
+                draw->AddImage(TexRef(tex), at((float)(o.x - s.x), (float)(o.y - s.y)),
+                               at((float)(o.x - s.x + s.w), (float)(o.y - s.y + s.h)), ImVec2(0, 0), ImVec2(1, 1), kOnionAfter);
+            }
+        }
+    }
     int si = spf ? Sff_FindSprite(spf->doc, el.group, el.image) : -1;
     if (si >= 0) {
         const SffSprite &s = spf->doc.sprites[si];
         if (GLuint tex = SpriteTexture(*spf, si)) {
             // As the game draws it: flip (which mirrors the offset too), scale and angle around the sprite's axis,
             // then the blending
-            const AirStyle &st = el.style;
+            AirStyle st = el.style;
+            float ex = (float)el.x, ey = (float)el.y;
+            // Playing: on the way to an element that interpolates (the loop start after the last), as the game
+            if (progress > 0) {
+                int nextIndex = shown + 1 < (int)act.elems.size() ? shown + 1 : std::max(0, act.loopStart);
+                const AirElem &nx = act.elems[nextIndex];
+                if (nx.interp & kAirInterpOffset) ex += (nx.x - el.x) * progress, ey += (nx.y - el.y) * progress;
+                if (nx.interp & kAirInterpScale) st.xscale += (nx.style.xscale - st.xscale) * progress, st.yscale += (nx.style.yscale - st.yscale) * progress;
+                if (nx.interp & kAirInterpAngle) st.angle += (nx.style.angle - st.angle) * progress;
+                if ((nx.interp & kAirInterpBlend) && st.blend != kAirOpaque) {
+                    st.src += (int)((nx.style.src - st.src) * progress);
+                    st.dst += (int)((nx.style.dst - st.dst) * progress);
+                }
+            }
             float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
             float sx = st.xscale * fx, sy = st.yscale * fy;
             float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
             auto corner = [&](float cx, float cy) {
                 float px = cx * sx, py = cy * sy;
-                return at(el.x * fx + px * cs + py * sn, el.y * fy - px * sn + py * cs);
+                return at(ex * fx + px * cs + py * sn, ey * fy - px * sn + py * cs);
             };
             float x0 = (float)-s.x, y0 = (float)-s.y, x1 = (float)(s.w - s.x), y1 = (float)(s.h - s.y);
             bool blend = st.blend != kAirOpaque;
@@ -575,7 +648,33 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         static bool moving; // the sprite dragged: its offset when the drag began, the one written last
         static ImVec2 moveStart;
         static int moveX, moveY, setX, setY;
-        if (g_animDrag == 1) {
+        if (g_boxDraw) {
+            // A new box, drawn with the mouse; the right button stops
+            static bool rubber;
+            static ImVec2 from;
+            drag.active = false;
+            ImVec2 m = toAir(ImGui::GetMousePos());
+            ImU32 col = g_boxDraw == 1 ? IM_COL32(255, 70, 70, 255) : IM_COL32(80, 140, 255, 255);
+            for (int g = 1; g >= 0; g--)
+                for (const AirBox &b : el.clsn[g])
+                    draw->AddRect(at((float)b.x1, (float)b.y1), at((float)b.x2, (float)b.y2), g ? IM_COL32(80, 140, 255, 200) : IM_COL32(255, 70, 70, 200));
+            if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) rubber = true, from = m;
+            if (rubber) {
+                draw->AddRectFilled(at(from.x, from.y), at(m.x, m.y), (col & 0x00FFFFFF) | 0x40000000);
+                draw->AddRect(at(from.x, from.y), at(m.x, m.y), col);
+                if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    rubber = false;
+                    AirBox b;
+                    b.x1 = (int)lroundf(std::min(from.x, m.x)), b.x2 = (int)lroundf(std::max(from.x, m.x));
+                    b.y1 = (int)lroundf(std::min(from.y, m.y)), b.y2 = (int)lroundf(std::max(from.y, m.y));
+                    if (b.x2 - b.x1 >= 2 && b.y2 - b.y1 >= 2) {
+                        AddBox(t, g_boxDraw - 1, &b);
+                        changed = true;
+                    }
+                }
+            }
+        } else if (g_animDrag == 1) {
             drag.active = false;
             ImVec2 m = ImGui::GetMousePos();
             if (!moving && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -625,7 +724,8 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         static ImVec2 menuAt;
         if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
             menuHit = hit, menuAt = toAir(ImGui::GetMousePos());
-            ImGui::OpenPopup("boxes");
+            if (g_boxDraw) g_boxDraw = 0;
+            else ImGui::OpenPopup("boxes");
         }
         auto exists = [&](int h) { return h >= 0 && h % 1000 < (int)el.clsn[h / 1000].size(); };
         if (ImGui::BeginPopup("boxes")) {
@@ -786,6 +886,47 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
     return clicked;
 }
 
+// The action along its ticks: each element as wide as its time (one for ever, as 30), the loop start
+// marked, the tick playing. A click or a drag goes to an element; returns it, 0 none.
+static int TickBar(const AnimTarget &t) {
+    const AirAction &act = *t.act;
+    float em = ImGui::GetFontSize();
+    auto ticks = [](const AirElem &e) { return e.time < 0 ? 30 : std::max(1, e.time); };
+    int total = 0, sum = 0;
+    bool endless = false;
+    for (const AirElem &e : act.elems) {
+        total += ticks(e), sum += std::max(0, e.time);
+        endless = endless || e.time < 0;
+    }
+    float w = std::max(ImGui::GetContentRegionAvail().x, 1.0f), h = em * 0.85f;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("ticks", ImVec2(w, h));
+    bool active = ImGui::IsItemActive(), hot = ImGui::IsItemHovered();
+    float mx = ImGui::GetMousePos().x;
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    int clicked = 0, at = 0;
+    for (int n = 0; n < (int)act.elems.size(); n++) {
+        const AirElem &e = act.elems[n];
+        float x0 = p.x + w * at / total, x1 = p.x + w * (at + ticks(e)) / total;
+        bool cur = n + 1 == t.elem, inside = mx >= x0 && (mx < x1 || n + 1 == (int)act.elems.size());
+        ImU32 fill = ImGui::GetColorU32(cur ? ImGuiCol_CheckMark : n % 2 ? ImGuiCol_FrameBg : ImGuiCol_FrameBgHovered);
+        draw->AddRectFilled(ImVec2(x0, p.y), ImVec2(x1, p.y + h), fill);
+        if (e.interp) draw->AddRectFilled(ImVec2(x0, p.y + h * 0.7f), ImVec2(x1, p.y + h), ImGui::GetColorU32(Ink(kOrange)));
+        if (act.loopStart == n) draw->AddLine(ImVec2(x0, p.y), ImVec2(x0, p.y + h), ImGui::GetColorU32(Ink(kYellow)), 2.0f);
+        if (active && inside && !cur) clicked = n + 1;
+        if (hot && inside) {
+            if (e.time < 0) ImGui::SetTooltip("Element %d: from tick %d, for ever", n + 1, at);
+            else ImGui::SetTooltip("Element %d: ticks %d to %d of %d%s", n + 1, at, at + e.time, sum, endless ? " and for ever" : "");
+        }
+        at += ticks(e);
+    }
+    if (g_animTick >= 0) {
+        float x = p.x + w * std::min(g_animTick, total) / total;
+        draw->AddLine(ImVec2(x, p.y - 1), ImVec2(x, p.y + h + 1), IM_COL32(255, 255, 255, 255), 2.0f);
+    }
+    return clicked;
+}
+
 // A row of the element panel: its label, then the field.
 static void FieldLabel(const char *label) {
     float x = ImGui::GetCursorPosX();
@@ -904,6 +1045,68 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
         if (!ImGui::IsAnyItemActive()) done = true; // a click on a box or the combo is one edit
     }
     if (done) apply(sf);
+
+    // Interpolation: what changes smoothly on the way from the element before to this one
+    ImGui::TextDisabled("Blend from the element before:");
+    static const struct {
+        const char *label;
+        int flag;
+    } kInterp[] = {{"offset", kAirInterpOffset}, {"scale", kAirInterpScale}, {"angle", kAirInterpAngle}, {"alpha", kAirInterpBlend}};
+    for (int k = 0; k < 4; k++) {
+        if (k) SameLineFits(CheckboxWidth(kInterp[k].label));
+        bool on = (el.interp & kInterp[k].flag) != 0;
+        if (ImGui::Checkbox(kInterp[k].label, &on) && Air_SetInterpolate(sf.text, el, el.interp ^ kInterp[k].flag)) {
+            goTo = t.elem;
+            return true;
+        }
+    }
+
+    if (several) {
+        ImGui::SeparatorText("The elements selected");
+        ImGui::TextDisabled("Give them this element's");
+        enum { Offset, Time, Flip, Blend, Scale, Angle };
+        const char *fields[] = {"Offset", "Time", "Flip", "Blend", "Scale", "Angle"};
+        for (int f = 0; f < 6; f++) {
+            if (f) flow(fields[f]);
+            if (!ImGui::SmallButton(fields[f])) continue;
+            for (int i : group) {
+                const AirElem &e = act.elems[i];
+                if (i == index) continue;
+                if (f == Offset || f == Time) {
+                    Air_SetElem(sf.text, e, e.group, e.image, f == Offset ? el.x : e.x, f == Offset ? el.y : e.y, f == Time ? el.time : e.time);
+                    continue;
+                }
+                AirStyle s = e.style;
+                if (f == Flip) s.flipH = el.style.flipH, s.flipV = el.style.flipV;
+                if (f == Blend) s.blend = el.style.blend, s.src = el.style.src, s.dst = el.style.dst;
+                if (f == Scale) s.xscale = el.style.xscale, s.yscale = el.style.yscale;
+                if (f == Angle) s.angle = el.style.angle;
+                Air_SetStyle(sf.text, e, s);
+            }
+            apply(sf);
+            return true;
+        }
+        static int by[2];
+        ImGui::SetNextItemWidth(std::min(em * 7, ImGui::GetContentRegionAvail().x));
+        ImGui::InputInt2("##by", by);
+        ImGui::SetItemTooltip("x, y: how far they move");
+        for (int boxes = 0; boxes < 2; boxes++) {
+            const char *label = boxes ? "Move boxes" : "Move offsets";
+            if (boxes) flow(label);
+            else ImGui::SameLine();
+            if (!ImGui::SmallButton(label)) continue;
+            std::set<int> done; // boxes elements share, once
+            for (int i : group) {
+                const AirElem &e = act.elems[i];
+                if (!boxes) Air_SetElem(sf.text, e, e.group, e.image, e.x + by[0], e.y + by[1], e.time);
+                for (int g = 0; boxes && g < 2; g++)
+                    for (const AirBox &b : e.clsn[g])
+                        if (done.insert(b.line).second) Air_SetBox(sf.text, b, b.x1 + by[0], b.y1 + by[1], b.x2 + by[0], b.y2 + by[1]);
+            }
+            apply(sf);
+            return true;
+        }
+    }
     if (ImGui::BeginPopup("pick")) {
         static int group = 0;
         if (ImGui::IsWindowAppearing()) group = el.group;
@@ -992,14 +1195,164 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
                 return true;
             }
         }
-        if (ImGui::Button(ICON_PLUS " Add a box", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        float moreW = ImGui::GetFrameHeight() * 1.2f;
+        if (ImGui::Button(ICON_PLUS " Add a box", ImVec2(ImGui::GetContentRegionAvail().x - moreW - ImGui::GetStyle().ItemSpacing.x, 0))) {
             AddBox(t, g);
             ImGui::PopID();
             return true;
         }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_ELLIPSIS, ImVec2(moreW, 0))) ImGui::OpenPopup("more");
+        ImGui::SetItemTooltip("Copy, paste, more elements");
+        int tool = 0;
+        if (ImGui::BeginPopup("more")) {
+            enum { Paste = 1, FromBefore, SameSprite, Swap, DeleteHere, DeleteAction };
+            if (ImGui::MenuItem(ICON_COPY " Copy")) g_boxClip[g] = el.clsn[g];
+            if (ImGui::MenuItem("Paste", nullptr, false, !g_boxClip[g].empty())) tool = Paste;
+            if (ImGui::MenuItem("As in the element before", nullptr, false, index > 0)) tool = FromBefore;
+            ImGui::Separator();
+            if (ImGui::MenuItem("On every element with this sprite")) tool = SameSprite;
+            ImGui::SetItemTooltip("These boxes on all the elements showing this sprite, in every action");
+            if (ImGui::MenuItem(g ? "Swap with Clsn1" : "Swap with Clsn2")) tool = Swap;
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_TRASH " Delete them")) tool = DeleteHere;
+            if (ImGui::MenuItem("Delete them in the whole action")) tool = DeleteAction;
+            ImGui::EndPopup();
+            if (tool) {
+                std::vector<AirBox> boxes = el.clsn[g];
+                auto sprite = [&](const AirElem &e) { return e.group == el.group && e.image == el.image; };
+                auto whole = [&](const AirElem &) { return true; };
+                if (tool == Paste) Air_SetOwnBoxes(sf.text, el, g, g_boxClip[g]);
+                if (tool == FromBefore) Air_SetOwnBoxes(sf.text, el, g, act.elems[index - 1].clsn[g]);
+                if (tool == DeleteHere) Air_SetOwnBoxes(sf.text, el, g, {});
+                if (tool == SameSprite) SetBoxesWhere(sf, -1, g, boxes, sprite);
+                if (tool == DeleteAction) SetBoxesWhere(sf, act.no, g, {}, whole);
+                if (tool == Swap) {
+                    int no = act.no;
+                    std::vector<AirBox> other = el.clsn[1 - g];
+                    Air_SetOwnBoxes(sf.text, el, g, other); // the lines change: the other group from a new reading
+                    AirFile again;
+                    Air_Parse(sf.text, again);
+                    Air_SetOwnBoxes(sf.text, again.actions[no].elems[index], 1 - g, boxes);
+                }
+                apply(sf);
+                ImGui::PopID();
+                return true;
+            }
+        }
         ImGui::PopID();
     }
     return false;
+}
+
+// An action as a GIF file: each element at its time, flipped, scaled and turned as the game does,
+// on a transparent ground; scale: pixels for each pixel of the game.
+static bool ActionGif(const AirAction &act, SpriteFile &spf, int scale, const std::string &path, std::string *error) {
+    struct Item {
+        const AirElem *e;
+        const SffSprite *s;
+        std::vector<unsigned char> rgba;
+    };
+    std::vector<Item> items;
+    float minX = 0, minY = 0, maxX = 1, maxY = 1;
+    auto mapped = [](const AirElem &e, const SffSprite &s, float cx, float cy, float &x, float &y) {
+        const AirStyle &st = e.style;
+        float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
+        float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
+        float px = (cx - s.x) * st.xscale * fx, py = (cy - s.y) * st.yscale * fy;
+        x = e.x * fx + px * cs + py * sn, y = e.y * fy - px * sn + py * cs;
+    };
+    for (const AirElem &e : act.elems) {
+        if (e.time == 0) continue;
+        int si = Sff_FindSprite(spf.doc, e.group, e.image);
+        if (si < 0) continue;
+        Item it{&e, &spf.doc.sprites[si], {}};
+        std::vector<unsigned char> px;
+        int bpp = 0;
+        if (!Sff_Decode(*it.s, px, &bpp)) continue;
+        Sff_ToRgba(spf.doc, *it.s, px, bpp, it.rgba);
+        for (int c = 0; c < 4; c++) {
+            float x, y;
+            mapped(e, *it.s, c & 1 ? (float)it.s->w : 0, c & 2 ? (float)it.s->h : 0, x, y);
+            minX = std::min(minX, x), maxX = std::max(maxX, x);
+            minY = std::min(minY, y), maxY = std::max(maxY, y);
+        }
+        items.push_back(std::move(it));
+    }
+    if (items.empty()) {
+        *error = "The action has no sprite to show";
+        return false;
+    }
+    int w = (int)ceilf((maxX - minX) * scale), h = (int)ceilf((maxY - minY) * scale);
+    std::vector<GifFrame> frames;
+    double at = 0; // hundredths of a second, so that the rounding does not add up
+    for (const Item &it : items) {
+        const AirElem &e = *it.e;
+        const AirStyle &st = e.style;
+        GifFrame f;
+        f.rgba.assign((size_t)w * h * 4, 0);
+        float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
+        float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
+        float sx = st.xscale * fx, sy = st.yscale * fy;
+        for (int y = 0; y < h && sx != 0 && sy != 0; y++)
+            for (int x = 0; x < w; x++) {
+                // Back from the canvas to the sprite
+                float dx = minX + (x + 0.5f) / scale - e.x * fx, dy = minY + (y + 0.5f) / scale - e.y * fy;
+                int ix = (int)floorf((dx * cs - dy * sn) / sx + it.s->x), iy = (int)floorf((dx * sn + dy * cs) / sy + it.s->y);
+                if (ix < 0 || iy < 0 || ix >= it.s->w || iy >= it.s->h) continue;
+                memcpy(&f.rgba[((size_t)y * w + x) * 4], &it.rgba[((size_t)iy * it.s->w + ix) * 4], 4);
+            }
+        double end = at + (e.time < 0 ? 60 : e.time) * 100.0 / 60;
+        f.delay = std::max(2, (int)lround(end) - (int)lround(at));
+        at = end;
+        frames.push_back(std::move(f));
+    }
+    std::ofstream out(path, std::ios::binary);
+    out << Gif_Build(w, h, frames);
+    out.close();
+    if (!out) *error = "Could not write " + path;
+    return (bool)out;
+}
+
+// "200-220, 300": does the list name that number? Empty: all.
+static bool InNumberList(int no, const std::string &list) {
+    if (list.find_first_not_of(" ,") == std::string::npos) return true;
+    for (size_t at = 0; at < list.size();) {
+        size_t end = std::min(list.find(',', at), list.size());
+        std::string part = list.substr(at, end - at);
+        int a = 0, b = 0;
+        int n = sscanf(part.c_str(), "%d - %d", &a, &b);
+        if ((n == 1 && no == a) || (n == 2 && no >= a && no <= b)) return true;
+        at = end + 1;
+    }
+    return false;
+}
+
+bool AnimFromSprites(int pn, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append) {
+    std::string path = AirPath(pn);
+    if (path.empty() || sprites.empty()) return false;
+    SourceFile &sf = LoadSource(path);
+    std::vector<AirNewElem> elems;
+    for (const auto &s : sprites) {
+        AirNewElem e;
+        e.group = s.first, e.image = s.second, e.time = time;
+        elems.push_back(e);
+    }
+    const AirFile &air = AirOf(sf);
+    auto it = air.actions.find(no);
+    bool ok;
+    if (it != air.actions.end() && append) {
+        ok = Air_InsertElems(sf.text, it->second, (int)it->second.elems.size() - 1, elems);
+        g_animElem = (int)it->second.elems.size() + 1;
+    } else {
+        ok = it == air.actions.end() && Air_NewAction(sf.text, no, "", elems);
+        g_animElem = 1;
+    }
+    if (!ok) return false;
+    g_animAction = no, g_animFollow = false;
+    ApplyAnims(sf);
+    ShowWindow("Animation");
+    return true;
 }
 
 void AnimationWindow() {
@@ -1062,6 +1415,10 @@ void AnimationWindow() {
     {
         ImGui::SameLine();
         ImGui::TextDisabled("· %s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
+        if (t.act && !t.act->name.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("· %s", t.act->name.c_str());
+        }
         float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 +
                   style.ItemSpacing.x * 2 + UndoButtonsWidth();
         rightAlign(w);
@@ -1111,17 +1468,20 @@ void AnimationWindow() {
     ImGui::SameLine(0, 2);
     ImGui::SetNextWindowSizeConstraints(ImVec2(em * 16, 0), ImVec2(em * 24, em * 26));
     if (ImGui::BeginCombo("##actlist", "", ImGuiComboFlags_NoPreview)) {
-        static char filter[12];
+        static char filter[32];
         if (ImGui::IsWindowAppearing()) {
             filter[0] = 0;
             ImGui::SetKeyboardFocusHere();
         }
         ImGui::SetNextItemWidth(-FLT_MIN);
-        bool enter = ImGui::InputTextWithHint("##actfilter", "Number...", filter, sizeof(filter),
-                                              ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+        bool enter = ImGui::InputTextWithHint("##actfilter", "Number or name...", filter, sizeof(filter), ImGuiInputTextFlags_EnterReturnsTrue);
+        auto named = [&](const std::string &name) {
+            return std::search(name.begin(), name.end(), filter, filter + strlen(filter),
+                               [](char x, char y) { return tolower((unsigned char)x) == tolower((unsigned char)y); }) != name.end();
+        };
         std::vector<const AirAction *> shown;
         for (const auto &[no, a] : air.actions)
-            if (!filter[0] || std::to_string(no).find(filter) != std::string::npos) shown.push_back(&a);
+            if (!filter[0] || std::to_string(no).find(filter) != std::string::npos || named(a.name)) shown.push_back(&a);
         int pick = -1;
         if (enter && !shown.empty()) pick = shown[0]->no;
         if (ImGui::BeginChild("##actrows", ImVec2(0, std::min<float>(shown.size(), 14) * ImGui::GetTextLineHeightWithSpacing() + 2))) {
@@ -1134,9 +1494,9 @@ void AnimationWindow() {
                     const AirAction &a = *shown[i];
                     int ticks = 0;
                     for (const AirElem &e : a.elems) ticks = e.time < 0 || ticks < 0 ? -1 : ticks + e.time;
-                    char row[64];
-                    if (ticks < 0) snprintf(row, sizeof(row), "%d   %d el.  inf.", a.no, (int)a.elems.size());
-                    else snprintf(row, sizeof(row), "%d   %d el.  %d ticks", a.no, (int)a.elems.size(), ticks);
+                    char row[128];
+                    if (ticks < 0) snprintf(row, sizeof(row), "%d  %s  %d el.  inf.", a.no, a.name.c_str(), (int)a.elems.size());
+                    else snprintf(row, sizeof(row), "%d  %s  %d el.  %d ticks", a.no, a.name.c_str(), (int)a.elems.size(), ticks);
                     bool cur = a.no == g_animAction;
                     if (ImGui::Selectable(row, cur)) pick = a.no;
                     if (cur && ImGui::IsWindowAppearing()) ImGui::SetScrollHereY();
@@ -1150,7 +1510,7 @@ void AnimationWindow() {
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("Every action of the file, by number");
+    ImGui::SetItemTooltip("Every action of the file, by number or name");
     ImGui::SameLine(0, em);
     ImGui::BeginDisabled(disk);
     ImGui::Checkbox("Follow", &g_animFollow);
@@ -1177,26 +1537,210 @@ void AnimationWindow() {
                             "action drawn below. Save writes it; put the character in the match to see it on the game.");
     }
     // What can be done with the action, in a menu
+    SpriteFile *spfFor = screen ? sa.sprites : t.pn > 0 ? SpritesOf(t.pn) : nullptr;
     const char *want = nullptr;
-    if (t.act) {
+    {
         rightAlign(ImGui::CalcTextSize("Action").x + style.FramePadding.x * 2 + ImGui::GetFrameHeight());
-        if (ImGui::BeginCombo("##actmenu", "Action", ImGuiComboFlags_WidthFitPreview | ImGuiComboFlags_PopupAlignLeft)) {
+        if (ImGui::BeginCombo("##actmenu", "Action", ImGuiComboFlags_WidthFitPreview | ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLargest)) {
+            if (ImGui::Selectable(ICON_PLUS " New...")) want = "new";
+            if (!screen && ImGui::Selectable("From another AIR...")) want = "import";
+            ImGui::Separator();
+            ImGui::BeginDisabled(!t.act);
             if (!screen && t.e && ImGui::Selectable("Show on the player")) {
                 ExecOn(t.e->id, "changeAnim(" + std::to_string(g_animAction) + ")");
                 g_animFollow = true;
             }
             if (!screen && t.e) ImGui::SetItemTooltip("ChangeAnim on the selected player (not on helpers); pause first to keep it.");
+            if (ImGui::Selectable("Name...")) want = "name";
             if (ImGui::Selectable("Copy as...")) want = "copy";
             if (ImGui::Selectable("Renumber...")) want = "renumber";
+            if (ImGui::Selectable("Scale...")) want = "scale";
+            ImGui::SetItemTooltip("Its offsets and boxes multiplied: for sprites resized");
+            if (ImGui::Selectable("Optimize") && t.act) {
+                int removed = Air_Optimize(sf.text, *t.act);
+                Log(LogLine::Info, "Optimize: " + std::to_string(removed) + " lines fewer");
+                if (removed) {
+                    apply(sf);
+                    ImGui::EndDisabled();
+                    ImGui::EndCombo();
+                    ImGui::End(); // what was parsed is old
+                    return;
+                }
+            }
+            ImGui::SetItemTooltip("Boxes every element has alike become the action's default");
+            if (!screen && ImGui::Selectable("Save as GIF...")) want = "gif";
             ImGui::Separator();
             if (ImGui::Selectable("Delete...")) want = "delete";
+            ImGui::EndDisabled();
             ImGui::EndCombo();
         }
     }
     static int newNo;
+    static std::string newName;
+    static SpriteFile *gifSprites;
+    static std::string importPath, importText, importSff, importWhich;
+    static AirFile importAir;
+    static bool importWithSprites = true, importReplace = false;
     if (want) {
         newNo = want[0] == 'c' ? g_animAction + 1 : g_animAction;
-        ImGui::OpenPopup(want);
+        if (want[0] == 'n' && want[1] == 'e') {
+            for (newNo = g_animAction + 1; air.actions.count(newNo);) newNo++;
+            newName.clear();
+        }
+        if (want[0] == 'n' && want[1] == 'a' && t.act) newName = t.act->name;
+        if (want[0] == 'g') gifSprites = spfFor;
+        if (want[0] == 'i') {
+            // An AIR file and the SFF beside it: the one named alike, else the only one
+            std::vector<std::string> files = PickFiles("Animations (*.air)\0*.air\0All files (*.*)\0*.*\0", false);
+            want = nullptr;
+            if (!files.empty()) {
+                importPath = files[0];
+                importText = ReadWholeFile(importPath);
+                size_t crlf;
+                while ((crlf = importText.find('\r')) != std::string::npos) importText.erase(crlf, 1);
+                Air_Parse(importText, importAir);
+                importSff.clear();
+                std::filesystem::path air2(importPath);
+                std::error_code ec;
+                int found = 0;
+                for (const auto &de : std::filesystem::directory_iterator(air2.parent_path(), ec)) {
+                    std::string ext = de.path().extension().string();
+                    if (_stricmp(ext.c_str(), ".sff") != 0) continue;
+                    found++;
+                    if (de.path().stem() == air2.stem() || importSff.empty()) importSff = de.path().string();
+                }
+                (void)found;
+                want = "import";
+            }
+        }
+        if (want) ImGui::OpenPopup(want);
+    }
+    if (ImGui::BeginPopup("new")) {
+        ImGui::TextUnformatted("A new action, of one element");
+        ImGui::SetNextItemWidth(em * 6);
+        ImGui::InputInt("Number", &newNo, 0);
+        ImGui::SetNextItemWidth(em * 12);
+        ImGui::InputText("Name", &newName);
+        bool taken = air.actions.count(newNo) != 0;
+        if (taken) ImGui::TextColored(Ink(kRed), "Action %d exists already.", newNo);
+        ImGui::BeginDisabled(taken || newNo < 0);
+        if (ImGui::Button(ICON_CHECK " Create")) {
+            Air_NewAction(sf.text, newNo, newName, {AirNewElem()});
+            apply(sf);
+            g_animAction = newNo, g_animElem = 1, g_animFollow = false;
+            ImGui::CloseCurrentPopup();
+            ImGui::EndDisabled();
+            ImGui::EndPopup();
+            ImGui::End(); // what was parsed is old
+            return;
+        }
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Sprites selected in the Sprites window can start one too.");
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("name")) {
+        ImGui::SetNextItemWidth(em * 14);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        bool ok = ImGui::InputText("##name", &newName, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        ok |= ImGui::Button(ICON_CHECK " OK");
+        if (ok && t.act) {
+            Air_SetActionName(sf.text, *t.act, newName);
+            apply(sf);
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            ImGui::End(); // what was parsed is old
+            return;
+        }
+        ImGui::TextDisabled("A comment before the action; the game does not read it.");
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("scale")) {
+        static float pct[2] = {200, 200};
+        ImGui::SetNextItemWidth(em * 10);
+        ImGui::InputFloat2("Width, height %", pct, "%.0f");
+        bool one = ImGui::Button("This action");
+        ImGui::SameLine();
+        bool all = ImGui::Button("All the actions");
+        if ((one && t.act) || all) {
+            // Scaling keeps the lines where they are: what was parsed stays good
+            if (one) Air_ScaleAction(sf.text, *t.act, pct[0] / 100, pct[1] / 100);
+            for (const auto &kv : air.actions)
+                if (all) Air_ScaleAction(sf.text, kv.second, pct[0] / 100, pct[1] / 100);
+            apply(sf);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("gif")) {
+        static int gifScale = 2;
+        ImGui::SetNextItemWidth(em * 6);
+        ImGui::SliderInt("Size", &gifScale, 1, 4, "%dx");
+        if (ImGui::Button(ICON_DOWNLOAD " Save...") && t.act && gifSprites) {
+            std::string path = PickSaveFile("GIF images (*.gif)\0*.gif\0", "gif", "action" + std::to_string(g_animAction) + ".gif"), error;
+            if (!path.empty()) {
+                if (ActionGif(*t.act, *gifSprites, gifScale, path, &error)) Log(LogLine::Info, "Saved " + path);
+                else Log(LogLine::Error, error);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("import")) {
+        std::vector<const AirAction *> chosen;
+        for (const auto &kv : importAir.actions)
+            if (InNumberList(kv.first, importWhich)) chosen.push_back(&kv.second);
+        ImGui::Text("%s: %zu actions", importPath.c_str(), importAir.actions.size());
+        ImGui::SetNextItemWidth(em * 14);
+        ImGui::InputTextWithHint("Which", "200-220, 300; all", &importWhich);
+        ImGui::Checkbox("Replace those with the same number", &importReplace);
+        ImGui::BeginDisabled(importSff.empty());
+        ImGui::Checkbox("With their sprites", &importWithSprites);
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(importSff.empty() ? "No SFF file beside that AIR file" : "From %s; numbers in use are skipped", importSff.c_str());
+        char label[48];
+        snprintf(label, sizeof(label), ICON_DOWNLOAD " Import %zu actions", chosen.size());
+        ImGui::BeginDisabled(chosen.empty());
+        if (ImGui::Button(label)) {
+            int done = 0, skipped = 0;
+            std::set<std::pair<int, int>> wanted;
+            for (const AirAction *a : chosen) {
+                bool taken = air.actions.count(a->no) != 0;
+                if (taken && !importReplace) {
+                    skipped++;
+                    continue;
+                }
+                for (const AirElem &e : a->elems) wanted.insert({e.group, e.image});
+                if (taken) {
+                    AirFile now;
+                    Air_Parse(sf.text, now);
+                    Air_DeleteAction(sf.text, now.actions[a->no]);
+                }
+                Air_CopyActionFrom(sf.text, importText, *a, a->no);
+                done++;
+            }
+            Log(LogLine::Info, "Imported " + std::to_string(done) + " actions, " + std::to_string(skipped) + " skipped: their numbers are in use");
+            SpriteFile *to = screen ? sa.sprites : SpritesOf(t.pn);
+            if (importWithSprites && !importSff.empty() && to && !wanted.empty()) {
+                SffDoc from;
+                if (Sff_Load(from, importSff)) {
+                    std::vector<int> sprites;
+                    for (int i = 0; i < (int)from.sprites.size(); i++)
+                        if (wanted.count({from.sprites[i].group, from.sprites[i].number})) sprites.push_back(i);
+                    int same = 0, n = Sff_ImportSprites(to->doc, from, sprites, false, SFF_IMPORT_OWN, &same);
+                    Log(LogLine::Info, "Imported " + std::to_string(n) + " sprites, " + std::to_string(same) + " skipped: their numbers are in use");
+                    if (n) SpritesChanged(*to);
+                }
+            }
+            apply(sf);
+            ImGui::CloseCurrentPopup();
+            ImGui::EndDisabled();
+            ImGui::EndPopup();
+            ImGui::End(); // what was parsed is old
+            return;
+        }
+        ImGui::EndDisabled();
+        ImGui::EndPopup();
     }
     for (const char *popup : {"copy", "renumber"}) {
         if (!ImGui::BeginPopup(popup)) continue;
@@ -1233,6 +1777,13 @@ void AnimationWindow() {
     }
     if (!t.act) {
         ImGui::Spacing();
+        auto listed = air.actions.find(g_animAction);
+        if (listed != air.actions.end() && listed->second.copyOf >= 0) {
+            ImGui::Text("Action %d is a copy of action %d (Copy Action): the game shows that one's elements.", g_animAction, listed->second.copyOf);
+            if (ImGui::SmallButton("Go to it")) g_animAction = listed->second.copyOf, g_animElem = 1, g_animFollow = false;
+            ImGui::End();
+            return;
+        }
         ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
         ImGui::End();
         return;
@@ -1252,6 +1803,7 @@ void AnimationWindow() {
     int onGame = live ? t.fe->elem : screen && sa.action == g_animAction ? sa.elem : 0;
     int menuElem;
     int clicked = ElementStrip(t, spf, onGame, &menuElem);
+    if (int tick = TickBar(t)) clicked = tick, g_elemPicks.clear();
     if (clicked || menuElem) {
         showElem(clicked ? clicked : menuElem);
         if (!live) g_animFollow = false;
@@ -1274,6 +1826,17 @@ void AnimationWindow() {
         bool loopHere = t.act->loopStart == index;
         if (ImGui::MenuItem("Loop from here", nullptr, loopHere) && Air_SetLoopStart(sf.text, *t.act, loopHere ? -1 : index))
             goTo = t.elem;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Select this one and those after")) {
+            g_elemPicks.clear();
+            for (int n = t.elem; n <= count; n++) g_elemPicks.insert(n);
+            if (g_elemPicks.size() == 1) g_elemPicks.clear();
+        }
+        bool ghostHere = g_animGhost.on && g_animGhost.action == g_animAction && g_animGhost.elem == index;
+        if (ImGui::MenuItem(ghostHere ? "No ghost" : "Keep as a ghost")) {
+            g_animGhost.on = !ghostHere, g_animGhost.action = g_animAction, g_animGhost.elem = index;
+        }
+        ImGui::SetItemTooltip("This element stays faint over the preview, in any action, to compare");
         ImGui::EndPopup();
     }
 

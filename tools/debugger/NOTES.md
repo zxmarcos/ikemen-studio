@@ -77,6 +77,21 @@ a sprite selects its group. The preview's View: lines through the axis, rulers,
 a ghost; Ctrl+drag and the arrows move the axis of all those selected. Not done:
 Fighter Factory's background image behind the sprite.
 
+Animation: `Interpolate` lines belong to the element after them (`AirElem::interp`;
+`first` includes them, so they move and go with it). The game interpolates on the
+way into that element, over the time of the one before (`UpdateInterpolation`);
+the preview does the same while playing. Each `Air_` edit of one line keeps the
+lines parsed good; those that add or take out lines need a new parse
+(`SetBoxesWhere`, the swap of boxes). New: `TickBar` (elements as wide as their
+time, a drag goes through them), boxes drawn with the mouse (`g_boxDraw`), an
+element kept as a ghost, this element's fields given to those selected, offsets
+and boxes moved together, the boxes' menu (copy, paste, as in the element before,
+on every element with this sprite, swap, delete), actions from the sprites
+selected (`AnimFromSprites`), names (the comment before the action), the Action
+menu (new, from another AIR with its sprites, name, scale, optimize, GIF). GIF:
+`src/gif.cpp`, tested by decoding it again in `tests/gif_test.cpp`; blending is
+not in it. `Copy Action` is shown, not edited.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -332,6 +347,7 @@ tools/debugger/
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
   src/sffedit.cpp/.h     sprites in batch: crop, scale, export and its list, from another SFF
   src/undo.h             undo and redo by whole states
+  src/gif.cpp/.h         animated GIF files
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits

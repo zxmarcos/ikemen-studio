@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -153,6 +154,26 @@ size_t ReadGroup(const std::vector<std::string> &lines, size_t i, int count, std
 
 std::string Indent(const std::string &line) { return line.substr(0, line.find_first_not_of(" \t")); }
 
+// An action's name: the comment after its header, or the line before when that is a comment with
+// letters in it (not a row of dashes)
+std::string ActionName(const std::vector<std::string> &lines, size_t header) {
+    auto comment = [](const std::string &line) {
+        size_t semi = line.find(';');
+        if (semi == std::string::npos) return std::string();
+        std::string c = Trim(line.substr(semi + 1));
+        return std::any_of(c.begin(), c.end(), [](unsigned char ch) { return isalpha(ch) != 0; }) ? c : std::string();
+    };
+    std::string own = comment(lines[header]);
+    if (!own.empty() || header == 0) return own;
+    return Trim(lines[header - 1]).compare(0, 1, ";") == 0 ? comment(lines[header - 1]) : "";
+}
+
+std::string ElemLine(const std::string &indent, const AirNewElem &e) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%d,%d, %d,%d, %d", e.group, e.image, e.x, e.y, e.time);
+    return indent + buf;
+}
+
 } // namespace
 
 void Air_Parse(const std::string &text, AirFile &out) {
@@ -162,6 +183,7 @@ void Air_Parse(const std::string &text, AirFile &out) {
     std::vector<AirBox> pending[2], deflt[2];
     int pendingHeader[2] = {}, defaultHeader[2] = {};
     bool pendingOwn[2] = {};
+    int interp = 0, interpLine = 0; // the Interpolate lines since the element before, the first of them
     for (size_t i = 0; i < lines.size(); i++) {
         std::string s = Clean(lines[i]);
         if (s.empty()) continue;
@@ -173,6 +195,8 @@ void Air_Parse(const std::string &text, AirFile &out) {
                 *act = AirAction();
                 act->no = no;
                 act->line = act->last = (int)i + 1;
+                act->name = ActionName(lines, i);
+                interp = interpLine = 0;
                 for (int g = 0; g < 2; g++) {
                     pending[g].clear(), deflt[g].clear();
                     pendingHeader[g] = defaultHeader[g] = 0;
@@ -185,7 +209,16 @@ void Air_Parse(const std::string &text, AirFile &out) {
         act->last = (int)i + 1;
         if (StartsWith(s, "loopstart")) {
             act->loopStart = (int)act->elems.size();
-        } else if (StartsWith(s, "clsn") && s.size() > 5 && (s[4] == '1' || s[4] == '2') && s.find(':') != std::string::npos) {
+        } else if (StartsWith(s, "copy action ")) {
+            act->copyOf = atoi(s.c_str() + 12);
+        } else if (StartsWith(s, "interpolate ")) {
+            interp |= s.find("offset") != std::string::npos ? kAirInterpOffset
+                    : s.find("scale") != std::string::npos  ? kAirInterpScale
+                    : s.find("angle") != std::string::npos  ? kAirInterpAngle
+                    : s.find("blend") != std::string::npos  ? kAirInterpBlend
+                                                            : 0;
+            if (!interpLine) interpLine = (int)i + 1;
+        } else if (StartsWith(s, "clsn")&& s.size() > 5 && (s[4] == '1' || s[4] == '2') && s.find(':') != std::string::npos) {
             int g = s[4] - '1';
             bool isDefault = s.compare(5, 7, "default") == 0;
             int count = atoi(s.c_str() + s.find(':') + 1);
@@ -217,6 +250,9 @@ void Air_Parse(const std::string &text, AirFile &out) {
                 }
                 pendingHeader[g] = 0;
             }
+            e.interp = interp;
+            if (interpLine) e.first = std::min(e.first, interpLine);
+            interp = interpLine = 0;
             act->elems.push_back(e);
         }
     }
@@ -399,6 +435,141 @@ bool Air_SetLoopStart(std::string &text, const AirAction &act, int index) {
     if (at >= 0) lines.insert(lines.begin() + at, Indent(lines[at]) + "Loopstart");
     text = JoinLines(lines);
     return true;
+}
+
+bool Air_SetInterpolate(std::string &text, const AirElem &elem, int flags) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (elem.line < 1 || elem.line > (int)lines.size()) return false;
+    int at = elem.line - 1; // before the element's own line
+    for (int i = at - 1; i >= elem.first - 1; i--)
+        if (StartsWith(Clean(lines[i]), "interpolate ")) {
+            lines.erase(lines.begin() + i);
+            at--;
+        }
+    std::string indent = Indent(lines[at]);
+    static const struct {
+        int flag;
+        const char *line;
+    } kLines[] = {{kAirInterpOffset, "Interpolate Offset"}, {kAirInterpScale, "Interpolate Scale"},
+                  {kAirInterpAngle, "Interpolate Angle"}, {kAirInterpBlend, "Interpolate Blend"}};
+    for (const auto &l : kLines)
+        if (flags & l.flag) lines.insert(lines.begin() + at++, indent + l.line);
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_InsertElems(std::string &text, const AirAction &act, int after, const std::vector<AirNewElem> &elems) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.last > (int)lines.size() || after >= (int)act.elems.size()) return false;
+    int at = after < 0 ? (act.elems.empty() ? act.line : act.elems[0].first - 1) : act.elems[after].line;
+    std::string indent = after >= 0 ? Indent(lines[at - 1]) : "";
+    for (const AirNewElem &e : elems) lines.insert(lines.begin() + at++, ElemLine(indent, e));
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_NewAction(std::string &text, int no, const std::string &name, const std::vector<AirNewElem> &elems) {
+    std::vector<std::string> lines = SplitLines(text);
+    while (!lines.empty() && lines.back().find_first_not_of(" \t\r") == std::string::npos) lines.pop_back();
+    lines.push_back("");
+    if (!name.empty()) lines.push_back("; " + name);
+    lines.push_back("[Begin Action " + std::to_string(no) + "]");
+    for (const AirNewElem &e : elems) lines.push_back(ElemLine("", e));
+    lines.push_back("");
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_SetActionName(std::string &text, const AirAction &act, const std::string &name) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.line < 1 || act.line > (int)lines.size()) return false;
+    std::string &header = lines[act.line - 1];
+    size_t semi = header.find(';');
+    if (semi != std::string::npos) {
+        // The name after the header: there it stays, or the comment goes with it
+        header = Trim(header.substr(0, semi)) + (name.empty() ? "" : " ; " + name);
+    } else if (!act.name.empty() && act.line >= 2) {
+        if (name.empty()) lines.erase(lines.begin() + act.line - 2);
+        else lines[act.line - 2] = "; " + name;
+    } else if (!name.empty()) {
+        lines.insert(lines.begin() + act.line - 1, "; " + name);
+    }
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_CopyActionFrom(std::string &text, const std::string &fromText, const AirAction &from, int newNo) {
+    std::vector<std::string> lines = SplitLines(text), src = SplitLines(fromText);
+    if (from.last > (int)src.size()) return false;
+    while (!lines.empty() && lines.back().find_first_not_of(" \t\r") == std::string::npos) lines.pop_back();
+    lines.push_back("");
+    if (!from.name.empty()) lines.push_back("; " + from.name);
+    lines.push_back("[Begin Action " + std::to_string(newNo) + "]");
+    for (int i = from.line; i < from.last; i++) lines.push_back(src[i]);
+    lines.push_back("");
+    text = JoinLines(lines);
+    return true;
+}
+
+bool Air_ScaleAction(std::string &text, const AirAction &act, float xscale, float yscale) {
+    // Each edit keeps every line where it is, so the lines parsed stay good; a default group is seen by
+    // several elements and scaled once
+    std::vector<int> done;
+    for (const AirElem &e : act.elems) {
+        if (!Air_SetElem(text, e, e.group, e.image, (int)lroundf(e.x * xscale), (int)lroundf(e.y * yscale), e.time)) return false;
+        for (int g = 0; g < 2; g++)
+            for (const AirBox &b : e.clsn[g]) {
+                if (std::find(done.begin(), done.end(), b.line) != done.end()) continue;
+                done.push_back(b.line);
+                if (!Air_SetBox(text, b, (int)lroundf(b.x1 * xscale), (int)lroundf(b.y1 * yscale), (int)lroundf(b.x2 * xscale), (int)lroundf(b.y2 * yscale)))
+                    return false;
+            }
+    }
+    return true;
+}
+
+int Air_Optimize(std::string &text, const AirAction &act) {
+    std::vector<std::string> lines = SplitLines(text);
+    if (act.last > (int)lines.size() || act.elems.size() < 2) return 0;
+    auto sameBoxes = [](const std::vector<AirBox> &a, const std::vector<AirBox> &b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); i++)
+            if (a[i].x1 != b[i].x1 || a[i].y1 != b[i].y1 || a[i].x2 != b[i].x2 || a[i].y2 != b[i].y2) return false;
+        return true;
+    };
+    std::vector<int> drop; // lines to take out, in no order
+    std::vector<std::string> add;
+    for (int g = 0; g < 2; g++) {
+        const std::vector<AirBox> &first = act.elems[0].clsn[g];
+        bool all = !first.empty(), own = false;
+        for (const AirElem &e : act.elems) {
+            all = all && sameBoxes(e.clsn[g], first);
+            own = own || e.own[g];
+        }
+        if (!all || !own) continue;
+        char buf[96];
+        snprintf(buf, sizeof(buf), "Clsn%dDefault: %d", g + 1, (int)first.size());
+        add.push_back(buf);
+        for (size_t n = 0; n < first.size(); n++) {
+            snprintf(buf, sizeof(buf), "  Clsn%d[%d] = %d, %d, %d, %d", g + 1, (int)n, first[n].x1, first[n].y1, first[n].x2, first[n].y2);
+            add.push_back(buf);
+        }
+        // Every group of boxes of this kind goes, a default among them
+        for (const AirElem &e : act.elems) {
+            if (e.header[g] <= 0 || std::find(drop.begin(), drop.end(), e.header[g]) != drop.end()) continue;
+            drop.push_back(e.header[g]);
+            for (const AirBox &b : e.clsn[g]) drop.push_back(b.line);
+        }
+    }
+    if (drop.empty()) return 0;
+    int removed = (int)drop.size() - (int)add.size();
+    if (removed <= 0) return 0;
+    std::sort(drop.begin(), drop.end());
+    drop.erase(std::unique(drop.begin(), drop.end()), drop.end());
+    for (size_t i = drop.size(); i-- > 0;) lines.erase(lines.begin() + drop[i] - 1);
+    lines.insert(lines.begin() + act.line, add.begin(), add.end());
+    text = JoinLines(lines);
+    return removed;
 }
 
 bool Air_CopyAction(std::string &text, const AirAction &act, int newNo) {

@@ -25,11 +25,15 @@ struct AirStyle {
     bool Plain() const { return !flipH && !flipV && blend == kAirOpaque && xscale == 1 && yscale == 1 && angle == 0; }
 };
 
+// What the "Interpolate" lines before an element ask for: from the element before to this one
+enum { kAirInterpOffset = 1, kAirInterpScale = 2, kAirInterpAngle = 4, kAirInterpBlend = 8 };
+
 struct AirElem {
     int line = 0;
-    int first = 0; // its first line: its own box groups come before it
+    int first = 0; // its first line: its own box groups and Interpolate lines come before it
     int group = 0, image = 0, x = 0, y = 0, time = 0;
     AirStyle style;
+    int interp = 0; // kAirInterp...
     std::vector<AirBox> clsn[2]; // Clsn1, Clsn2 in effect for this element
     int header[2] = {};          // line of the "ClsnN: n" / "ClsnNDefault: n" they come from, 0: none
     bool own[2] = {};            // that header is the element's own (not a default)
@@ -39,6 +43,8 @@ struct AirAction {
     int no = 0;
     int line = 0, last = 0; // of "[Begin Action]" and its last line
     int loopStart = -1;     // element index
+    int copyOf = -1;        // "Copy Action n": the game uses that action's elements
+    std::string name;       // the comment on the line before, or after the header
     std::vector<AirElem> elems;
 };
 
@@ -67,6 +73,22 @@ bool Air_DuplicateElems(std::string &text, const AirAction &act, const std::vect
 bool Air_DeleteElems(std::string &text, const AirAction &act, const std::vector<int> &indices);
 bool Air_MoveElem(std::string &text, const AirAction &act, int index, int dir); // -1 earlier, 1 later
 bool Air_SetLoopStart(std::string &text, const AirAction &act, int index);      // -1: none
+bool Air_SetInterpolate(std::string &text, const AirElem &elem, int flags);
+// New elements after that index (-1: before the first)
+struct AirNewElem {
+    int group = 0, image = 0, x = 0, y = 0, time = 1;
+};
+bool Air_InsertElems(std::string &text, const AirAction &act, int after, const std::vector<AirNewElem> &elems);
+// A new action at the end of the file, with the name as a comment before it when there is one
+bool Air_NewAction(std::string &text, int no, const std::string &name, const std::vector<AirNewElem> &elems);
+bool Air_SetActionName(std::string &text, const AirAction &act, const std::string &name);
+// An action of another file (fromText), as newNo at the end of this one
+bool Air_CopyActionFrom(std::string &text, const std::string &fromText, const AirAction &from, int newNo);
+// Offsets and boxes of an action multiplied (for sprites resized)
+bool Air_ScaleAction(std::string &text, const AirAction &act, float xscale, float yscale);
+// Boxes every element has alike become the action's default: fewer lines, the same animation.
+// Returns the lines taken out.
+int Air_Optimize(std::string &text, const AirAction &act);
 bool Air_CopyAction(std::string &text, const AirAction &act, int newNo);        // at the end of the file
 bool Air_DeleteAction(std::string &text, const AirAction &act);
 bool Air_RenumberAction(std::string &text, const AirAction &act, int newNo);

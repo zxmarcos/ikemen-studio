@@ -652,7 +652,7 @@ static void CropAndResize(SpriteFile &sf) {
 }
 
 // The tab when several sprites are selected: what can be done with them all.
-static void SpritesPanel(SpriteFile &sf) {
+static void SpritesPanel(SpriteFile &sf, int pn) {
     SffDoc &d = sf.doc;
     float em = ImGui::GetFontSize();
     std::vector<int> sel = Selection(sf);
@@ -701,6 +701,22 @@ static void SpritesPanel(SpriteFile &sf) {
     ImGui::EndDisabled();
     if (!free) ImGui::TextColored(Ink(kRed), "Those numbers are in use.");
     ImGui::SetItemTooltip("Animations using the old numbers are not changed");
+
+    if (pn > 0) {
+        ImGui::SeparatorText("Animation");
+        static int action = 0, time = 4;
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("Action", &action, 0);
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("Ticks each", &time, 0);
+        const AirFile &air = AirOf(LoadSource(CharFile(pn, "anim")));
+        bool exists = air.actions.count(action) != 0;
+        std::vector<std::pair<int, int>> numbers;
+        for (int i : sel) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
+        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, action, time, numbers, exists))
+            Log(LogLine::Error, "Could not write the animation");
+        ImGui::SetItemTooltip("One element for each sprite, in the order of the file");
+    }
 
     ImGui::SeparatorText("Files");
     static bool aligned = true;
@@ -1127,7 +1143,7 @@ void SpritesWindow() {
             if (ImGui::BeginTabItem("Sprite")) {
                 tab = 0;
                 if (sf.picks.empty()) stop = SpritePanel(sf, pn);
-                else SpritesPanel(sf);
+                else SpritesPanel(sf, pn);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Palette", nullptr, colour >= 0 && tab != 1 ? ImGuiTabItemFlags_SetSelected : 0)) {

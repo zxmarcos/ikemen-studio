@@ -86,6 +86,7 @@ add_executable(ikemen-debugger WIN32
   src/air.cpp
   src/sff.cpp
   src/sffedit.cpp
+  src/gif.cpp
   src/snd.cpp
   src/cmd.cpp
   src/ini.cpp
@@ -135,6 +136,8 @@ target_include_directories(make-test PRIVATE src)
 add_executable(stagecheck-test tests/stagecheck_test.cpp src/stagecheck.cpp src/ini.cpp src/air.cpp src/sff.cpp)
 target_include_directories(stagecheck-test PRIVATE src)
 target_link_libraries(stagecheck-test PRIVATE lodepng)
+add_executable(gif-test tests/gif_test.cpp src/gif.cpp)
+target_include_directories(gif-test PRIVATE src)
 add_executable(undo-test tests/undo_test.cpp)
 target_include_directories(undo-test PRIVATE src)
 add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp)

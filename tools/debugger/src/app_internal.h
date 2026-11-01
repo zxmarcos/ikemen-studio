@@ -345,6 +345,8 @@ const AirFile &AirOf(const SourceFile &sf);
 AnimTarget GetAnimTarget();
 bool AnimShowLine(const std::string &path, int line); // the action and element at that line of an AIR file, in Animation
 void ApplyAnims(SourceFile &sf);
+// A new action of those sprites (group, number), or (append) more elements at its end; shown in Animation
+bool AnimFromSprites(int pn, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append);
 void AnimationWindow();
 
 // Sprites
