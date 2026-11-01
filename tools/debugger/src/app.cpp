@@ -218,11 +218,13 @@ bool InstallMod() {
     return true;
 }
 
-void Launch() {
+void Launch(bool menus) {
     if (!InstallMod()) return;
     std::string args;
     const Settings &s = g_settings;
-    if (!s.p1.empty() && !s.p2.empty()) {
+    menus = menus || s.p1.empty() || s.p2.empty();
+    GoToLaunched(menus);
+    if (!menus) {
         args += "-p1 " + s.p1 + " -p2 " + s.p2;
         if (s.ai1) args += " -p1.ai 1";
         if (s.ai2) args += " -p2.ai 1";
@@ -235,6 +237,7 @@ void Launch() {
 
     g_hello = false;
     g_exitReported = false;
+    g_tick = g_roundNo = g_roundState = 0;
     g_ents.clear();
     g_history.clear();
     g_prevVars.clear();
@@ -458,6 +461,8 @@ void OnLine(const Bridge::Line &line) {
         LabHello();
     } else if (tag == "@IKTAKE") {
         OnTake(j);
+    } else if (tag == "@IKGO") {
+        OnGoTo(j);
     } else if (tag == "@IKSRC") {
         size_t from = (size_t)std::max(1, j["from"].i());
         const auto &items = j["items"].items;

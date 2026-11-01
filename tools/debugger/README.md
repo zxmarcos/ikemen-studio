@@ -152,6 +152,13 @@ the game stopped too, on the stage picked in Explorer and the screenpack of
 `config.ini`, and their Checks say which files, actions, sprites and sounds are
 missing.
 
+**Go to** on the Game window puts the game on a screen and keeps it there: the
+title, options, select, versus, hiscore, storyboards, victory, results, continue, or
+a moment of a match (round call, Fight!, KO, Double KO, Perfect, Time over, Winner,
+Draw, the pause menu), with the teams chosen for it (Single, Simul, Turns, Tag), so
+the fight screen's team sections can be seen too. **Let it go on** goes on from there.
+The first time, the game starts again in its menus.
+
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code
 shows that def; in the others it follows the selected player's state.

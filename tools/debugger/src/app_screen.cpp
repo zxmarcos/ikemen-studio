@@ -718,6 +718,12 @@ std::string ScreenFileName(const std::string &def) {
     return !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(def) ? "stage" : "";
 }
 
+bool ScreenItemShown(const char *section, const char *prefix) {
+    for (const FrameFightItem &f : g_fight.items)
+        if (f.section == section && f.prefix.compare(0, strlen(prefix), prefix) == 0) return true;
+    return false;
+}
+
 bool ScreenShowsAction(const std::string &def, int action, int *elem) {
     if (ScreenDef *d = ScreenOfDef(def)) {
         for (const FrameFightItem &f : d->items)

@@ -125,7 +125,7 @@ void Commands(std::vector<Entry> &out) {
         out.push_back(e);
     };
     bool running = g_bridge.Running(), live = Connected();
-    add(running ? "Game: Restart" : "Game: Launch", "", Launch);
+    add(running ? "Game: Restart" : "Game: Launch", "", [] { Launch(); });
     if (running)
         add("Game: Stop", "", [] {
             g_bridge.Stop();

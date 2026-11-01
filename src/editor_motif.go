@@ -336,6 +336,14 @@ func editorReloadMotif(l *lua.LState, textFile string, keep bool) (err error) {
 }
 
 func editorMotifFunctions(l *lua.LState) {
+	luaRegister(l, "debugHiscoreEnd", func(l *lua.LState) int {
+		/*End the hiscore screen (held on it, with a time that does not end).
+		@function debugHiscoreEnd*/
+		if debuggerAttached() {
+			sys.motif.hi.reset(&sys.motif)
+		}
+		return 0
+	})
 	luaRegister(l, "debugAnimSource", func(l *lua.LState) int {
 		/*Give an animation the source (the def's keys) of another: a portrait made from a
 		character's sprites by the scripts, with the motif property's AnimData.

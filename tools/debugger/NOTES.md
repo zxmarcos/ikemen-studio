@@ -160,6 +160,32 @@ is a portrait (`OfTheCharacter`); `face.random` and `face.slot` are the motif's 
 release gives `[Round] dko.anim` naming action 534, which does not exist: its comment
 says it is a dummy on purpose.
 
+Go to (`src/app_goto.cpp`, the end of `mod/ikdbg.lua`; the Game window's button):
+the game put on a screen and kept there. A quick match (`-p1 -p2`) has no menus and
+exits after its match, so the game starts again without them the first time, the
+goal in `IKDBG_GOTO`; from then on `ikdbg.goTo`. The way there is the title's loop:
+`main.f_demo` runs each frame with the title idle, so the mod starts goals from it
+(`main.menu.f`), which also keeps the demo off; `esc` leaves any menu (set after
+`refresh`, whose frame clears it). Held: the select screen's timer
+(`main.f_drawTimer` gives its old value back), the versus screen's `time` (restored
+on leaving), the hiscore's `endtime` (`debugHiscoreEnd` ends it); what the engine
+runs (victory, results, continue, storyboards) stops with the pause, so those are
+reached by waiting for `motifState` and 150 ticks. Matches are `launchFight` with
+both sides given, the arguments saying which screens follow, one round to win,
+gameMode arcade (victory needs it). `Moments` (KO, Perfect...) set life and time when
+the round is on; the app watches the frame geometry for their `[Round]` element and
+asks for a hold that many ticks later, counted by the game: this program's frames
+are few on a busy machine. Which element showed is known by looking: `ai.win`,
+`ai.lose`, not `win`, against the AI. A draw is the time up with life even: two
+KOs are a Double KO. A match over before its moment came is tried once more, then
+reported. A versus screen wants the roster's character, so a name it has not
+loaded takes its first one (logged): `f_getCharRef` would add it apart, without
+portraits. A Turns match right after another of the same run ends at once: not
+found why (a first one is fine), so Go to restarts the game for it. The team choice
+is what reaches the fight screen's Simul, Tag and Turns sections: Simul and Tag
+tested at 2 a side, both teams given the same mode. `test_ui.ps1` got `mark` and
+`until:text`: waits on the log, since a busy machine took a load from 10 s to 32 s.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -408,6 +434,7 @@ tools/debugger/
   src/app_stage.cpp      Stage window, and the BGs on the Game window
   src/app_screen.cpp     Fight screen, Motif and Storyboard windows, and their elements on the Game window
   src/app_refs.cpp       what a def's fields name: thumbnails, pickers, sounds played, the fields using an action
+  src/app_goto.cpp       Go to: the game put on a screen and kept there, the teams of its match
   src/app_debug.cpp      the toolbar, Players, Inspector, Frame data, Trace, Breakpoints, Watch, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands

@@ -11,6 +11,7 @@ param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [st
 #   | lua:code (run in the game as if typed in the Console; the result goes to the Console)
 #   | ctrl:Z (a key with Ctrl held) | wheel:x,y,n (n notches, up when positive)
 #   | keys:+DOWN,+RIGHT,-DOWN,+A,-A,-RIGHT (pressed +, released -, 50 ms apart: a motion for the game)
+#   | mark, then until:text (waits up to 240 s for a log line with the text after the mark, whatever the machine's load)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -66,6 +67,8 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'visible' { "game window visible: " + [W]::IsWindowVisible($game.MainWindowHandle) }
     'game' { $g = $game.MainWindowHandle; switch ($arg) { 'hide' { [W]::ShowWindow($g, 0) | Out-Null } 'show' { [W]::ShowWindow($g, 5) | Out-Null } 'min' { [W]::ShowWindow($g, 6) | Out-Null } 'off' { [W]::SetWindowPos($g, [IntPtr]::Zero, -5000, -5000, 0, 0, 0x0001 -bor 0x0004 -bor 0x0010) | Out-Null } } }
     'rclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]3, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]4, $l) | Out-Null }
+    'mark' { $logMark = @(Get-Content "$dir\ikemen-debugger.log" -ErrorAction SilentlyContinue).Count }
+    'until' { $end = (Get-Date).AddSeconds(240); while ((Get-Date) -lt $end) { $lines = @(Get-Content "$dir\ikemen-debugger.log" -ErrorAction SilentlyContinue); if (@($lines | Select-Object -Skip ([int]$logMark) | Where-Object { $_ -like "*$arg*" }).Count -gt 0) { break }; Start-Sleep -Milliseconds 500 }; if ((Get-Date) -ge $end) { "until: no '$arg' in the log" }; $logMark = $lines.Count }
     'wait' { Start-Sleep -Milliseconds ([int]([double]$arg * 1000)) }
     'click' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]1, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]2, $l) | Out-Null }
     'type' { foreach ($ch in $arg.ToCharArray()) { [W]::PostMessage($hd, 0x102, [IntPtr][int]$ch, [IntPtr]1) | Out-Null; Start-Sleep -Milliseconds 15 } }

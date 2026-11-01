@@ -765,6 +765,7 @@ end
 local reported = {}
 hook.add('loop', 'ikdbg', function()
 	local ok, err = pcall(frame)
+	if ok then ok, err = pcall(ikdbg.goalTick) end
 	if not ok and not reported[tostring(err)] then
 		reported[tostring(err)] = true
 		send('@IKRES', {ok = false, r = 'ikdbg: ' .. tostring(err)})
@@ -843,6 +844,321 @@ if start then
 			end
 		end
 	end
+end
+
+--;-----------------------------------------------------------
+--; Going to a screen and staying on it, to edit what only shows for a moment. The menus are Lua
+--; loops: the title's ends in the demo (main.f_demo, held off; it runs only with the title idle, so
+--; a goal starts there), the select screen's timer and the versus screen's time are held. What
+--; runs in the engine (victory, results, continue, hiscore, storyboards) stops with the pause.
+--; Matches are made with launchFight, whose arguments say which of those screens follow.
+--; Screens after a match need the game started without -p1 -p2, which exits after its match.
+--;-----------------------------------------------------------
+local kForever = 2147483647
+ikdbg.goal = nil    -- where to go: {screen, team, num, char, stage}
+ikdbg.going = nil   -- in a match on the way there: what is left to do
+ikdbg.held = nil    -- the screen the game stays on
+ikdbg.leaving = false -- on the way back to the title
+ikdbg.fighting = false -- the match's hook ran last, not a menu's refresh
+local storyFrames, vsTime = 0, nil
+
+local function report()
+	send('@IKGO', {held = ikdbg.held or '', goal = ikdbg.goal and ikdbg.goal.screen or ''})
+end
+
+local function hold(name)
+	ikdbg.held, ikdbg.goal, ikdbg.going = name, nil, nil
+	report()
+end
+
+-- The debugger saw the moment it was watching for: held that many ticks on, past its fade.
+function ikdbg.holdAfter(name, ticks)
+	ikdbg.going = ikdbg.going or {screen = name}
+	ikdbg.going.screen, ikdbg.going.ticks = name, ticks
+end
+
+-- The game goes on from the screen held.
+function ikdbg.letGo()
+	if ikdbg.held == 'vs' and vsTime then
+		motif.vs_screen.time = vsTime
+		vsTime = nil
+	end
+	ikdbg.held, ikdbg.going = nil, nil
+	togglePause(false)
+	report()
+end
+
+-- "screen|team1|num1|team2|num2|char1|char2|stage"
+local function parseGoal(text)
+	local f = {}
+	for v in (text .. '|'):gmatch('([^|]*)|') do f[#f + 1] = v end
+	return {screen = f[1], team = {f[2] or 'single', f[4] or 'single'}, num = {tonumber(f[3]) or 1, tonumber(f[5]) or 1},
+		char = {f[6] or '', f[7] or ''}, stage = f[8] or ''}
+end
+
+-- A moment of a match: these players' life gone or the time up, once the round is on. The debugger
+-- watches for the element and pauses (kill: players; time: time up; menu: the pause menu; restart:
+-- at a round's start; full: P1 not hit, so a fresh round too).
+local kMoments = {
+	round = {restart = true}, fight = {restart = true},
+	ko = {kill = {2}}, dko = {kill = {1, 2}}, perfect = {kill = {2}, full = true}, win = {kill = {2}},
+	draw = {time = true}, timeover = {time = true}, pause = {menu = true}, -- a draw: the time up, life even
+}
+-- What follows a match, and who has to lose for it to show
+local kAfter = {
+	victory = {state = 'victoryscreen', args = {victoryscreen = true}, kill = {2}},
+	results = {state = 'winscreen', args = {winscreen = true}, kill = {2}},
+	lose = {state = 'winscreen', lose = true, kill = {1}},
+	continue = {state = 'continuescreen', args = {continue = true}, kill = {1}},
+}
+
+local function storyboardOf(screen)
+	if screen == 'logo' then return motif.files.logo.storyboard end
+	if screen == 'intro' then return motif.files.intro.storyboard end
+	if screen == 'gameover' then return motif.game_over_screen.storyboard end
+	if screen == 'credits' then return motif.end_credits.storyboard end
+	if screen == 'ending' then return motif.default_ending.storyboard end
+end
+
+-- The match's plan for the frame hook.
+local function plan(g, kill)
+	ikdbg.going = {screen = g.screen, kill = kill}
+	return ikdbg.going
+end
+
+local function moment(g, m, inMatch)
+	local p = plan(g, m.kill)
+	p.time, p.menu, p.full, p.goal = m.time, m.menu, m.full, g
+	if inMatch then togglePause(false) end
+end
+
+-- A character as the roster names it, whose portraits and animations are read already (a name it
+-- does not know would be added apart, without them); not in the roster: its first one.
+local function rosterChar(name)
+	local wanted = name:lower()
+	for _, c in ipairs(main.t_selChars) do
+		local own = c.char and c.char:lower()
+		if own and (own == wanted or own:match('([^/]+)%.def$') == wanted or own:match('^([^/]+)/') == wanted) then return c.char end
+	end
+	if #main.t_randomChars == 0 then return name end
+	local first = start.f_getCharData(main.t_randomChars[1]).char
+	send('@IKRES', {ok = true, r = name .. ' is not in the roster: ' .. first .. ' takes its place'})
+	return first
+end
+
+-- A match of its own: both sides given, no select screen.
+local function fight(g, args)
+	return function()
+		local ok, err = pcall(function()
+			main.f_default()
+			setGameMode('arcade')
+			main.selectMenu = {false, false}
+			main.motif.losescreen = args.lose == true
+			setMotifElements(main.motif)
+			start.f_selectReset(true)
+			main.f_saveBaseRemapInput()
+			main.t_availableChars = main.f_tableCopy(start.f_getOrderChars())
+			-- The versus screen draws what the roster has read
+			if args.vsscreen then
+				for side = 1, 2 do
+					g.char[side] = rosterChar(g.char[side])
+					main.f_preloadBoostChar(start.f_getCharRef(g.char[side]))
+				end
+				main.f_waitForPreloads(true)
+			end
+			local p, data = {{}, {}}, {stage = g.stage, vsscreen = args.vsscreen == true, victoryscreen = args.victoryscreen == true,
+				winscreen = args.winscreen == true, continue = args.continue == true, p1rounds = 1, p2rounds = 1}
+			for side = 1, 2 do
+				for n = 1, math.max(g.num[side], 1) do p[side][n] = g.char[side] end
+				data['p' .. side .. 'char'] = p[side]
+				data['p' .. side .. 'numchars'] = #p[side]
+				data['p' .. side .. 'teammode'] = g.team[side]
+			end
+			launchFight(data)
+			setMatchNo(-1)
+		end)
+		if not ok then send('@IKRES', {ok = false, r = 'going to ' .. g.screen .. ': ' .. tostring(err)}) end
+	end
+end
+
+-- With the title idle: on the way to the goal.
+local function fromTitle()
+	local g = ikdbg.goal
+	if not g then return end
+	local s = g.screen
+	if s == 'title' then
+		hold(s)
+	elseif s == 'select' or s == 'teamselect' then
+		local name = s == 'select' and 'versus' or 'teamversus'
+		main.f_default()
+		main.menu.f = main.t_itemname[name]({{itemname = name}}, 1)
+		hold(s)
+	elseif s == 'options' then
+		main.f_default()
+		main.menu.f = main.t_itemname.options()
+		hold(s)
+	elseif s == 'hiscore' then
+		hold(s)
+		main.menu.f = function()
+			while runHiscore('arcade', -1, kForever) and ikdbg.held == s do
+				main.f_preloadTick(2)
+				refresh()
+			end
+			debugHiscoreEnd()
+		end
+	elseif storyboardOf(s) ~= nil then
+		local path = storyboardOf(s)
+		if path == '' then
+			ikdbg.goal = nil
+			send('@IKRES', {ok = false, r = 'the motif names no storyboard for ' .. s})
+			return
+		end
+		g.running = true
+		storyFrames = 0
+		main.menu.f = function()
+			main.f_storyboard(path)
+			if ikdbg.goal == g then -- over before it was held: a file that is not there
+				ikdbg.goal = nil
+				send('@IKRES', {ok = false, r = 'the storyboard ' .. path .. ' could not be shown'})
+				report()
+			end
+		end
+	elseif s == 'vs' then
+		hold(s)
+		main.menu.f = fight(g, {vsscreen = true})
+	elseif kAfter[s] then
+		local a = kAfter[s]
+		plan(g, a.kill).state = a.state
+		main.menu.f = fight(g, a.args or {lose = a.lose})
+		ikdbg.goal = nil
+	elseif kMoments[s] then
+		moment(g, kMoments[s], false)
+		main.menu.f = fight(g, {})
+		ikdbg.goal = nil
+	else
+		ikdbg.goal = nil
+		send('@IKRES', {ok = false, r = 'no screen called ' .. s})
+	end
+end
+
+function ikdbg.goTo(text)
+	local g = parseGoal(text)
+	-- A moment of the round under way, unless it needs a fresh one, other teams are asked for or a
+	-- moment held has decided it; else a match of its own
+	local m = kMoments[g.screen]
+	if ikdbg.fighting and m and not m.restart and not m.full and not ikdbg.held and not ikdbg.going and roundState() == 2 and
+		g.team[1] == 'single' and g.team[2] == 'single' then
+		moment(g, m, true)
+		report()
+		return
+	end
+	if ikdbg.held == 'vs' and vsTime then motif.vs_screen.time, vsTime = vsTime, nil end
+	ikdbg.held, ikdbg.going, ikdbg.goal = nil, nil, g
+	ikdbg.leaving = true
+	togglePause(false)
+	if ikdbg.fighting then endMatch() end
+	report()
+end
+
+-- Each frame of a match (the frame hook): the plan under way.
+function ikdbg.goalTick()
+	ikdbg.fighting = true
+	local p = ikdbg.going
+	if not p then return end
+	if p.ticks then
+		p.ticks = p.ticks - 1
+		if p.ticks <= 0 then
+			togglePause(true)
+			hold(p.screen)
+		end
+		return
+	end
+	if roundState() == 2 and not p.done then
+		p.done = true
+		if p.full then onPlayer(1, function() setLife(lifeMax()) end) end
+		if p.kill then
+			for _, side in ipairs(p.kill) do -- the whole team: a side's players go 1, 3, 5, 7 and 2, 4, 6, 8
+				for pn = side, 8, 2 do onPlayer(pn, function() setLife(0) end) end
+			end
+		end
+		if p.time then setTime(1) end
+		if p.menu then
+			esc(true)
+			hold(p.screen)
+			return
+		end
+	end
+	if p.state and motifState(p.state) then
+		p.shown = (p.shown or 0) + 1
+		-- past its fade and what it types
+		if p.shown >= 150 then
+			togglePause(true)
+			hold(p.screen)
+		end
+	end
+end
+
+if main and start then
+	local demo, story, timer, draw = main.f_demo, main.f_storyboard, main.f_drawTimer, refresh
+	main.f_demo = function()
+		-- Before the title's own look at esc(), which would leave the game
+		if ikdbg.leaving then
+			ikdbg.leaving = false
+			esc(false)
+		end
+		-- A match over before its moment showed: once more in a new one, then it is not coming
+		local p = ikdbg.going
+		if p then
+			ikdbg.going = nil
+			if p.goal and not p.goal.again then
+				ikdbg.goal, p.goal.again = p.goal, true
+			else
+				hold('title')
+				send('@IKRES', {ok = false, r = p.screen .. ' did not show'})
+				return
+			end
+		end
+		if not ikdbg.goal then
+			if not ikdbg.held then return demo() end
+			return
+		end
+		local ok, err = pcall(fromTitle)
+		if not ok then
+			ikdbg.goal = nil
+			send('@IKRES', {ok = false, r = 'going to a screen: ' .. tostring(err)})
+		end
+		report()
+	end
+	-- Going somewhere: no logo and intro on the way
+	main.f_storyboard = function(path, ...)
+		if ikdbg.goal and not ikdbg.goal.running then return false end
+		return story(path, ...)
+	end
+	main.f_drawTimer = function(value, params)
+		local v, active = timer(value, params)
+		if ikdbg.held then return value, active end
+		return v, active
+	end
+	refresh = function(...)
+		ikdbg.fighting = false
+		if ikdbg.held == 'vs' and motif.vs_screen.time ~= kForever then
+			vsTime = motif.vs_screen.time
+			motif.vs_screen.time = kForever
+		end
+		-- A storyboard: past its first fade, then the pause holds it
+		local g = ikdbg.goal
+		if g and g.running then
+			storyFrames = storyFrames + 1
+			if storyFrames >= 60 then
+				togglePause(true)
+				hold(g.screen)
+			end
+		end
+		draw(...)
+		-- After it: a frame's input starts with esc off
+		if ikdbg.leaving then esc(true) end
+	end
+	ikdbg.goal = os.getenv('IKDBG_GOTO') and parseGoal(os.getenv('IKDBG_GOTO')) or nil
 end
 
 send('@IKHELLO', {v = ikdbg.version, ik = version(), trace = ikdbg.caps.trace, set = ikdbg.caps.set})

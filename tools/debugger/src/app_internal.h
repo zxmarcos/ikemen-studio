@@ -289,11 +289,18 @@ void Watch(int id);
 void SendCtrlBreak(const CtrlBreak &b, bool on, size_t from = 1);
 CtrlBreak *FindCtrlBreak(const std::string &file, int line);
 void ToggleCtrlBreak(const std::string &file, int line);
-void Launch();
+void Launch(bool menus = false); // menus: without -p1 -p2, the game starts in its menus
 
 // ---------------------------------------------------------------------------
 // The windows
 // ---------------------------------------------------------------------------
+
+// Go to: the game put on a screen and kept there (app_goto.cpp)
+void GoToButton();              // the button and its popup, on the Game window
+void GoToLine();                // on the same line: where it is held, or going
+void GoToFrame();               // each frame of the game: a moment being waited for
+void GoToLaunched(bool menus);  // the game was started, in its menus or in a quick match
+void OnGoTo(const Json &j);     // @IKGO
 
 // Game
 // Trigger values of one entity (debugTriggerWatch), by tick, as the frames bring them (the
@@ -671,6 +678,7 @@ struct ScreenAnim {
 bool SelectedScreenAnim(ScreenAnim &out);
 std::string ScreenFileName(const std::string &def);      // what the game uses that def as ("stage"), "" not in use
 bool ScreenShowsAction(const std::string &def, int action, int *elem); // something of that def in use shows it now
+bool ScreenItemShown(const char *section, const char *prefix); // an element of the fight screen is on screen: its prefix starts so
 void ScreenTextEdited(SourceFile &sf);                   // that def's text changed: the game shows it, if it is using it
 void ScreenFileSaved(const std::string &path);           // a file a screen reads besides its def (fightfx.air) was saved
 std::string ScreenDefOfSprites(const std::string &sff);  // the def in use whose SFF that is, "" none

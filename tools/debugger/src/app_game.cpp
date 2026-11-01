@@ -195,6 +195,7 @@ void PollFrames() {
                               ImVec2((float)b[5].num(), (float)b[6].num()), b[7].i(), b[8].truthy(), b[9].i(), b[10].i()});
     ReadModelGeometry(stage["mdl"]);
     ReadScreenGeometry(j);
+    GoToFrame();
     UpdateInputHistory();
     const Json &tg = j["tg"];
     int id = tg.isNull() ? -1 : tg["id"].i();
@@ -443,6 +444,9 @@ void GameWindow() {
         ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
         ImGui::EndPopup();
     }
+    SameLineFits(CheckboxWidth(ICON_TRACE " Go to " ICON_CARET));
+    GoToButton();
+    GoToLine();
     if (g_frameTex && AdvancedTools()) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);
