@@ -2,6 +2,8 @@ param([string]$Msys = "$env:MSYS2_ROOT")
 # One-time setup of a fresh MSYS2 (https://www.msys2.org, installed at $Msys):
 # full update, then the packages Ikemen GO's BUILDING.md lists (minus Go: the
 # system Go in C:\Program Files\Go is used) and cmake/ninja for the debugger.
+# MSYS2's folder comes from -Msys or the environment variable MSYS2_ROOT.
+if (-not (Test-Path "$Msys\usr\bin\bash.exe")) { "MSYS2 not found at '$Msys': set MSYS2_ROOT or pass -Msys."; exit 1 }
 $env:MSYSTEM = "UCRT64"
 $env:CHERE_INVOKING = "1"
 function Run($cmd) {

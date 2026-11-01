@@ -223,9 +223,9 @@ commits, from when it was `debugger-bridge` on top of e9bfe112:
 
 | Commit | What |
 |---|---|
-| 2383ca8f | Engine side: `src/script_debugger.go` (new, ~210 lines), and one or two lines each in `compiler.go`, `bytecode.go`, `script.go` |
-| 2014c20a | `tools/debugger`: the debugger program, the mod, the scripts and these notes |
-| aff8c4e2 | `CLAUDE.md`: rules and environment for Claude sessions in this clone |
+| d0910b9c | Engine side: `src/script_debugger.go` (new, ~210 lines), and one or two lines each in `compiler.go`, `bytecode.go`, `script.go` |
+| bad11d05 | `tools/debugger`: the debugger program, the mod, the scripts and these notes |
+| cfeb7559 | `CLAUDE.md`: rules and environment for Claude sessions in this clone |
 
 
 Files:
@@ -316,14 +316,13 @@ helper "Bag"):
   player or helper; while it has focus, keys go to the game. The game's own
   window is hidden. Dragging a player or helper moves it (`debugMoveBy`).
 
-## Build environment (this machine)
+## Build environment
 
 - MSYS2 at `$env:MSYS2_ROOT`, UCRT64: gcc 16.2, SDL2 2.32.10, libxmp
   4.7.4, cmake, ninja. Installed for this work by `scripts/msys_setup.ps1`.
-  `C:\msys64` is an unrelated 2016 install: do not use it.
 - Go 1.27.3 at `C:\Program Files\Go` (the build scripts put it on the PATH).
-- `scripts/build.ps1 [ikemen] [debugger]` runs `scripts/build.sh` in MSYS2.
-  Ikemen's `build/build.sh Win64` also builds libvpx and ffmpeg the first
+- `scripts/build.ps1 [ikemen] [debugger] [test]` runs `scripts/build.sh` in
+  MSYS2, and stops if `MSYS2_ROOT` (or `-Msys`) is not an MSYS2. Ikemen's `build/build.sh Win64` also builds libvpx and ffmpeg the first
   time (long), copies their DLLs to `lib/`, and writes `./Ikemen_GO.exe`.
 - PowerShell 5.1 strips the inner quotes of native arguments: run MSYS2 work
   as script files, never as `bash -lc "..."` with quotes inside.
@@ -358,6 +357,7 @@ rewrite all of this history at every sync.
   and `local t_storyModeList` in `main.lua`, which a function could not leave
   inside it.
 - `rerere` is on in this clone: a conflict resolved once is resolved again.
+- Only `main` is pushed (`git push origin main`), never `--all`.
 
 ## Testing
 

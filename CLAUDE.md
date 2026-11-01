@@ -21,6 +21,9 @@ build environment and tests.
   and stays local: it carries upstream's workflows, which must not run on the fork.
 - Sync with `tools/debugger/scripts/sync_upstream.ps1` (see NOTES.md, "Syncing
   with upstream"), by merge, never by rebase.
+- The repository is public: no paths of this machine or personal addresses in
+  tracked files or commit messages. They go in `CLAUDE.local.md`, which git
+  ignores here: read it first when it exists.
 - At most two background subagents at a time, on disjoint files.
 - Videos sent to the user: 30 MB at most.
 - Keep engine changes inert without `-ikdbg` and easy to merge: new code
@@ -37,7 +40,7 @@ build environment and tests.
   write it with the Write tool, not `Set-Content -Encoding utf8` (5.1 adds a
   BOM, which ends up in the commit's subject).
 - MSYS2 UCRT64 at `$env:MSYS2_ROOT` (gcc, SDL2, libxmp, cmake, ninja);
-  Go at `C:\Program Files\Go`. `C:\msys64` is an old 2016 install: do not use it.
+  Go at `C:\Program Files\Go`.
 - Release assets (chars, stages, data, font, sound, video) were copied from
   the v1.0.0 Windows release and are ignored by git; `chars/ryu_pots`
   is the large test character (about 6000 controllers).

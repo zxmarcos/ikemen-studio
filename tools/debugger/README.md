@@ -22,7 +22,8 @@ tests.
 
 With MSYS2 UCRT64 set up as Ikemen's [BUILDING.md](../../BUILDING.md) says,
 plus `mingw-w64-ucrt-x86_64-cmake` and `mingw-w64-ucrt-x86_64-ninja`
-(`scripts/msys_setup.ps1` installs everything into a fresh MSYS2):
+(`scripts/msys_setup.ps1` installs everything into a fresh MSYS2), and the
+environment variable `MSYS2_ROOT` set to MSYS2's folder:
 
 ```powershell
 tools\debugger\scripts\build.ps1            # Ikemen GO and the debugger
