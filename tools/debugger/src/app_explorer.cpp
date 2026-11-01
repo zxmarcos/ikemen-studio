@@ -425,12 +425,11 @@ void StageNode(const Project &p) {
     ImGui::TreePop();
 }
 
-bool Group(const char *label, size_t count) {
+bool Group(const char *label, size_t count, bool open = true) {
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
     char text[64];
     snprintf(text, sizeof(text), "%s (%zu)###%s", label, count, label);
-    return ImGui::TreeNodeEx(text, ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen |
-                                       ImGuiTreeNodeFlags_Framed);
+    return ImGui::TreeNodeEx(text, ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed | (open ? ImGuiTreeNodeFlags_DefaultOpen : 0));
 }
 
 } // namespace
@@ -565,7 +564,7 @@ void ExplorerWindow() {
             ImGui::TreePop();
         }
         std::vector<DefEntry> common = CommonFiles();
-        if (Group("Common", common.size() + 1)) {
+        if (Group("Common", common.size() + 1, false)) {
             if (Passes("save/config.ini")) FileRow("save/config.ini", "config", GameFileExists("save/config.ini"), "", false, 2);
             for (const DefEntry &f : common)
                 if (Passes(f.path) || (ExtOf(f.path) == "def" && AnyPasses(f.path, false)))

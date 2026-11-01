@@ -209,7 +209,8 @@ void FontsWindow() {
     if (g_fontPicked != seenPicked) seenPicked = sel = g_fontPicked; // a text picked on the game
     float em = ImGui::GetFontSize();
     if (g_fontFiles.empty()) {
-        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game (Launch, on the toolbar).");
+        if (g_bridge.Running()) ImGui::TextDisabled("Needs the game's frames (patched Ikemen GO).");
+        else EmptyNote("The fonts of the screens show here once the game is running.");
         ImGui::End();
         return;
     }

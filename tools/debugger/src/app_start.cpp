@@ -12,6 +12,9 @@ bool g_showAtStart = true; // saved with the settings
 bool g_asked;              // shown from the next frame
 bool g_started;            // its first frame has passed
 int g_createAsked = -1;    // Create's tab, once the workspace it goes with is entered
+int g_tour = -1;           // the step of the first steps shown; -1: none
+bool g_tourDone;           // saved: seen to the end, or skipped
+int g_tourPick;            // the player picks when its step began
 
 struct Task {
     const char *icon, *title, *text, *workspace;
@@ -56,14 +59,69 @@ bool Card(const Task &t, ImVec2 size) {
 
 } // namespace
 
+// The first steps, in a corner: not in the way, and each goes on when the user has done it
+static void TourFrame() {
+    if (g_tour < 0) return;
+    static const struct {
+        const char *title, *text;
+    } steps[] = {
+        {"Start a match", "Press Launch at the top left, or F5. The game runs inside this window."},
+        {"Pick a fighter", "Click one on the game. The line above the picture says what is selected and where to edit it."},
+        {"Change something", "Press Animation on that line and change a value: the game shows it at once."},
+        {"That's all", "Ctrl+S saves. The Select choices on the game pick stages and screens the same way, and the bar at the "
+                       "left changes what you are working on."},
+    };
+    if (g_tour == 0 && Connected()) {
+        g_tour = 1;
+        g_tourPick = g_selPicked;
+    }
+    if (g_tour == 1 && g_selPicked != g_tourPick) g_tour = 2;
+    if (g_tour == 2)
+        for (const auto &kv : g_files)
+            if (kv.second.Dirty()) g_tour = 3;
+
+    const ImGuiStyle &st = ImGui::GetStyle();
+    ImGuiViewport *vp = ImGui::GetMainViewport();
+    float em = ImGui::GetFontSize(), margin = em;
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - margin, vp->WorkPos.y + vp->WorkSize.y - margin),
+                            ImGuiCond_Always, ImVec2(1, 1));
+    ImGui::SetNextWindowSize(ImVec2(em * 26, 0));
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+    ImGui::Begin("##tour", nullptr, flags);
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+    bool last = g_tour == IM_ARRAYSIZE(steps) - 1;
+    if (!last) ImGui::TextDisabled("Step %d of %d", g_tour + 1, IM_ARRAYSIZE(steps) - 1);
+    ImGui::PushFont(nullptr, st.FontSizeBase * 1.2f);
+    ImGui::TextUnformatted(steps[g_tour].title);
+    ImGui::PopFont();
+    ImGui::TextWrapped("%s", steps[g_tour].text);
+    if (ImGui::SmallButton(last ? ICON_CHECK " Done" : "Skip")) {
+        g_tour = -1;
+        g_tourDone = true;
+        ImGui::MarkIniSettingsDirty();
+    }
+    ImGui::End();
+}
+
+void EmptyNote(const char *text) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", text);
+    ImGui::PopStyleColor();
+}
+
 void AskStartPage() { g_asked = true; }
+
+void AskTour() { g_tour = 0; }
 
 void StartPageFrame() {
     if (!g_started) {
         g_started = true;
         // Scripted runs (--launch) go straight to the game
         g_asked = g_showAtStart && !g_autoLaunch;
+        if (!g_asked && !g_autoLaunch && !g_tourDone) g_tour = 0;
     }
+    TourFrame();
     if (g_createAsked >= 0) {
         CreateAsk(g_createAsked);
         g_createAsked = -1;
@@ -117,14 +175,21 @@ void StartPageFrame() {
                     ImGui::CalcTextSize(label).x);
     if (ImGui::Checkbox(label, &g_showAtStart)) ImGui::MarkIniSettingsDirty();
     ImGui::SetItemTooltip("It stays in File, as Start page.");
-    if (close) ImGui::CloseCurrentPopup();
+    if (close) {
+        ImGui::CloseCurrentPopup();
+        if (!g_tourDone) g_tour = 0;
+    }
     ImGui::EndPopup();
 }
 
 void StartSettingsLine(const std::string &key, const std::string &value) {
     if (key == "StartPage") g_showAtStart = value != "0";
+    else if (key == "TourDone") g_tourDone = value == "1";
 }
 
-void StartSettingsWrite(ImGuiTextBuffer *buf) { buf->appendf("StartPage=%d\n", g_showAtStart); }
+void StartSettingsWrite(ImGuiTextBuffer *buf) {
+    buf->appendf("StartPage=%d\n", g_showAtStart);
+    buf->appendf("TourDone=%d\n", g_tourDone);
+}
 
 } // namespace app

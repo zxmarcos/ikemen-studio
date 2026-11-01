@@ -77,7 +77,7 @@ void MatchesPopup() {
         ImGui::MarkIniSettingsDirty();
     }
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("The toolbar's P1, P2, AI and stage, under that name (the same name: replaced)");
+    ImGui::SetItemTooltip("These players and stage, under that name (the same name: replaced)");
 }
 
 // The toolbar above the windows: the game started and stopped, the match it starts with, its
@@ -238,16 +238,25 @@ void Toolbar() {
 
 void PlayersWindow() {
     if (!BeginTool("Players")) return;
+    if (!g_bridge.Running()) {
+        EmptyNote("The fighters of the match show here.");
+        ImGui::End();
+        return;
+    }
+    // The columns a character maker reads; the others are in the headers' right click menu
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable |
-                            ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
+                            ImGuiTableFlags_Hideable | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_SizingFixedFit;
     if (ImGui::BeginTable("players", 14, flags)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         float em = ImGui::GetFontSize();
-        ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 7);
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, em * 8);
+        ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 5.5f);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, em * 8);
         for (const char *h : {"State", "Prev", "Anim", "Elem", "Time", "Type", "Ctrl", "Pos", "Vel", "Life", "Power",
-                              "Explods, projs"})
-            ImGui::TableSetupColumn(h);
+                              "Explods, projs"}) {
+            bool shown = !strcmp(h, "State") || !strcmp(h, "Anim") || !strcmp(h, "Life");
+            ImGui::TableSetupColumn(h, shown ? 0 : ImGuiTableColumnFlags_DefaultHide);
+        }
         ImGui::TableHeadersRow();
         for (const auto &e : g_ents) {
             ImGui::TableNextRow();
@@ -356,7 +365,8 @@ void InspectorWindow() {
     if (!BeginTool("Inspector")) return;
     const Entity *e = FindEntity(g_selId);
     if (!e) {
-        ImGui::TextDisabled(g_selId < 0 ? "Pick a player in the Players window." : "The selected entity is gone.");
+        if (!g_bridge.Running()) EmptyNote("What the selected fighter is doing shows here, tick by tick.");
+        else ImGui::TextDisabled(g_selId < 0 ? "Click a fighter on the game." : "The selected one is gone.");
         ImGui::End();
         return;
     }
@@ -364,89 +374,100 @@ void InspectorWindow() {
     ImGui::Text("%s  %s", Who(e->pn, e->helper, e->id).c_str(), e->name.c_str());
     if (ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingFixedFit)) {
         Field("State", "%d (prev %d)", e->st, e->pst);
-        Field("Time", "%d", e->time);
         Field("Anim", "%d", e->anim);
         Field("Elem", "%d of %d, %d ticks in", e->elem, e->elemn, e->etime);
-        Field("AnimTime", "%d", e->atime);
-        Field("Types", "%s / %s / %s", e->stt.c_str(), e->mvt.c_str(), e->phy.c_str());
         Field("Ctrl", "%s", e->ctrl ? "yes" : "no");
-        Field("Facing", "%s", e->facing < 0 ? "left" : "right");
         Field("Pos", "%.2f, %.2f", e->x, e->y);
-        Field("Vel", "%.3f, %.3f", e->vx, e->vy);
         Field("Life", "%d / %d", e->life, e->lifemax);
         Field("Power", "%d / %d", e->pow, e->powmax);
+        ImGui::EndTable();
+    }
+    // The rest on demand: open at first with the advanced tools
+    auto section = [](const char *label) {
+        if (AdvancedTools()) ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        return ImGui::CollapsingHeader(label);
+    };
+    if (section("Details") && ImGui::BeginTable("details", 2, ImGuiTableFlags_SizingFixedFit)) {
+        Field("Time", "%d", e->time);
+        Field("AnimTime", "%d", e->atime);
+        Field("Types", "%s / %s / %s", e->stt.c_str(), e->mvt.c_str(), e->phy.c_str());
+        Field("Facing", "%s", e->facing < 0 ? "left" : "right");
+        Field("Vel", "%.3f, %.3f", e->vx, e->vy);
         Field("HitPause", "%d", e->hitpause);
         Field("MoveHit", "%d (contact %d, guarded %d)", e->moveHit, e->moveContact, e->moveGuarded);
         ImGui::EndTable();
     }
 
-    ImGui::SeparatorText("Actions");
     bool live = Connected();
-    ImGui::BeginDisabled(!live);
-    static int stateNo = 0, animNo = 0, life = 1000;
-    float w = ImGui::GetFontSize() * 6;
-    ImGui::SetNextItemWidth(w);
-    ImGui::InputInt("##state", &stateNo, 0);
-    ImGui::SameLine();
-    if (ImGui::Button("SelfState")) ExecOn(e->id, "selfState(" + std::to_string(stateNo) + ")");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(w);
-    ImGui::InputInt("##anim", &animNo, 0);
-    ImGui::SameLine();
-    if (ImGui::Button("ChangeAnim")) ExecOn(e->id, "changeAnim(" + std::to_string(animNo) + ")");
-    ImGui::SetNextItemWidth(w);
-    ImGui::InputInt("##life", &life, 0);
-    ImGui::SameLine();
-    if (ImGui::Button("Set life")) ExecOn(e->id, "setLife(" + std::to_string(life) + ")");
-    ImGui::SameLine();
-    if (ImGui::Button("Full life/power")) ExecOn(e->id, "setLife(lifeMax()); setPower(powerMax())");
-    ImGui::SameLine();
-    if (ImGui::Button("Stand")) ExecOn(e->id, "selfState(0)");
-    if (!e->helper) {
+    if (section("Actions")) {
+        ImGui::BeginDisabled(!live);
+        static int stateNo = 0, animNo = 0, life = 1000;
+        float w = ImGui::GetFontSize() * 6;
+        ImGui::SetNextItemWidth(w);
+        ImGui::InputInt("##state", &stateNo, 0);
         ImGui::SameLine();
-        if (ImGui::Button("Toggle AI"))
-            ExecOn(e->id, "if aiLevel() > 0 then setAILevel(0) return 'AI off' else setAILevel(8) return 'AI on' end");
+        if (ImGui::Button("SelfState")) ExecOn(e->id, "selfState(" + std::to_string(stateNo) + ")");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(w);
+        ImGui::InputInt("##anim", &animNo, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("ChangeAnim")) ExecOn(e->id, "changeAnim(" + std::to_string(animNo) + ")");
+        ImGui::SetNextItemWidth(w);
+        ImGui::InputInt("##life", &life, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("Set life")) ExecOn(e->id, "setLife(" + std::to_string(life) + ")");
+        ImGui::SameLine();
+        if (ImGui::Button("Full life/power")) ExecOn(e->id, "setLife(lifeMax()); setPower(powerMax())");
+        ImGui::SameLine();
+        if (ImGui::Button("Stand")) ExecOn(e->id, "selfState(0)");
+        if (!e->helper) {
+            ImGui::SameLine();
+            if (ImGui::Button("Toggle AI"))
+                ExecOn(e->id, "if aiLevel() > 0 then setAILevel(0) return 'AI off' else setAILevel(8) return 'AI on' end");
+        }
+        if (g_canSet) {
+            static float pos[2], vel[2];
+            ImGui::SetNextItemWidth(w * 2);
+            ImGui::InputFloat2("##pos", pos, "%.1f");
+            ImGui::SameLine();
+            if (ImGui::Button("Set pos")) {
+                char lua[96];
+                snprintf(lua, sizeof(lua), "setPos(%g, %g)", pos[0], pos[1]);
+                ExecOn(e->id, lua);
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(w * 2);
+            ImGui::InputFloat2("##vel", vel, "%.2f");
+            ImGui::SameLine();
+            if (ImGui::Button("Set vel")) {
+                char lua[96];
+                snprintf(lua, sizeof(lua), "setVel(%g, %g)", vel[0], vel[1]);
+                ExecOn(e->id, lua);
+            }
+            if (!ImGui::IsAnyItemActive()) {
+                pos[0] = (float)e->x, pos[1] = (float)e->y;
+                vel[0] = (float)e->vx, vel[1] = (float)e->vy;
+            }
+        }
+        ImGui::EndDisabled();
     }
-    if (g_canSet) {
-        static float pos[2], vel[2];
-        ImGui::SetNextItemWidth(w * 2);
-        ImGui::InputFloat2("##pos", pos, "%.1f");
-        ImGui::SameLine();
-        if (ImGui::Button("Set pos")) {
-            char lua[96];
-            snprintf(lua, sizeof(lua), "setPos(%g, %g)", pos[0], pos[1]);
-            ExecOn(e->id, lua);
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(w * 2);
-        ImGui::InputFloat2("##vel", vel, "%.2f");
-        ImGui::SameLine();
-        if (ImGui::Button("Set vel")) {
-            char lua[96];
-            snprintf(lua, sizeof(lua), "setVel(%g, %g)", vel[0], vel[1]);
-            ExecOn(e->id, lua);
-        }
-        if (!ImGui::IsAnyItemActive()) {
-            pos[0] = (float)e->x, pos[1] = (float)e->y;
-            vel[0] = (float)e->vx, vel[1] = (float)e->vy;
-        }
-    }
-    ImGui::EndDisabled();
 
-    ImGui::SeparatorText("var");
-    if (e->vars.empty())
-        ImGui::TextDisabled("waiting for the variables...");
-    else {
-        auto prev = g_prevVars.find(e->id);
-        VarGrid("vars", e->vars, prev == g_prevVars.end() ? nullptr : &prev->second, false, e->id, "setVar");
+    if (section("Variables")) {
+        ImGui::SeparatorText("var");
+        if (e->vars.empty())
+            ImGui::TextDisabled("waiting for the variables...");
+        else {
+            auto prev = g_prevVars.find(e->id);
+            VarGrid("vars", e->vars, prev == g_prevVars.end() ? nullptr : &prev->second, false, e->id, "setVar");
+        }
+        ImGui::SeparatorText("fvar");
+        if (!e->fvars.empty()) {
+            auto prev = g_prevFvars.find(e->id);
+            VarGrid("fvars", e->fvars, prev == g_prevFvars.end() ? nullptr : &prev->second, true, e->id, "setFvar");
+        }
+        ImGui::TextDisabled(g_canSet ? "Yellow: changed on the last tick. Double-click a value to change it."
+                                     : "Values that changed on the last tick are yellow.");
     }
-    ImGui::SeparatorText("fvar");
-    if (!e->fvars.empty()) {
-        auto prev = g_prevFvars.find(e->id);
-        VarGrid("fvars", e->fvars, prev == g_prevFvars.end() ? nullptr : &prev->second, true, e->id, "setFvar");
-    }
-    ImGui::TextDisabled(g_canSet ? "Yellow: changed on the last tick. Double-click a value to change it."
-                                 : "Values that changed on the last tick are yellow.");
 
     // Its explods and projectiles
     auto objects = [](const char *id, const std::vector<Entity::Object> &list, bool explods) {
@@ -493,9 +514,9 @@ void InspectorWindow() {
     if (!e->hasObjects)
         ImGui::TextDisabled(g_canTrace ? "" : "Explods and projectiles: needs an Ikemen GO with the debugger patch.");
     else {
-        if (ImGui::CollapsingHeader(head, ImGuiTreeNodeFlags_DefaultOpen)) objects("explods", e->explods, true);
+        if (section(head)) objects("explods", e->explods, true);
         snprintf(head, sizeof(head), "Projectiles (%zu)###projs", e->projs.size());
-        if (ImGui::CollapsingHeader(head, ImGuiTreeNodeFlags_DefaultOpen)) objects("projs", e->projs, false);
+        if (section(head)) objects("projs", e->projs, false);
     }
     ImGui::End();
 }

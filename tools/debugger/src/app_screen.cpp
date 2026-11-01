@@ -411,9 +411,10 @@ static void ScreenWindow(ScreenDef &d) {
     if (!BeginTool(d.window)) return;
     SourceFile *sfp = d.Source();
     if (!sfp) {
-        ImGui::TextDisabled(g_bridge.Running() ? (d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)." : d.motif ? "Needs the game's frames (patched Ikemen GO)."
-                                                          : "Needs the game's frames (patched Ikemen GO), in a match.")
-                                               : "Launch the game (Launch, on the toolbar).");
+        if (!g_bridge.Running()) EmptyNote("What the game is showing can be edited here once it is running.");
+        else ImGui::TextDisabled(d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)."
+                                 : d.motif                      ? "Needs the game's frames (patched Ikemen GO)."
+                                                                : "Needs the game's frames (patched Ikemen GO), in a match.");
         ImGui::End();
         return;
     }

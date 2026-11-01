@@ -448,9 +448,11 @@ void GameWindow() {
     }
     if (g_frameTex && g_bridge.Running()) SelectionLine(focused);
     if (!g_frameTex || !g_bridge.Running()) {
-        ImGui::TextDisabled(!g_bridge.Running()    ? "Launch the game (Launch, on the toolbar)."
-                            : !g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
-                                                    : "Waiting for the first frame...");
+        if (!g_bridge.Running()) {
+            EmptyNote("The game shows here, and everything on it can be clicked.");
+            if (ImGui::Button(ICON_PLAY " Launch (F5)")) Launch();
+        } else ImGui::TextDisabled(!g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
+                                                       : "Waiting for the first frame...");
         ImGui::End();
         return;
     }

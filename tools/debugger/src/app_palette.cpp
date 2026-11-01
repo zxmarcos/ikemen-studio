@@ -156,6 +156,7 @@ void Commands(std::vector<Entry> &out) {
     add(AdvancedTools() ? "View: Hide the advanced tools" : "View: Show the advanced tools", "",
         [] { SetAdvancedTools(!AdvancedTools()); });
     add("View: Start page", "", AskStartPage);
+    add("View: Getting started", "", AskTour);
     for (int n = 0; ToolName(n); n++) add(std::string("Window: ") + ToolName(n), "", [n] { ShowWindow(ToolName(n)); });
     for (int n = 0; ThemeName(n); n++) add(std::string("Theme: ") + ThemeName(n), "", [n] { AskTheme(n); });
 }
@@ -164,6 +165,7 @@ void Commands(std::vector<Entry> &out) {
 
 void FileMenu() {
     if (ImGui::MenuItem(ICON_PLAY " Start page")) AskStartPage();
+    if (ImGui::MenuItem(ICON_INFO " Getting started")) AskTour();
     ImGui::Separator();
     if (ImGui::MenuItem(ICON_SEARCH " Go to file...", "Ctrl+P")) Ask(0);
     if (ImGui::MenuItem("Commands...", "Ctrl+Shift+P")) Ask('>');

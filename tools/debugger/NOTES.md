@@ -22,6 +22,30 @@ user (2026-10-25):
   `-ikdbg`, now to keep merges easy (see "Syncing with upstream").
 - **Characters first**, then stages, then screenpacks.
 
+**The interface was rethought for a character maker** (2026-11-01; the user
+found it functional but intimidating). It is organized by task, not by tool:
+- `src/app_start.cpp`: the start page (what do you want to do? each choice a
+  workspace; skipped with `--launch`, so test scripts do not see it) and the
+  first steps, in a corner, each going on when the user has done it.
+- Panels (`app_layout.cpp`): 27 windows became 12 areas. A row of `g_windows`
+  with a `panel` is a tab of that window; `PanelFrame` begins the panel with its
+  tabs on its menu bar (which does not scroll), and `BeginTool` of the tab shown
+  begins the same ImGui window again, appending to it. So the windows did not
+  change, and `ShowWindow("Sprites")` brings the panel and the tab. Layouts name
+  panels only, and at most four areas each.
+- Advanced tools (`ToolWindow::advanced`): tabs hidden until View > Advanced
+  tools is on or `ShowWindow` asks for one. Lab and Frame data are not advanced:
+  testing a move is a character maker's work.
+- The workspaces are a rail at the left; the menu bar is File and View; the
+  toolbar shows the match as one button (its fields in a popup).
+- `SetPickMode` (Fighters, Stage, Screen): one choice on the Game window, set by
+  the workspace, with a line saying what is selected and opening its editor. The
+  right side of each workspace already is the editor of what is selected, so no
+  separate Properties window was made.
+
+Still heavy, for a next pass: Animation's and Lab's many controls and terms
+(Clsn, onion...), and Code's state panel beside the editor.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -252,6 +276,7 @@ tools/debugger/
   src/app.cpp            the debugger: state, commands, protocol handling, settings
   src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool, the status bar
   src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
+  src/app_start.cpp      the start page, the first steps, EmptyNote
   src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
   src/app_navigate.cpp   Search (find in files, a state's references) and Outline windows
   src/app_problems.cpp   Problems window: Lint, stage checks, Apply, the engine's warnings

@@ -302,7 +302,8 @@ void RosterWindow() {
         RosterReload(LoadSource(g_selectDef), true);
     if (!BeginTool("Roster")) return;
     if (g_selectDef.empty()) {
-        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO)." : "Launch the game (Launch, on the toolbar).");
+        if (g_bridge.Running()) ImGui::TextDisabled("Needs the game's frames (patched Ikemen GO).");
+        else EmptyNote("The select screen's characters and stages show here once the game is running.");
         ImGui::End();
         return;
     }

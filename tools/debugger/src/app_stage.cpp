@@ -523,8 +523,8 @@ void StageWindow() {
     if (!BeginTool("Stage")) return;
     SourceFile *sfp = StageSource();
     if (!sfp) {
-        ImGui::TextDisabled(g_bridge.Running() ? "Needs the game's frames (patched Ikemen GO), in a match."
-                                               : "Launch the game (Launch, on the toolbar).");
+        if (g_bridge.Running()) ImGui::TextDisabled("Needs the game's frames (patched Ikemen GO), in a match.");
+        else EmptyNote("The stage of the match can be edited here once the game is running.");
         ImGui::End();
         return;
     }

@@ -615,7 +615,7 @@ void App_Init(bool launch) {
     handler.ReadLineFn = SettingsLine;
     handler.WriteAllFn = SettingsWrite;
     ImGui::AddSettingsHandler(&handler);
-    Log(LogLine::Info, "Ikemen GO debugger. Launch starts the game (its path is in Settings, on the toolbar).");
+    Log(LogLine::Info, "Ikemen GO debugger. Launch starts the game (its path is in Settings, the gear on the toolbar).");
 }
 
 void App_Poll() {

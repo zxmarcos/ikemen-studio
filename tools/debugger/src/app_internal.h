@@ -487,7 +487,9 @@ void PaletteFrame();
 
 // app_start.cpp
 void AskStartPage();
+void AskTour();                         // the first steps, in a corner of the window
 void StartPageFrame();
+void EmptyNote(const char *text);       // an empty window: what goes there
 void StartSettingsLine(const std::string &key, const std::string &value);
 void StartSettingsWrite(ImGuiTextBuffer *buf);
 
