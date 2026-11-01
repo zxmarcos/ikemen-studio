@@ -758,10 +758,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("Line %d", el.line);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Show in Code")) {
-        g_codeFile = sf.path;
-        g_codeLine = g_codeScrollTo = el.line;
-    }
+    if (ImGui::SmallButton("Show in Code")) CodeShowLine(sf.path, el.line);
 
     // The boxes: Clsn2, then Clsn1
     for (int g = 1; g >= 0 && !screen; g--) {
@@ -914,6 +911,50 @@ void AnimationWindow() {
         if (it != air.actions.end()) g_animAction = it->first, g_animElem = 1, g_animFollow = false;
     }
     ImGui::SetItemTooltip("The action after");
+    // Every action of the file in a list that can be searched by number: the arrows are for neighbours only
+    ImGui::SameLine(0, 2);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(em * 16, 0), ImVec2(em * 24, em * 26));
+    if (ImGui::BeginCombo("##actlist", "", ImGuiComboFlags_NoPreview)) {
+        static char filter[12];
+        if (ImGui::IsWindowAppearing()) {
+            filter[0] = 0;
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        bool enter = ImGui::InputTextWithHint("##actfilter", "Number...", filter, sizeof(filter),
+                                              ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+        std::vector<const AirAction *> shown;
+        for (const auto &[no, a] : air.actions)
+            if (!filter[0] || std::to_string(no).find(filter) != std::string::npos) shown.push_back(&a);
+        int pick = -1;
+        if (enter && !shown.empty()) pick = shown[0]->no;
+        if (ImGui::BeginChild("##actrows", ImVec2(0, std::min<float>(shown.size(), 14) * ImGui::GetTextLineHeightWithSpacing() + 2))) {
+            ImGuiListClipper clip;
+            clip.Begin((int)shown.size());
+            for (int i = 0; i < (int)shown.size(); i++)
+                if (shown[i]->no == g_animAction) clip.IncludeItemByIndex(i); // so the scroll below finds it
+            while (clip.Step())
+                for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                    const AirAction &a = *shown[i];
+                    int ticks = 0;
+                    for (const AirElem &e : a.elems) ticks = e.time < 0 || ticks < 0 ? -1 : ticks + e.time;
+                    char row[64];
+                    if (ticks < 0) snprintf(row, sizeof(row), "%d   %d el.  inf.", a.no, (int)a.elems.size());
+                    else snprintf(row, sizeof(row), "%d   %d el.  %d ticks", a.no, (int)a.elems.size(), ticks);
+                    bool cur = a.no == g_animAction;
+                    if (ImGui::Selectable(row, cur)) pick = a.no;
+                    if (cur && ImGui::IsWindowAppearing()) ImGui::SetScrollHereY();
+                }
+            clip.End();
+        }
+        ImGui::EndChild();
+        if (pick >= 0) {
+            g_animAction = pick, g_animElem = 1, g_animFollow = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Every action of the file, by number");
     ImGui::SameLine(0, em);
     ImGui::BeginDisabled(disk);
     ImGui::Checkbox("Follow", &g_animFollow);
