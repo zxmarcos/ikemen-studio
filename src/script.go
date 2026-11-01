@@ -991,7 +991,9 @@ func systemScriptInit(l *lua.LState) {
 		return 0
 	})
 	luaRegister(l, "animCopy", func(l *lua.LState) int {
-		/*Create a copy of an animation.
+		/*Create a copy with independent animation state, palette mapping and PalFX.
+		  Image textures and palette colors remain shared; use `animPaletteCopy` to
+		  make palette colors independent as well.
 		@function animCopy
 		@tparam Anim anim Animation userdata.
 		@treturn Anim|nil copy New `Anim` userdata containing a copy of `anim`,
@@ -1237,6 +1239,28 @@ func systemScriptInit(l *lua.LState) {
 			l.RaiseError("\nanimNew: expected string or *Animation, got %v\n", l.Get(2).Type())
 		}
 		l.Push(newUserData(l, anim))
+		return 1
+	})
+	luaRegister(l, "animPaletteCopy", func(l *lua.LState) int {
+		/*Make an animation's palette data independent from other instances.
+		@function animPaletteCopy
+		@tparam Anim anim Animation userdata. Image textures remain shared.
+		@treturn Anim|nil anim The same userdata, or `nil` if no valid animation exists.
+		  Copies palette colors, mappings and caches without changing playback or PalFX.
+		  Subsequent `animPaletteSet` calls affect only this instance's palette data.*/
+		if nilArg(l, 1) {
+			l.Push(lua.LNil)
+			return 1
+		}
+		a, ok := toUserData(l, 1).(*Anim)
+		if !ok {
+			userDataError(l, 1, a)
+		}
+		if !a.PaletteCopy() {
+			l.Push(lua.LNil)
+		} else {
+			l.Push(l.Get(1))
+		}
 		return 1
 	})
 	luaRegister(l, "animPaletteGet", func(*lua.LState) int {
@@ -6700,7 +6724,7 @@ func systemScriptInit(l *lua.LState) {
 	luaRegister(l, "stopSnd", func(l *lua.LState) int {
 		/*[redirectable] Stop all character's sounds.
 		@function stopSnd*/
-		sys.charSoundChannels[sys.debugWC.playerNo].SetSize(0) // TODO: Why does this use the hard reset?
+		sys.charSoundChannels[sys.debugWC.playerNo].StopAll()
 		return 0
 	})
 	luaRegister(l, "synchronize", func(*lua.LState) int {
