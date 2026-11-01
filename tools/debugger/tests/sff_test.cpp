@@ -196,6 +196,43 @@ static void BatchTests() {
     to.pals[0].rgba[9 * 4] = 5, to.pals[0].rgba[9 * 4 + 1] = 200; // the nearest of colour 5 is 9 here
     CHECK(Sff_ImportSprites(to, from, {1}, false, SFF_IMPORT_ADAPT, nullptr) == 1);
     CHECK(Sff_Decode(to.sprites[2], px, &bpp) && px[4 * 10 + 3] == 9);
+    // Palettes: unused ones go, the character's stay; alike ones merge, sprites following
+    d = SmallDoc();
+    SffPal extra = d.pals[0];
+    extra.group = 3, extra.number = 7;
+    extra.rgba[5 * 4] = 77;
+    d.pals.push_back(extra);
+    extra.number = 8;
+    d.pals.push_back(extra);
+    d.sprites[1].pal = 2;
+    CHECK(Sff_RemoveUnusedPals(d) == 1);
+    CHECK(d.pals.size() == 2 && d.pals[1].number == 8 && d.sprites[1].pal == 1 && d.sprites[0].pal == 0);
+    d.pals.push_back(d.pals[1]);
+    d.pals[2].number = 9;
+    d.sprites[0].pal = 2;
+    CHECK(Sff_MergeDuplicatePals(d) == 1);
+    CHECK(d.pals.size() == 2 && d.sprites[0].pal == 1 && d.sprites[1].pal == 1);
+    CHECK(!Sff_DeletePal(d, 1)); // sprites use it
+    CHECK(Sff_DeletePal(d, 0));
+    CHECK(d.pals.size() == 1 && d.sprites[0].pal == 0);
+
+    // Used, adapted, made: the picture keeps its indices, or maps to the nearest
+    d = SmallDoc();
+    extra = d.pals[0];
+    extra.group = 2, extra.number = 0;
+    for (int i = 1; i < 256; i++) extra.rgba[i * 4] = 0;
+    extra.rgba[9 * 4] = 5; // the same red as colour 5 of the first
+    d.pals.push_back(extra);
+    CHECK(Sff_UsePal(d, {0}, 1) == 1 && d.sprites[0].pal == 1);
+    CHECK(Sff_Decode(d.sprites[0], px, &bpp) && px[4 * 10 + 3] == 5);
+    d = SmallDoc();
+    d.pals.push_back(extra);
+    CHECK(Sff_AdaptToPal(d, {0, 1}, 1) == 2);
+    CHECK(d.sprites[0].pal == 1 && d.sprites[0].data == d.sprites[1].data);
+    CHECK(Sff_Decode(d.sprites[0], px, &bpp) && px[4 * 10 + 3] == 9 && px[0] == 0);
+    d = SmallDoc();
+    std::vector<unsigned char> made2 = Sff_PalOfSprites(d, {0, 1});
+    CHECK(made2.size() == 1024 && made2[4] == 5 && made2[7] == 255 && made2[3] == 0);
     printf("batch edits checked\n");
 }
 

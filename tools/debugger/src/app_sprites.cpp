@@ -285,8 +285,7 @@ static void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, co
     SpritesChanged(sf);
 }
 
-// The sprites the tools act on: those selected, else the one shown
-static std::vector<int> Selection(const SpriteFile &sf) {
+std::vector<int> SelectedSprites(const SpriteFile &sf) {
     if (!sf.picks.empty()) return std::vector<int>(sf.picks.begin(), sf.picks.end());
     if (sf.sel >= 0 && sf.sel < (int)sf.doc.sprites.size()) return {sf.sel};
     return {};
@@ -539,7 +538,7 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
     ImVec2 axisAt(floorf(p0.x + origin.x), floorf(p0.y + origin.y));
     // The picture moved over its axis: the axis moves the other way within it; every sprite selected
     auto nudge = [&](int dx, int dy) {
-        for (int i : Selection(sf)) d.sprites[i].x -= dx, d.sprites[i].y -= dy;
+        for (int i : SelectedSprites(sf)) d.sprites[i].x -= dx, d.sprites[i].y -= dy;
         SpritesChanged(sf);
     };
     if (movingAxis) {
@@ -625,7 +624,7 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
 static void CropAndResize(SpriteFile &sf) {
     float em = ImGui::GetFontSize();
     if (ImGui::Button(ICON_XMARK " Crop")) {
-        int n = Sff_Crop(sf.doc, Selection(sf));
+        int n = Sff_Crop(sf.doc, SelectedSprites(sf));
         Log(LogLine::Info, "Cropped " + std::to_string(n) + " sprites");
         if (n) SpritesChanged(sf);
     }
@@ -642,7 +641,7 @@ static void CropAndResize(SpriteFile &sf) {
         ImGui::Combo("Filter", &filter, "Nearest\0Bilinear\0EPX (pixel art, enlarging)\0");
         ImGui::TextDisabled("The animations' offsets and boxes stay as they are.");
         if (ImGui::Button(ICON_CHECK " Resize")) {
-            int n = Sff_Scale(sf.doc, Selection(sf), pct[0] / 100, pct[1] / 100, filter);
+            int n = Sff_Scale(sf.doc, SelectedSprites(sf), pct[0] / 100, pct[1] / 100, filter);
             Log(LogLine::Info, "Resized " + std::to_string(n) + " sprites");
             if (n) SpritesChanged(sf);
             ImGui::CloseCurrentPopup();
@@ -655,7 +654,7 @@ static void CropAndResize(SpriteFile &sf) {
 static void SpritesPanel(SpriteFile &sf, int pn) {
     SffDoc &d = sf.doc;
     float em = ImGui::GetFontSize();
-    std::vector<int> sel = Selection(sf);
+    std::vector<int> sel = SelectedSprites(sf);
     ImGui::Text("%zu sprites selected", sel.size());
     ImGui::Spacing();
     CropAndResize(sf);
@@ -925,6 +924,7 @@ void SpritesWindow() {
     PalChoices(sf, pn, choices);
     static std::map<std::string, std::string> chosen; // file -> the label chosen
     std::string &label = chosen[NormPath(sf.path)];
+    if (std::string wanted = PalTakeWanted(); !wanted.empty()) label = wanted;
     int choice = 0;
     for (int i = 0; i < (int)choices.size(); i++)
         if (choices[i].label == label) choice = i;

@@ -373,3 +373,131 @@ int Sff_ImportSprites(SffDoc &doc, const SffDoc &from, const std::vector<int> &s
     }
     return count;
 }
+
+// Palettes taken out (flags by palette), the sprites' indices following
+static int RemovePals(SffDoc &doc, const std::vector<char> &out, const std::vector<int> &sameAs) {
+    std::vector<int> place(doc.pals.size(), -1);
+    std::vector<SffPal> kept;
+    for (int i = 0; i < (int)doc.pals.size(); i++)
+        if (!out[i]) {
+            place[i] = (int)kept.size();
+            kept.push_back(doc.pals[i]);
+        }
+    for (SffSprite &s : doc.sprites)
+        if (s.pal >= 0 && s.pal < (int)place.size()) s.pal = place[out[s.pal] ? sameAs[s.pal] : s.pal];
+    int removed = (int)doc.pals.size() - (int)kept.size();
+    doc.pals.swap(kept);
+    return removed;
+}
+
+int Sff_RemoveUnusedPals(SffDoc &doc) {
+    std::vector<char> used(doc.pals.size(), 0), out(doc.pals.size(), 0);
+    for (const SffSprite &s : doc.sprites)
+        if (s.pal >= 0 && s.pal < (int)used.size()) used[s.pal] = 1;
+    for (size_t i = 0; i < doc.pals.size(); i++) out[i] = !used[i] && doc.pals[i].group != 1;
+    return RemovePals(doc, out, std::vector<int>(doc.pals.size(), 0));
+}
+
+int Sff_MergeDuplicatePals(SffDoc &doc) {
+    std::vector<char> out(doc.pals.size(), 0);
+    std::vector<int> sameAs(doc.pals.size(), 0);
+    for (int i = 0; i < (int)doc.pals.size(); i++) {
+        const SffPal &p = doc.pals[i];
+        if (p.group == 1) continue;
+        for (int j = 0; j < (int)doc.pals.size() && !out[i]; j++) {
+            const SffPal &q = doc.pals[j];
+            if (j == i || out[j] || (q.group != 1 && j > i) || q.ncolors != p.ncolors) continue;
+            if (!memcmp(p.rgba.data() + 4, q.rgba.data() + 4, 1020)) out[i] = 1, sameAs[i] = j;
+        }
+    }
+    return RemovePals(doc, out, sameAs);
+}
+
+bool Sff_DeletePal(SffDoc &doc, int pal) {
+    if (pal < 0 || pal >= (int)doc.pals.size()) return false;
+    for (const SffSprite &s : doc.sprites)
+        if (s.pal == pal) return false;
+    std::vector<char> out(doc.pals.size(), 0);
+    out[pal] = 1;
+    return RemovePals(doc, out, std::vector<int>(doc.pals.size(), 0)) == 1;
+}
+
+int Sff_UsePal(SffDoc &doc, const std::vector<int> &sprites, int pal) {
+    int count = 0;
+    for (int i : sprites) {
+        SffSprite &s = doc.sprites[i];
+        if (s.pal < 0 || s.pal == pal) continue;
+        s.pal = pal;
+        count++;
+    }
+    return count;
+}
+
+int Sff_AdaptToPal(SffDoc &doc, const std::vector<int> &sprites, int pal) {
+    if (pal < 0 || pal >= (int)doc.pals.size()) return 0;
+    const SffPal &to = doc.pals[pal];
+    std::map<const std::string *, SffSprite> done;
+    std::map<unsigned, unsigned> nearest; // by colour
+    auto index = [&](unsigned rgb) {
+        auto it = nearest.find(rgb);
+        if (it != nearest.end()) return it->second;
+        int best = 1, bestD = INT_MAX;
+        for (int k = 1; k < to.ncolors && bestD; k++) {
+            int d = 0;
+            for (int b = 0; b < 3; b++) {
+                int e = (int)((rgb >> (8 * b)) & 255) - to.rgba[k * 4 + b];
+                d += e * e;
+            }
+            if (d < bestD) bestD = d, best = k;
+        }
+        return nearest[rgb] = (unsigned)best;
+    };
+    int count = 0;
+    for (int i : sprites) {
+        SffSprite &s = doc.sprites[i];
+        if (s.pal == pal) continue;
+        auto it = done.find(s.data.get());
+        if (it == done.end()) {
+            SffSprite made = s;
+            Picture p;
+            if (Read(s, p)) {
+                const unsigned char *from = s.pal >= 0 && s.pal < (int)doc.pals.size() ? doc.pals[s.pal].rgba.data() : nullptr;
+                for (unsigned &v : p.px) {
+                    if (p.Empty(v)) {
+                        v = 0;
+                    } else if (p.indexed) {
+                        const unsigned char *c = from ? from + v * 4 : nullptr;
+                        v = c ? index((unsigned)c[0] | (unsigned)c[1] << 8 | (unsigned)c[2] << 16) : 1;
+                    } else {
+                        v = (v >> 24) < 128 ? 0 : index(v & 0xFFFFFF);
+                    }
+                }
+                p.indexed = true;
+                Write(made, p);
+            }
+            it = done.emplace(s.data.get(), made).first;
+        }
+        s.data = it->second.data, s.format = it->second.format, s.depth = it->second.depth;
+        s.pal = pal;
+        count++;
+    }
+    return count;
+}
+
+std::vector<unsigned char> Sff_PalOfSprites(const SffDoc &doc, const std::vector<int> &sprites) {
+    std::map<unsigned, int> colors;
+    std::map<const std::string *, char> seen;
+    for (int i : sprites) {
+        const SffSprite &s = doc.sprites[i];
+        if (!seen.emplace(s.data.get(), 1).second) continue;
+        Picture p;
+        if (!Read(s, p)) continue;
+        const unsigned char *pal = s.pal >= 0 && s.pal < (int)doc.pals.size() ? doc.pals[s.pal].rgba.data() : nullptr;
+        for (unsigned v : p.px) {
+            if (p.Empty(v) || (p.indexed && !pal)) continue;
+            if (p.indexed) colors[(unsigned)pal[v * 4] << 16 | (unsigned)pal[v * 4 + 1] << 8 | pal[v * 4 + 2]]++;
+            else if ((v >> 24) >= 128) colors[(v & 255) << 16 | (v & 0xFF00) | ((v >> 16) & 255)]++;
+        }
+    }
+    return Sff_MakePalette(colors);
+}

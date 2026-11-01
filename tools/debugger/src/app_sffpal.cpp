@@ -2,6 +2,8 @@
 // else its SFF's 1,N; the SFF's other palettes), and the palette editor: colours picked on the
 // sprite, edited, sent to the game as they change, saved to the ACT file or with the SFF.
 #include "app_internal.h"
+#include "palfile.h"
+#include "sffedit.h"
 
 #include <cmath>
 #include <cstring>
@@ -11,6 +13,10 @@
 namespace app {
 
 std::map<int, int> g_palNo;
+
+static PalFx g_palFx;           // the PalFX section's effect
+static bool g_palFxOn = true, g_palFxOpen = false; // shown on the preview while its section is open (only there: it changes each tick)
+static std::string g_palWanted; // the label of a palette picked in the list, for the Sprites window
 
 // ACT files, read when first asked for
 struct ActFile {
@@ -95,6 +101,12 @@ PalChoice PalFor(SpriteFile &sf, const PalChoice &c, int sprite) {
     return r;
 }
 
+std::string PalTakeWanted() {
+    std::string s;
+    s.swap(g_palWanted);
+    return s;
+}
+
 // The colours of a choice (256 RGBA), nullptr none.
 static std::vector<unsigned char> *Colours(SpriteFile &sf, const PalChoice &c) {
     if (!c.act.empty()) {
@@ -127,9 +139,11 @@ GLuint PalSpriteTexture(SpriteFile &sf, int sprite, const PalChoice &c, const st
         flash = false;
         for (char m : *mark) flash = flash || m;
     }
-    if (!cols || (r.act.empty() && r.sff == s.pal && !flash)) return SpriteTexture(sf, sprite); // as in the file
+    bool fx = mark && g_palFxOn && g_palFxOpen && !g_palFx.Plain();
+    if (!cols || (r.act.empty() && r.sff == s.pal && !flash && !fx)) return SpriteTexture(sf, sprite); // as in the file
     std::vector<unsigned char> pal = *cols;
     pal.resize(1024, 0);
+    if (fx) Pal_ApplyFx(pal, g_palFx, (int)(ImGui::GetTime() * 60));
     if (flash)
         for (int i = 0; i < 256; i++)
             if ((*mark)[i]) pal[i * 4] = 255, pal[i * 4 + 1] = 0, pal[i * 4 + 2] = 255;
@@ -330,7 +344,7 @@ static void Hsv(unsigned char *c, float dh, float ds, float dv) {
 
 void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, bool shift, std::vector<char> &mark) {
     static std::vector<char> sel(256, 0);
-    static int anchor = -1, primary = -1;
+    static int anchor = -1, primary = -1, moving = -1; // moving: the colour being taken elsewhere (Alt+drag)
     static std::vector<unsigned char> clip; // colours copied (RGB)
     mark.assign(256, 0);
     std::vector<unsigned char> *cols = Colours(sf, target);
@@ -381,7 +395,16 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
     int hx = (int)((m.x - p0.x) / cell), hy = (int)((m.y - p0.y) / cell);
     int hot = m.x >= p0.x && m.y >= p0.y && hx >= 0 && hx < 16 && hy >= 0 && hy * 16 + hx < ncol ? hy * 16 + hx : -1;
     ImGuiIO &io = ImGui::GetIO();
-    if (ImGui::IsItemClicked() && hot >= 0) {
+    if (moving >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (hot >= 1 && hot != moving) {
+            Pal_Move(*cols, moving, hot);
+            select(hot, false);
+            edit();
+        }
+        moving = -1;
+    } else if (ImGui::IsItemClicked() && hot >= 1 && io.KeyAlt) {
+        moving = hot;
+    } else if (ImGui::IsItemClicked() && hot >= 0) {
         if (io.KeyShift && anchor >= 0) {
             std::fill(sel.begin(), sel.end(), 0);
             for (int i = std::min(anchor, hot); i <= std::max(anchor, hot); i++) sel[i] = 1;
@@ -392,7 +415,7 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
         } else {
             select(hot, false);
         }
-    } else if (ImGui::IsItemActive() && hot >= 0 && hot != primary && !io.KeyCtrl && ImGui::IsMouseDragging(0, 2)) {
+    } else if (moving < 0 && ImGui::IsItemActive() && hot >= 0 && hot != primary && !io.KeyCtrl && ImGui::IsMouseDragging(0, 2)) {
         std::fill(sel.begin(), sel.end(), 0);
         for (int i = std::min(anchor, hot); i <= std::max(anchor, hot); i++) sel[i] = 1;
         primary = hot;
@@ -413,9 +436,14 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
         draw->AddRect(a, b, IM_COL32(0, 0, 0, 255), 0, 3.0f);
         draw->AddRect(a, b, i == primary ? IM_COL32(255, 230, 80, 255) : IM_COL32(255, 255, 255, 255), 0, 1.5f);
     }
+    if (moving >= 0 && hot >= 1) {
+        ImVec2 a(p0.x + (hot % 16) * cell, p0.y + (hot / 16) * cell);
+        draw->AddRect(a, ImVec2(a.x + cell, a.y + cell), IM_COL32(255, 230, 80, 255), 0, 3.0f);
+    }
     if (hovered && hot >= 0 && ImGui::BeginTooltip()) {
         const unsigned char *c = &(*cols)[hot * 4];
         ImGui::Text("Colour %d: %d, %d, %d  #%02X%02X%02X%s", hot, c[0], c[1], c[2], c[0], c[1], c[2], hot == 0 ? " (transparent)" : "");
+        ImGui::TextDisabled("Alt+drag: move it, those between shift");
         ImGui::EndTooltip();
     }
     int count = 0, first = -1, last = -1;
@@ -452,23 +480,26 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
     // The colours selected: shifted, a gradient, copied
     ImGui::SeparatorText("Selected colours");
     ImGui::BeginDisabled(count == 0);
-    static float dh, ds, dv;
+    static float dh, ds, dv, drgb[3];
     static std::vector<unsigned char> base;
-    const char *names[3] = {"Hue", "Saturation", "Brightness"};
-    float *vals[3] = {&dh, &ds, &dv};
-    for (int k = 0; k < 3; k++) {
+    const char *names[6] = {"Hue", "Saturation", "Brightness", "Red", "Green", "Blue"};
+    float *vals[6] = {&dh, &ds, &dv, &drgb[0], &drgb[1], &drgb[2]};
+    for (int k = 0; k < 6; k++) {
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Brightness").x - style.ItemInnerSpacing.x);
-        bool moved = ImGui::SliderFloat(names[k], vals[k], k == 0 ? -0.5f : -1.0f, k == 0 ? 0.5f : 1.0f, "%+.2f");
+        bool moved = k < 3 ? ImGui::SliderFloat(names[k], vals[k], k == 0 ? -0.5f : -1.0f, k == 0 ? 0.5f : 1.0f, "%+.2f")
+                           : ImGui::SliderFloat(names[k], vals[k], -255.0f, 255.0f, "%+.0f");
         if (ImGui::IsItemActivated()) base = *cols; // a drag shifts from the colours it started with
         if (moved && base.size() == cols->size()) {
             for (int i = 1; i < 256; i++)
                 if (sel[i]) {
-                    memcpy(&(*cols)[i * 4], &base[i * 4], 3);
-                    Hsv(&(*cols)[i * 4], dh, ds, dv);
+                    unsigned char *c = &(*cols)[i * 4];
+                    memcpy(c, &base[i * 4], 3);
+                    Hsv(c, dh, ds, dv);
+                    for (int b = 0; b < 3; b++) c[b] = (unsigned char)std::max(0, std::min(255, (int)c[b] + (int)drgb[b]));
                 }
             edit();
         }
-        if (ImGui::IsItemDeactivated()) dh = ds = dv = 0;
+        if (ImGui::IsItemDeactivated()) dh = ds = dv = drgb[0] = drgb[1] = drgb[2] = 0;
         ImGui::SetItemTooltip("Drag to shift the colours selected (they stay when let go)");
     }
     ImGui::BeginDisabled(count < 3);
@@ -511,28 +542,72 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
         primary = anchor = 1;
     }
     ImGui::SetItemTooltip("Select every colour but the transparent one");
+    ImGui::BeginDisabled(count == 0);
+    auto buttonFits = [&](const char *label) { SameLineFits(ImGui::CalcTextSize(label).x + style.FramePadding.x * 2); };
+    if (ImGui::Button("Fill") && primary >= 0) {
+        Pal_Fill(*cols, sel, &(*cols)[primary * 4]);
+        edit();
+    }
+    ImGui::SetItemTooltip("The colours selected all take the colour picked");
+    buttonFits("Reverse");
+    if (ImGui::Button("Reverse")) {
+        Pal_Reverse(*cols, sel);
+        edit();
+    }
+    ImGui::SetItemTooltip("The colours selected in the other order");
+    buttonFits("Sort");
+    if (ImGui::Button("Sort")) {
+        Pal_SortByTone(*cols, sel);
+        edit();
+    }
+    ImGui::SetItemTooltip("By tone: greys first, then by hue, from dark to light");
+    static int effect = 0;
+    ImGui::SetNextItemWidth(em * 9);
+    ImGui::Combo("##effect", &effect, [](void *, int i) { return Pal_EffectName(i); }, nullptr, PAL_EFFECTS);
+    ImGui::SameLine();
+    if (ImGui::Button("Apply")) {
+        Pal_Effect(*cols, sel, effect);
+        edit();
+    }
+    ImGui::EndDisabled();
 
     // The whole palette
-    ImGui::SeparatorText("Palette");
-    static const char kActFilter[] = "ACT palettes (*.act)\0*.act\0All files (*.*)\0*.*\0";
-    if (ImGui::Button("Import .act...")) {
-        std::vector<std::string> files = PickFiles(kActFilter, false);
-        std::vector<unsigned char> rgba;
-        if (!files.empty() && Sff_ReadAct(files[0], rgba)) {
-            for (int i = 1; i < 256; i++) memcpy(&(*cols)[i * 4], &rgba[i * 4], 3);
-            edit();
-        } else if (!files.empty()) {
-            Log(LogLine::Error, "Not an ACT palette: " + files[0]);
+    if (ImGui::CollapsingHeader("Files")) {
+        static const char kReadFilter[] = "Palettes and images\0*.act;*.pal;*.aco;*.ase;*.gpl;*.png;*.pcx;*.bmp;*.gif\0All files (*.*)\0*.*\0";
+        static const char kWriteFilter[] = "ACT (MUGEN)\0*.act\0PAL (JASC)\0*.pal\0ACO (Photoshop)\0*.aco\0GPL (GIMP)\0*.gpl\0";
+        if (ImGui::Button("Import...")) {
+            std::vector<std::string> files = PickFiles(kReadFilter, false);
+            if (!files.empty()) {
+                std::vector<unsigned char> rgba;
+                std::string error, ext = files[0].substr(files[0].find_last_of('.') + 1);
+                for (char &ch : ext) ch = (char)tolower((unsigned char)ch);
+                bool image = ext == "png" || ext == "pcx" || ext == "bmp" || ext == "gif";
+                if (image) {
+                    // An indexed image's palette, or one made from its colours
+                    SffDoc read;
+                    Sff_SetImageReader(DecodeImage);
+                    Sff_SpritesOfPngs(read, files, SFF_PAL_OWN, [](const std::string &m) { Log(LogLine::Info, m); });
+                    if (!read.pals.empty()) rgba = read.pals[0].rgba;
+                    else error = "No palette in " + files[0];
+                } else {
+                    Pal_Read(files[0], rgba, nullptr, &error);
+                }
+                if (rgba.size() == 1024) {
+                    for (int i = 1; i < 256; i++) memcpy(&(*cols)[i * 4], &rgba[i * 4], 3);
+                    edit();
+                } else {
+                    Log(LogLine::Error, error);
+                }
+            }
         }
-    }
-    ImGui::SetItemTooltip("Its colours from an ACT file");
-    ImGui::SameLine();
-    if (ImGui::Button("Export .act...")) {
-        std::string path = PickSaveFile(kActFilter, "act", "palette.act");
-        if (!path.empty()) {
-            std::ofstream out(path, std::ios::binary);
-            out << Sff_ActBytes(*cols);
-            Log(out ? LogLine::Info : LogLine::Error, (out ? "Saved " : "Could not write ") + path);
+        ImGui::SetItemTooltip("Its colours from a palette file (ACT, PAL, ACO, ASE, GPL) or an image");
+        ImGui::SameLine();
+        if (ImGui::Button("Export...")) {
+            std::string path = PickSaveFile(kWriteFilter, "act", "palette.act"), error;
+            if (!path.empty()) {
+                if (Pal_Write(path, *cols, ncol, &error)) Log(LogLine::Info, "Saved " + path);
+                else Log(LogLine::Error, error);
+            }
         }
     }
     if (pn > 0) {
@@ -557,6 +632,158 @@ void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, b
         ImGui::EndDisabled();
         ImGui::SetItemTooltip("A copy of these colours as the character's next palette (in the SFF, 1,N), for the "
                               "game once the SFF is saved");
+    }
+
+    // The sprites selected and this palette
+    SffDoc &d = sf.doc;
+    std::vector<int> sprites = SelectedSprites(sf);
+    if (ImGui::CollapsingHeader("Sprites and palette")) {
+        ImGui::TextDisabled("%zu sprites selected", sprites.size());
+        ImGui::BeginDisabled(target.sff < 0 || sprites.empty());
+        if (ImGui::Button("Use this palette")) {
+            int n = Sff_UsePal(d, sprites, target.sff);
+            Log(LogLine::Info, "Palette changed on " + std::to_string(n) + " sprites");
+            if (n) SpritesChanged(sf);
+        }
+        ImGui::SetItemTooltip("They point to it: their pixels keep their indices, the colours change");
+        if (ImGui::Button("Adapt them to it")) {
+            int n = Sff_AdaptToPal(d, sprites, target.sff);
+            Log(LogLine::Info, "Adapted " + std::to_string(n) + " sprites");
+            if (n) SpritesChanged(sf);
+        }
+        ImGui::SetItemTooltip("Each pixel takes the nearest colour of this palette: they look as they did, as near as it allows");
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(sprites.empty());
+        if (ImGui::Button("New palette from them")) {
+            SffPal p;
+            while (Sff_FindPal(d, p.group, p.number) >= 0) p.number++;
+            p.rgba = Sff_PalOfSprites(d, sprites);
+            d.pals.push_back(p);
+            SpritesChanged(sf);
+            Log(LogLine::Info, "Made palette " + PalName(p) + " from " + std::to_string(sprites.size()) + " sprites");
+            ImGui::EndDisabled();
+            return; // the colours shown may have moved
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Holds their colours, the 255 that stand for them best when they have more");
+    }
+
+    // Every palette of the file
+    if (ImGui::CollapsingHeader("All the palettes")) {
+        std::vector<int> users(d.pals.size(), 0);
+        for (const SffSprite &s : d.sprites)
+            if (s.pal >= 0 && s.pal < (int)users.size()) users[s.pal]++;
+        std::vector<PalChoice> choices;
+        PalChoices(sf, pn, choices);
+        static int listed = -1;
+        float row = ImGui::GetTextLineHeightWithSpacing();
+        if (ImGui::BeginChild("pals", ImVec2(0, row * std::min(8.0f, (float)d.pals.size() + 0.5f)), ImGuiChildFlags_Borders)) {
+            ImGuiListClipper clip2;
+            clip2.Begin((int)d.pals.size(), row);
+            while (clip2.Step())
+                for (int i = clip2.DisplayStart; i < clip2.DisplayEnd; i++) {
+                    char label[48];
+                    snprintf(label, sizeof(label), "%s  %d sprites##%d", PalName(d.pals[i]).c_str(), users[i], i);
+                    if (ImGui::Selectable(label, listed == i || (listed < 0 && target.sff == i))) {
+                        listed = i;
+                        for (const PalChoice &c : choices)
+                            if (c.sff == i) g_palWanted = c.label;
+                    }
+                }
+        }
+        ImGui::EndChild();
+        int at = listed >= 0 && listed < (int)d.pals.size() ? listed : target.sff;
+        bool valid = at >= 0 && at < (int)d.pals.size();
+        ImGui::BeginDisabled(!valid);
+        if (ImGui::Button(ICON_COPY " New")) {
+            SffPal p = d.pals[at];
+            p.number = 0;
+            while (Sff_FindPal(d, p.group, p.number) >= 0) p.number++;
+            d.pals.push_back(p);
+            SpritesChanged(sf);
+            ImGui::EndDisabled();
+            return;
+        }
+        ImGui::SetItemTooltip("A copy of it, with the next free number of its group");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!valid || users[at] > 0);
+        if (ImGui::Button(ICON_TRASH " Delete") && Sff_DeletePal(d, at)) {
+            listed = -1;
+            SpritesChanged(sf);
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
+            return;
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Only a palette no sprite uses");
+        static int num[2], numOf = -1;
+        ImGui::SetNextItemWidth(em * 7);
+        if (numOf != at && valid) numOf = at, num[0] = d.pals[at].group, num[1] = d.pals[at].number;
+        ImGui::InputInt2("##palnum", num);
+        ImGui::SameLine();
+        bool free = valid && Sff_FindPal(d, num[0], num[1]) < 0;
+        ImGui::BeginDisabled(!free);
+        if (ImGui::Button("Renumber")) {
+            d.pals[at].group = num[0], d.pals[at].number = num[1];
+            SpritesChanged(sf);
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
+            return;
+        }
+        ImGui::EndDisabled();
+        if (valid && ImGui::Button(d.pals[at].ncolors == 32 ? "Make it 256 colours" : "Make it 32 colours")) {
+            d.pals[at].ncolors = d.pals[at].ncolors == 32 ? 256 : 32;
+            SpritesChanged(sf);
+        }
+        ImGui::SetItemTooltip("How many colours the file keeps: 32 only when its sprites use no more");
+        ImGui::EndDisabled();
+        if (ImGui::Button("Remove unused")) {
+            int n = Sff_RemoveUnusedPals(d);
+            Log(LogLine::Info, "Removed " + std::to_string(n) + " palettes");
+            if (n) {
+                listed = -1;
+                SpritesChanged(sf);
+                return;
+            }
+        }
+        ImGui::SetItemTooltip("Palettes no sprite uses, but for the character's (1,N)");
+        ImGui::SameLine();
+        if (ImGui::Button("Merge alike")) {
+            int n = Sff_MergeDuplicatePals(d);
+            Log(LogLine::Info, "Merged " + std::to_string(n) + " palettes");
+            if (n) {
+                listed = -1;
+                SpritesChanged(sf);
+                return;
+            }
+        }
+        ImGui::SetItemTooltip("Palettes with the same colours become one, their sprites going to it");
+    }
+
+    // PalFX: an effect tried on the sprite, written as a controller
+    g_palFxOpen = ImGui::CollapsingHeader("PalFX");
+    if (g_palFxOpen) {
+        ImGui::Checkbox("See it on the sprite", &g_palFxOn);
+        float w = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("SinAdd").x - style.ItemInnerSpacing.x;
+        ImGui::SetNextItemWidth(w);
+        ImGui::DragInt3("Add", g_palFx.add, 0.5f, -255, 255);
+        ImGui::SetNextItemWidth(w);
+        ImGui::DragInt3("Mul", g_palFx.mul, 0.5f, 0, 512);
+        ImGui::SetNextItemWidth(w);
+        ImGui::DragInt3("SinAdd", g_palFx.sinadd, 0.5f, -255, 255);
+        ImGui::SetNextItemWidth(w);
+        ImGui::DragInt("Period", &g_palFx.period, 0.2f, 0, 240);
+        ImGui::SetItemTooltip("The sine's length in ticks; 0: no sine");
+        ImGui::SetNextItemWidth(w);
+        ImGui::SliderFloat("Colour", &g_palFx.color, 0, 1, "%.2f");
+        ImGui::Checkbox("Invert", &g_palFx.invert);
+        static int time = 30;
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("Ticks", &time, 0);
+        if (ImGui::Button(ICON_COPY " Copy as a controller")) ImGui::SetClipboardText(Pal_FxText(g_palFx, time).c_str());
+        ImGui::SetItemTooltip("A PalFX state controller, ready to paste in a state");
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) g_palFx = PalFx();
     }
 }
 

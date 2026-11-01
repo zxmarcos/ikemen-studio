@@ -38,3 +38,13 @@ bool Sff_NumbersOfName(const std::string &file, int *group, int *number);
 // True colour sprites stay as they are. A sprite with a number in use is replaced, or skipped.
 enum { SFF_IMPORT_OWN, SFF_IMPORT_ADAPT, SFF_IMPORT_SAME };
 int Sff_ImportSprites(SffDoc &doc, const SffDoc &from, const std::vector<int> &sprites, bool replace, int palMode, int *skipped);
+
+// The palettes of a file. A palette is taken out only when no sprite uses it; the character's (group
+// 1) stay. Each returns how many changed.
+int Sff_RemoveUnusedPals(SffDoc &doc);
+int Sff_MergeDuplicatePals(SffDoc &doc); // those with the same colours become the first; sprites follow
+bool Sff_DeletePal(SffDoc &doc, int pal);
+int Sff_UsePal(SffDoc &doc, const std::vector<int> &sprites, int pal);     // the same indices, that palette's colours
+int Sff_AdaptToPal(SffDoc &doc, const std::vector<int> &sprites, int pal); // each colour becomes the nearest of that palette
+// A palette that holds the colours of those sprites (what stands for them best past 255).
+std::vector<unsigned char> Sff_PalOfSprites(const SffDoc &doc, const std::vector<int> &sprites);

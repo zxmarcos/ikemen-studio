@@ -92,6 +92,17 @@ menu (new, from another AIR with its sprites, name, scale, optimize, GIF). GIF:
 `src/gif.cpp`, tested by decoding it again in `tests/gif_test.cpp`; blending is
 not in it. `Copy Action` is shown, not edited.
 
+Palettes: `src/palfile.cpp` (tested) reads ACT, PAL (JASC, RIFF), ACO, ASE and
+GPL, writes all but ASE, and holds the tools on colours (move with Alt+drag,
+reverse, fill, sort by tone, effects, RGB beside HSV) and PalFX's sums, which the
+preview shows while that section is open (`mark` tells the preview from the
+thumbnails, which would all be drawn again each tick). `Sff_UsePal` keeps a
+sprite's indices, `Sff_AdaptToPal` maps its colours, `Sff_PalOfSprites` makes a
+palette of theirs. Palettes are taken out only when no sprite uses them. The
+Fighter Factory's two-column editor is the palette combo plus Copy and Paste, which
+survive a change of palette; its remap table is that combo too. Not done: PalFX
+sent to the game (only the preview and a controller to paste).
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -348,6 +359,7 @@ tools/debugger/
   src/sffedit.cpp/.h     sprites in batch: crop, scale, export and its list, from another SFF
   src/undo.h             undo and redo by whole states
   src/gif.cpp/.h         animated GIF files
+  src/palfile.cpp/.h     palettes in other programs' files, tools on colours, PalFX's sums
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits

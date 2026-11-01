@@ -817,6 +817,8 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
 
 void Sff_SetImageReader(SffImageReader read) { g_imageReader = read; }
 
+std::vector<unsigned char> Sff_MakePalette(const std::map<unsigned, int> &colors) { return MakePalette(colors); }
+
 void Sff_SetPixels(SffSprite &s, int w, int h, const std::vector<unsigned char> &px, int bpp) {
     s.w = w, s.h = h;
     if (bpp == 1) {

@@ -379,6 +379,7 @@ void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
 std::vector<std::string> PickFiles(const char *filter, bool multi);
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name);
 void SpritesChanged(SpriteFile &sf);
+std::vector<int> SelectedSprites(const SpriteFile &sf); // those selected, else the one shown
 // Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the
 // keyboard: -1 undo, 1 redo, 0 neither. UndoButtonsWidth: what they take.
 int UndoButtons(bool canUndo, bool canRedo);
@@ -414,6 +415,7 @@ void PalFrame(SpriteFile &sf, int pn);  // sends the colours changed to the game
 // The Palette tab: the colours of target, picked, edited. picked: a colour picked on the sprite
 // (-1 none), shift: added to the selection. Fills mark with the colours selected.
 void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, bool shift, std::vector<char> &mark);
+std::string PalTakeWanted(); // the label of a palette picked in the Palette tab's list, once; "" none
 
 // Sounds
 const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)

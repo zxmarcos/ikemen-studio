@@ -5,6 +5,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -63,6 +64,8 @@ enum { SFF_AXIS_FEET, SFF_AXIS_CENTRE, SFF_AXIS_TOP_LEFT };
 std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &doc, const std::vector<std::string> &files, int palMode,
                                          const std::function<void(const std::string &)> &log);
 void Sff_SetAxis(SffSprite &s, int mode);
+// A palette of up to 255 colours (colour 0 transparent) for colours counted by use (0xRRGGBB): all of them, or a median cut.
+std::vector<unsigned char> Sff_MakePalette(const std::map<unsigned, int> &colors);
 // Decodes other images to RGBA: the app's, which has the system's codecs.
 typedef bool (*SffImageReader)(const unsigned char *data, size_t size, int &w, int &h, std::vector<unsigned char> &rgba);
 void Sff_SetImageReader(SffImageReader read);
