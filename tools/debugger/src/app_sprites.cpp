@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "imgui_stdlib.h"
+#include "sffedit.h"
 
 namespace app {
 
@@ -178,6 +179,8 @@ std::vector<std::string> PickFiles(const char *filter, bool multi) {
 }
 
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name) {
+    // Tests (scripts/test_ui.ps1) give the folder to save in
+    if (const char *test = getenv("IKDBG_TEST_SAVE"); test && *test) return std::string(test) + "\\" + name;
     std::vector<char> buf(MAX_PATH * 4, 0);
     snprintf(buf.data(), buf.size(), "%s", name.c_str());
     OPENFILENAMEA ofn = {sizeof(ofn)};
@@ -191,6 +194,7 @@ std::string PickSaveFile(const char *filter, const char *ext, const std::string 
 }
 
 const char kPngFilter[] = "PNG files (*.png)\0*.png\0All files (*.*)\0*.*\0";
+const char kImageFilter[] = "Images (*.png, *.pcx, *.bmp, *.gif)\0*.png;*.pcx;*.bmp;*.gif\0All files (*.*)\0*.*\0";
 
 // Writes the SFF file (the first time, the old one is kept as .bak) and has the game read it again.
 void SaveSprites(SpriteFile &sf) {
@@ -222,19 +226,70 @@ void SaveSprites(SpriteFile &sf) {
     }
 }
 
-void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, int group, int number, int axis, int palMode) {
-    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, palMode, SpriteLog);
-    if (!made.empty()) sf.picks.clear();
-    for (SffSprite &s : made) {
-        while (Sff_FindSprite(sf.doc, group, number) >= 0) number++;
-        s.group = group;
-        s.number = number;
-        Sff_SetAxis(s, axis);
-        sf.doc.sprites.push_back(s);
-        sf.sel = (int)sf.doc.sprites.size() - 1;
-        Log(LogLine::Info, "Added sprite " + std::to_string(group) + ", " + std::to_string(number));
+// How files become sprites
+struct AddOptions {
+    int group = 0, number = 0, step = 1;
+    bool fromNames = false, crop = false, replace = false;
+    int axis = SFF_AXIS_FEET; // or kAxisCustom: x, y
+    int x = 0, y = 0;
+    int pal = SFF_PAL_SHARED;
+};
+const int kAxisCustom = 3;
+
+// rows: the numbers and axes of an export's list, one for each file; nullptr: those of o.
+static void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, const AddOptions &o, const std::vector<SffListRow> *rows = nullptr) {
+    Sff_SetImageReader(DecodeImage);
+    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, o.pal, SpriteLog);
+    bool all = made.size() == files.size(); // a file that failed leaves the rest out of step
+    if (rows && !all) {
+        Log(LogLine::Error, "Not all the files of the list could be read: nothing was added");
+        return;
     }
-    if (!made.empty()) SpritesChanged(sf);
+    if (made.empty()) return;
+    int group = o.group, number = o.number, replaced = 0;
+    std::vector<int> added;
+    sf.picks.clear();
+    for (size_t k = 0; k < made.size(); k++) {
+        SffSprite &s = made[k];
+        int g = group, n = number;
+        bool named = false;
+        if (rows) {
+            g = (*rows)[k].group, n = (*rows)[k].number, named = true;
+            s.x = (*rows)[k].x, s.y = (*rows)[k].y;
+        } else {
+            named = o.fromNames && all && Sff_NumbersOfName(files[k], &g, &n);
+            if (o.axis == kAxisCustom) s.x = o.x, s.y = o.y;
+            else Sff_SetAxis(s, o.axis);
+        }
+        if (!named) {
+            while (!o.replace && Sff_FindSprite(sf.doc, g, number) >= 0) number += o.step;
+            n = number;
+            number += o.step;
+        }
+        s.group = g, s.number = n;
+        int at = Sff_FindSprite(sf.doc, g, n);
+        if (at >= 0 && (o.replace || rows)) {
+            sf.doc.sprites[at] = s;
+            replaced++;
+        } else {
+            if (at >= 0) Log(LogLine::Info, "Sprite " + std::to_string(g) + ", " + std::to_string(n) + " exists already: added after it");
+            sf.doc.sprites.push_back(s);
+            at = (int)sf.doc.sprites.size() - 1;
+        }
+        added.push_back(at);
+    }
+    if (o.crop) Sff_Crop(sf.doc, added);
+    sf.sel = added.back();
+    if (added.size() > 1) sf.picks.insert(added.begin(), added.end());
+    Log(LogLine::Info, "Added " + std::to_string(added.size() - replaced) + " sprites, replaced " + std::to_string(replaced));
+    SpritesChanged(sf);
+}
+
+// The sprites the tools act on: those selected, else the one shown
+static std::vector<int> Selection(const SpriteFile &sf) {
+    if (!sf.picks.empty()) return std::vector<int>(sf.picks.begin(), sf.picks.end());
+    if (sf.sel >= 0 && sf.sel < (int)sf.doc.sprites.size()) return {sf.sel};
+    return {};
 }
 
 // A checkerboard behind sprites, so that their transparent pixels show.
@@ -286,6 +341,7 @@ static void PickSprite(SpriteFile &sf, int i, const std::vector<int> &shown) {
 static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, float height) {
     static std::string filter;
     static bool grid = false;
+    static int menuGroup;
     SffDoc &d = sf.doc;
     float em = ImGui::GetFontSize();
     const ImGuiStyle &style = ImGui::GetStyle();
@@ -302,7 +358,7 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
     float addW = ImGui::CalcTextSize(ICON_PLUS " Add PNG...").x + style.FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - addW));
     if (ImGui::SmallButton(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
-    ImGui::SetItemTooltip("Add sprites made of PNG files");
+    ImGui::SetItemTooltip("Add sprites made of image files, an export or another SFF");
 
     int fg = -1, fn = -1;
     if (!filter.empty()) sscanf(filter.c_str(), "%d , %d", &fg, &fn);
@@ -345,6 +401,7 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                 draw->AddImage(TexRef(tex), c, ImVec2(c.x + s.w * k, c.y + s.h * k));
             }
         };
+        bool openMenu = false;
         ImGuiListClipper clipper;
         clipper.Begin(((int)shown.size() + cols - 1) / cols, lineH);
         while (clipper.Step())
@@ -361,6 +418,10 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                     ImVec2 size = grid ? ImVec2(cellW, cellH) : ImVec2(ImGui::GetContentRegionAvail().x, rowH - style.ItemSpacing.y * 0.5f);
                     if (ImGui::InvisibleButton("s", size)) PickSprite(sf, i, shown);
                     bool hot = ImGui::IsItemHovered(), picked = sf.picks.count(i) != 0;
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        menuGroup = s.group; // the popup opens outside this row's id
+                        openMenu = true;
+                    }
                     if (cur || hot || picked)
                         draw->AddRectFilled(p, ImVec2(p.x + size.x, p.y + size.y),
                                             ImGui::GetColorU32(cur || picked ? ImGuiCol_Header : ImGuiCol_HeaderHovered), style.FrameRounding);
@@ -389,6 +450,20 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                     ImGui::PopID();
                 }
         if (shown.empty()) ImGui::TextDisabled(d.sprites.empty() ? "No sprites." : "None in that group.");
+        if (openMenu) ImGui::OpenPopup("##rowmenu");
+        if (ImGui::BeginPopup("##rowmenu")) {
+            char label[48];
+            snprintf(label, sizeof(label), "Select group %d", menuGroup);
+            if (ImGui::MenuItem(label)) {
+                sf.picks.clear();
+                for (int i : shown)
+                    if (d.sprites[i].group == menuGroup) sf.picks.insert(i);
+                if (!sf.picks.empty()) sf.sel = *sf.picks.begin();
+                if (sf.picks.size() == 1) sf.picks.clear();
+            }
+            if (ImGui::MenuItem("Select all shown") && shown.size() > 1) sf.picks.insert(shown.begin(), shown.end());
+            ImGui::EndPopup();
+        }
     }
     ImGui::EndChild();
     if (sf.picks.empty())
@@ -397,9 +472,16 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
         ImGui::TextDisabled("%zu selected, of %zu", sf.picks.size(), d.sprites.size());
 }
 
-// The sprite: the wheel zooms at the mouse, a drag pans, Ctrl+drag moves the axis, a double click
-// fits; picking (the Palette tab) or with Alt, a click picks the colour under the mouse. Returns
-// the colour picked, -1 none; *shift: Shift was held.
+// What the preview draws besides the sprite (its View button)
+static bool g_spriteGround = true, g_spriteRulers = false;
+static struct {
+    bool on = false;
+    int group = 0, number = 0;
+} g_spriteGhost; // another sprite over it, faint, on the same axis, to line them up
+
+// The sprite: the wheel zooms at the mouse, a drag pans, Ctrl+drag or the arrows move the axis of
+// the sprites selected, a double click fits; picking (the Palette tab) or with Alt, a click picks
+// the colour under the mouse. Returns the colour picked, -1 none; *shift: Shift was held.
 static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vector<char> *mark, bool picking, bool *shift,
                          float height) {
     static float zoom = 2;
@@ -413,7 +495,7 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
     ImGuiIO &io = ImGui::GetIO();
     int picked = -1;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    bool open = ImGui::BeginChild("preview", ImVec2(0, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+    bool open = ImGui::BeginChild("preview", ImVec2(0, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNavInputs);
     ImGui::PopStyleVar();
     if (!open) {
         ImGui::EndChild();
@@ -455,26 +537,69 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
     ImVec2 p1(p0.x + avail.x, p0.y + avail.y);
     Checkerboard(draw, p0, p1);
     ImVec2 axisAt(floorf(p0.x + origin.x), floorf(p0.y + origin.y));
+    // The picture moved over its axis: the axis moves the other way within it; every sprite selected
+    auto nudge = [&](int dx, int dy) {
+        for (int i : Selection(sf)) d.sprites[i].x -= dx, d.sprites[i].y -= dy;
+        SpritesChanged(sf);
+    };
     if (movingAxis) {
         static ImVec2 rest;
         rest.x += io.MouseDelta.x / zoom;
         rest.y += io.MouseDelta.y / zoom;
         int dx = (int)rest.x, dy = (int)rest.y;
         if (dx || dy) {
-            s.x -= dx, s.y -= dy; // the image moves with the mouse: the axis moves the other way within it
+            nudge(dx, dy);
             rest.x -= dx, rest.y -= dy;
-            SpritesChanged(sf);
         }
     }
+    // The arrows, with the picture in focus: one pixel, ten with Shift
+    if (ImGui::IsWindowFocused() && !io.WantTextInput) {
+        int step = io.KeyShift ? 10 : 1;
+        int dx = ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? step : ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? -step : 0;
+        int dy = ImGui::IsKeyPressed(ImGuiKey_DownArrow) ? step : ImGui::IsKeyPressed(ImGuiKey_UpArrow) ? -step : 0;
+        if (dx || dy) nudge(dx, dy);
+    }
     ImVec2 a(axisAt.x - s.x * zoom, axisAt.y - s.y * zoom);
+    if (g_spriteGround) {
+        draw->AddLine(ImVec2(p0.x, axisAt.y), ImVec2(p1.x, axisAt.y), IM_COL32(255, 220, 60, 70));
+        draw->AddLine(ImVec2(axisAt.x, p0.y), ImVec2(axisAt.x, p1.y), IM_COL32(255, 220, 60, 70));
+    }
     if (GLuint tex = PalSpriteTexture(sf, sf.sel, view, mark)) {
         draw->AddImage(TexRef(tex), a, ImVec2(a.x + s.w * zoom, a.y + s.h * zoom));
         draw->AddRect(a, ImVec2(a.x + s.w * zoom, a.y + s.h * zoom), IM_COL32(255, 255, 255, 60));
     } else {
         draw->AddText(ImVec2(p0.x + em * 0.5f, p0.y + em * 0.4f), IM_COL32(255, 120, 120, 255), "can't decode this sprite");
     }
+    if (g_spriteGhost.on) {
+        int gi = Sff_FindSprite(d, g_spriteGhost.group, g_spriteGhost.number);
+        if (GLuint tex = gi >= 0 ? PalSpriteTexture(sf, gi, view) : 0) {
+            const SffSprite &g = d.sprites[gi];
+            ImVec2 b(axisAt.x - g.x * zoom, axisAt.y - g.y * zoom);
+            draw->AddImage(TexRef(tex), b, ImVec2(b.x + g.w * zoom, b.y + g.h * zoom), ImVec2(0, 0), ImVec2(1, 1), kOnionBefore);
+        }
+    }
     draw->AddLine(ImVec2(axisAt.x - em, axisAt.y), ImVec2(axisAt.x + em, axisAt.y), IM_COL32(255, 220, 60, 255));
     draw->AddLine(ImVec2(axisAt.x, axisAt.y - em), ImVec2(axisAt.x, axisAt.y + em), IM_COL32(255, 220, 60, 255));
+    if (g_spriteRulers) {
+        // Pixels from the axis, along the top and the left: a mark at least half a line apart
+        int unit = 1;
+        while (unit * zoom < em * 0.5f) unit *= unit == 1 || unit == 10 || unit == 100 ? 5 : 2;
+        float bar = em * 1.1f;
+        draw->AddRectFilled(p0, ImVec2(p1.x, p0.y + bar), IM_COL32(0, 0, 0, 130));
+        draw->AddRectFilled(ImVec2(p0.x, p0.y + bar), ImVec2(p0.x + bar * 1.8f, p1.y), IM_COL32(0, 0, 0, 130));
+        for (int k = (int)floorf((p0.x - axisAt.x) / zoom / unit); axisAt.x + k * unit * zoom < p1.x; k++) {
+            float x = axisAt.x + k * unit * zoom;
+            bool major = k % 5 == 0;
+            draw->AddLine(ImVec2(x, p0.y + bar * (major ? 0.0f : 0.6f)), ImVec2(x, p0.y + bar), IM_COL32(255, 255, 255, 170));
+            if (major) draw->AddText(ImVec2(x + 2, p0.y), IM_COL32(255, 255, 255, 220), std::to_string(k * unit).c_str());
+        }
+        for (int k = (int)floorf((p0.y + bar - axisAt.y) / zoom / unit); axisAt.y + k * unit * zoom < p1.y; k++) {
+            float y = axisAt.y + k * unit * zoom;
+            bool major = k % 5 == 0;
+            draw->AddLine(ImVec2(p0.x + bar * (major ? 0.0f : 1.2f), y), ImVec2(p0.x + bar * 1.8f, y), IM_COL32(255, 255, 255, 170));
+            if (major) draw->AddText(ImVec2(p0.x + 2, y), IM_COL32(255, 255, 255, 220), std::to_string(k * unit).c_str());
+        }
+    }
     // Under the mouse: where, from the axis; its colour
     if (hovered) {
         int px = (int)floorf((io.MousePos.x - a.x) / zoom), py = (int)floorf((io.MousePos.y - a.y) / zoom);
@@ -496,12 +621,102 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
     return picked;
 }
 
+// Crop and Resize, for the sprites selected or the one shown
+static void CropAndResize(SpriteFile &sf) {
+    float em = ImGui::GetFontSize();
+    if (ImGui::Button(ICON_XMARK " Crop")) {
+        int n = Sff_Crop(sf.doc, Selection(sf));
+        Log(LogLine::Info, "Cropped " + std::to_string(n) + " sprites");
+        if (n) SpritesChanged(sf);
+    }
+    ImGui::SetItemTooltip("Takes the empty borders off; the sprite stays where it was (its axis moves with the picture)");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_IMAGE " Resize...")) ImGui::OpenPopup("resize");
+    ImGui::SetItemTooltip("Scales the pictures and their axes");
+    if (ImGui::BeginPopup("resize")) {
+        static float pct[2] = {100, 100};
+        static int filter = SFF_SCALE_NEAREST;
+        ImGui::SetNextItemWidth(em * 10);
+        ImGui::InputFloat2("Width, height %", pct, "%.0f");
+        ImGui::SetNextItemWidth(em * 10);
+        ImGui::Combo("Filter", &filter, "Nearest\0Bilinear\0EPX (pixel art, enlarging)\0");
+        ImGui::TextDisabled("The animations' offsets and boxes stay as they are.");
+        if (ImGui::Button(ICON_CHECK " Resize")) {
+            int n = Sff_Scale(sf.doc, Selection(sf), pct[0] / 100, pct[1] / 100, filter);
+            Log(LogLine::Info, "Resized " + std::to_string(n) + " sprites");
+            if (n) SpritesChanged(sf);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
 // The tab when several sprites are selected: what can be done with them all.
 static void SpritesPanel(SpriteFile &sf) {
     SffDoc &d = sf.doc;
-    ImGui::Text("%zu sprites selected", sf.picks.size());
+    float em = ImGui::GetFontSize();
+    std::vector<int> sel = Selection(sf);
+    ImGui::Text("%zu sprites selected", sel.size());
     ImGui::Spacing();
-    if (ImGui::Button(ICON_TRASH " Delete them")) {
+    CropAndResize(sf);
+
+    ImGui::SeparatorText("Axes");
+    static int by[2];
+    ImGui::SetNextItemWidth(em * 8);
+    ImGui::InputInt2("##by", by);
+    ImGui::SetItemTooltip("x, y: how far each axis moves");
+    ImGui::SameLine();
+    if (ImGui::Button("Move")) {
+        for (int i : sel) d.sprites[i].x += by[0], d.sprites[i].y += by[1];
+        SpritesChanged(sf);
+    }
+    ImGui::SetItemTooltip("Ctrl+drag on the preview or its arrows move them too, watching the sprite");
+    const char *places[] = {"Feet", "Centre", "Top left"};
+    for (int m = 0; m < 3; m++) {
+        if (m) ImGui::SameLine();
+        if (ImGui::SmallButton(places[m])) {
+            for (int i : sel) Sff_SetAxis(d.sprites[i], m);
+            SpritesChanged(sf);
+        }
+        ImGui::SetItemTooltip("Each one's axis at that place of its picture");
+    }
+
+    ImGui::SeparatorText("Numbers");
+    static int group = 0, number = 0;
+    ImGui::SetNextItemWidth(em * 5);
+    ImGui::InputInt("Group", &group, 0);
+    ImGui::SetNextItemWidth(em * 5);
+    ImGui::InputInt("From", &number, 0);
+    // The numbers they would take, in the file's order, must be free or theirs
+    bool free = group >= 0 && number >= 0;
+    for (size_t k = 0; k < sel.size() && free; k++) {
+        int at = Sff_FindSprite(d, group, number + (int)k);
+        free = at < 0 || sf.picks.count(at);
+    }
+    ImGui::BeginDisabled(!free);
+    if (ImGui::Button(ICON_LIST " Renumber them")) {
+        for (size_t k = 0; k < sel.size(); k++) d.sprites[sel[k]].group = group, d.sprites[sel[k]].number = number + (int)k;
+        SpritesChanged(sf);
+    }
+    ImGui::EndDisabled();
+    if (!free) ImGui::TextColored(Ink(kRed), "Those numbers are in use.");
+    ImGui::SetItemTooltip("Animations using the old numbers are not changed");
+
+    ImGui::SeparatorText("Files");
+    static bool aligned = true;
+    ImGui::Checkbox("Same canvas and axis", &aligned);
+    ImGui::SetItemTooltip("All the images the same size, so that they stay lined up in a drawing program");
+    if (ImGui::Button(ICON_DOWNLOAD " Export...")) {
+        std::string path = PickSaveFile("List of sprites\0sprites.txt\0", "txt", kSffListName), error;
+        if (!path.empty()) {
+            std::string folder = path.substr(0, path.find_last_of("/\\"));
+            if (Sff_Export(d, sel, folder, aligned, &error)) Log(LogLine::Info, "Exported " + std::to_string(sel.size()) + " sprites to " + folder);
+            else Log(LogLine::Error, error);
+        }
+    }
+    ImGui::SetItemTooltip("One PNG for each sprite and a list of their numbers and axes (Add PNG reads them back)");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_TRASH " Delete")) {
         std::vector<SffSprite> kept;
         for (int i = 0; i < (int)d.sprites.size(); i++)
             if (!sf.picks.count(i)) kept.push_back(d.sprites[i]);
@@ -575,7 +790,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     };
     ImGui::Spacing();
     if (ImGui::Button(ICON_UPLOAD " Replace...")) {
-        std::vector<std::string> files = PickFiles(kPngFilter, false);
+        std::vector<std::string> files = PickFiles(kImageFilter, false);
         if (!files.empty()) {
             std::vector<SffSprite> made = Sff_SpritesOfPngs(d, files, s.pal >= 0 && d.pals[s.pal].group == 1 ? SFF_PAL_SHARED : SFF_PAL_OWN, SpriteLog);
             if (!made.empty()) {
@@ -615,6 +830,8 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
         SpritesChanged(sf);
         return true;
     }
+    ImGui::Spacing();
+    CropAndResize(sf);
 
     // The character's actions showing it
     std::string air = pn > 0 ? CharFile(pn, "anim") : "";
@@ -753,21 +970,93 @@ void SpritesWindow() {
     if (!d.error.empty()) ImGui::TextColored(Ink(kRed), "%s", d.error.c_str());
     if (d.converted) ImGui::TextColored(Ink(kYellow), "An SFF v1 file: saving writes SFF v2 (palette 1,1 from the .act).");
 
-    static int addGroup = 0, addNumber = 0, addAxis = SFF_AXIS_FEET, addPal = SFF_PAL_SHARED;
+    static AddOptions add;
+    static SffDoc importFrom;
+    static std::string importFilter;
+    static int importPal = SFF_IMPORT_OWN;
+    static bool importReplace = false, askImport = false;
     auto addPopup = [&]() {
-        if (!ImGui::BeginPopup("add")) return;
-        ImGui::SetNextItemWidth(em * 8);
-        ImGui::InputInt("Group", &addGroup, 0);
-        ImGui::SetNextItemWidth(em * 8);
-        ImGui::InputInt("From number", &addNumber, 0);
-        ImGui::Combo("Axis", &addAxis, "At the feet\0In the centre\0Top left\0");
-        ImGui::Combo("Palette", &addPal, screen ? "The shared one (1,1)\0Their own\0" : "The character's (1,1)\0Their own\0");
-        if (ImGui::Button(ICON_FOLDER_OPEN " Choose the files...")) {
-            std::vector<std::string> files = PickFiles(kPngFilter, true);
-            if (!files.empty()) AddSprites(sf, files, addGroup, addNumber, addAxis, addPal);
-            ImGui::CloseCurrentPopup();
+        if (ImGui::BeginPopup("add")) {
+            ImGui::BeginDisabled(add.fromNames);
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::InputInt("Group", &add.group, 0);
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::InputInt("From number", &add.number, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("by 1", &add.step, 1);
+            ImGui::SameLine();
+            ImGui::RadioButton("by 10", &add.step, 10);
+            ImGui::EndDisabled();
+            ImGui::Checkbox("Numbers from the file names", &add.fromNames);
+            ImGui::SetItemTooltip("200_3.png, 200-3.png or 200,3.png is group 200, number 3");
+            ImGui::SetNextItemWidth(em * 11);
+            ImGui::Combo("Axis", &add.axis, "At the feet\0In the centre\0Top left\0These numbers\0");
+            if (add.axis == kAxisCustom) {
+                ImGui::SetNextItemWidth(em * 11);
+                ImGui::InputInt2("x, y", &add.x);
+            }
+            ImGui::Checkbox("Crop the empty borders", &add.crop);
+            ImGui::SetItemTooltip("After the axis is set, so that each stays where it was in its image");
+            ImGui::SetNextItemWidth(em * 11);
+            ImGui::Combo("Palette", &add.pal, screen ? "The shared one (1,1)\0Their own\0Palette 1,1, same indices\0"
+                                                     : "The character's (1,1)\0Their own\0Palette 1,1, same indices\0");
+            ImGui::SetItemTooltip("The first maps each colour to the nearest of 1,1. The last keeps an indexed image's "
+                                  "indices, for images drawn on the character's palette.");
+            ImGui::Checkbox("Replace those with the same number", &add.replace);
+            if (ImGui::Button(ICON_FOLDER_OPEN " Choose the files...")) {
+                std::vector<std::string> files = PickFiles(kImageFilter, true);
+                if (!files.empty()) AddSprites(sf, files, add);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::Separator();
+            if (ImGui::Selectable("An export (sprites.txt)...")) {
+                std::vector<std::string> list = PickFiles("List of sprites\0sprites.txt\0All files (*.*)\0*.*\0", false);
+                std::vector<SffListRow> rows;
+                if (!list.empty() && Sff_ReadList(list[0], rows)) {
+                    std::string folder = list[0].substr(0, list[0].find_last_of("/\\") + 1);
+                    std::vector<std::string> files;
+                    for (const SffListRow &r : rows) files.push_back(folder + r.file);
+                    AddSprites(sf, files, add, &rows);
+                } else if (!list.empty()) {
+                    Log(LogLine::Error, "Not a list of sprites: " + list[0]);
+                }
+            }
+            ImGui::SetItemTooltip("Sprites exported here, changed or not: the same numbers replaced, with the Palette above");
+            if (ImGui::Selectable("Another SFF...")) {
+                std::vector<std::string> files = PickFiles("Sprite files (*.sff)\0*.sff\0All files (*.*)\0*.*\0", false);
+                if (!files.empty() && Sff_Load(importFrom, files[0])) askImport = true;
+                else if (!files.empty()) Log(LogLine::Error, importFrom.error);
+            }
+            ImGui::EndPopup();
         }
-        ImGui::EndPopup();
+        if (askImport) ImGui::OpenPopup("import");
+        askImport = false;
+        if (ImGui::BeginPopup("import")) {
+            std::vector<int> chosen;
+            int fg = -1, fn = -1;
+            if (!importFilter.empty()) sscanf(importFilter.c_str(), "%d , %d", &fg, &fn);
+            for (int i = 0; i < (int)importFrom.sprites.size(); i++)
+                if ((fg < 0 || importFrom.sprites[i].group == fg) && (fn < 0 || importFrom.sprites[i].number == fn)) chosen.push_back(i);
+            ImGui::Text("%s: %zu sprites", importFrom.path.c_str(), importFrom.sprites.size());
+            ImGui::SetNextItemWidth(em * 12);
+            ImGui::InputTextWithHint("Which", "group or group,number; all", &importFilter);
+            ImGui::SetNextItemWidth(em * 12);
+            ImGui::Combo("Palette##import", &importPal, "Their own\0Mapped to 1,1\0Palette 1,1, same indices\0");
+            ImGui::Checkbox("Replace those with the same number", &importReplace);
+            char label[48];
+            snprintf(label, sizeof(label), ICON_DOWNLOAD " Import %zu sprites", chosen.size());
+            ImGui::BeginDisabled(chosen.empty());
+            if (ImGui::Button(label)) {
+                int skipped = 0;
+                int n = Sff_ImportSprites(d, importFrom, chosen, importReplace, importPal, &skipped);
+                Log(LogLine::Info, "Imported " + std::to_string(n) + " sprites, " + std::to_string(skipped) + " skipped: their numbers are in use");
+                sf.picks.clear();
+                if (n) SpritesChanged(sf);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndDisabled();
+            ImGui::EndPopup();
+        }
     };
 
     // The sprites | the preview | the sprite's and the palette's tabs (under the preview when narrow)
@@ -791,11 +1080,9 @@ void SpritesWindow() {
         ImGui::End();
         return;
     }
-    // The preview's toolbar: the palette seen, the zoom
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Palette");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(std::min(em * 16, ImGui::GetContentRegionAvail().x - em * 2));
+    // The preview's toolbar: the palette seen, what is drawn
+    float viewW = ImGui::CalcTextSize(ICON_WATCH " View").x + style.FramePadding.x * 2 + style.ItemSpacing.x;
+    ImGui::SetNextItemWidth(std::min(em * 16, ImGui::GetContentRegionAvail().x - em * 2 - viewW));
     if (ImGui::BeginCombo("##palette", view.label.c_str(), ImGuiComboFlags_HeightLarge)) {
         for (int i = 0; i < (int)choices.size(); i++) {
             if (i == 1 && pn > 0) ImGui::SeparatorText("The character's");
@@ -806,7 +1093,23 @@ void SpritesWindow() {
     }
     ImGui::SetItemTooltip(pn > 0 ? "The character's palettes take the place of the shared one (1,1), as on the game"
                                  : "Every sprite with that palette");
-    HelpMarker("Wheel: zoom at the mouse. Drag or middle drag: pan. Ctrl+drag: move the axis. Double click: fit. "
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_WATCH " View")) ImGui::OpenPopup("view");
+    if (ImGui::BeginPopup("view")) {
+        ImGui::Checkbox("Lines through the axis", &g_spriteGround);
+        ImGui::Checkbox("Rulers", &g_spriteRulers);
+        ImGui::Checkbox("A ghost over the sprite", &g_spriteGhost.on);
+        ImGui::SetItemTooltip("Another sprite on the same axis, to line sprites up against it");
+        ImGui::BeginDisabled(!g_spriteGhost.on);
+        ImGui::SetNextItemWidth(em * 8);
+        ImGui::InputInt2("##ghost", &g_spriteGhost.group);
+        ImGui::SameLine();
+        if (ImGui::Button("This sprite") && sf.sel >= 0) g_spriteGhost.group = d.sprites[sf.sel].group, g_spriteGhost.number = d.sprites[sf.sel].number;
+        ImGui::EndDisabled();
+        ImGui::EndPopup();
+    }
+    HelpMarker("Wheel: zoom at the mouse. Drag or middle drag: pan. Ctrl+drag, or a click on the picture and the arrows "
+               "(Shift: ten pixels): move the axis of the sprites selected. Double click: fit. "
                "With the Palette tab (or Alt held), a click picks the colour under the mouse; Shift+click adds it.");
     static int tab = 0; // 0 the sprite, 1 the palette
     static std::vector<char> mark;

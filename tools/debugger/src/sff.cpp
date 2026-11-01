@@ -1,6 +1,7 @@
 #include "sff.h"
 
 #include <algorithm>
+#include <cctype>
 #include <climits>
 #include <cstring>
 #include <fstream>
@@ -334,11 +335,40 @@ struct Image {
     std::vector<unsigned char> pal; // indexed: 256 RGBA colours, 0 transparent
 };
 
+SffImageReader g_imageReader;
+
+// PCX: indexed, colour 0 transparent. Others, read by the app: RGBA; with nothing transparent (BMP),
+// the colour of the top left corner is.
+bool LoadOther(const std::string &f, bool pcx, Image &img) {
+    if (pcx) {
+        img.pal.assign(1024, 0);
+        bool hasPal = false;
+        if (!DecodePcx((const unsigned char *)f.data(), f.size(), &img.w, &img.h, img.px, img.pal.data(), &hasPal)) return false;
+        img.indexed = true;
+        return true;
+    }
+    if (!g_imageReader || !g_imageReader((const unsigned char *)f.data(), f.size(), img.w, img.h, img.px)) return false;
+    img.indexed = false;
+    bool solid = true;
+    for (size_t i = 3; i < img.px.size() && solid; i += 4) solid = img.px[i] == 255;
+    for (size_t i = 0; solid && i + 3 < img.px.size(); i += 4)
+        if (!memcmp(&img.px[i], img.px.data(), 3)) img.px[i + 3] = 0;
+    return true;
+}
+
 bool LoadPng(const std::string &path, Image &img, std::string *error) {
     std::string f;
     img.path = path;
     if (!ReadFile(path, f)) {
         *error = "Can't read " + path;
+        return false;
+    }
+    size_t dot = path.find_last_of('.');
+    std::string ext = dot == std::string::npos ? "" : path.substr(dot + 1);
+    for (char &ch : ext) ch = (char)tolower((unsigned char)ch);
+    if (ext == "pcx" || ext == "bmp" || ext == "gif") {
+        if (LoadOther(f, ext == "pcx", img)) return true;
+        *error = path + " could not be read";
         return false;
     }
     lodepng::State state;
@@ -710,7 +740,7 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
     }
     std::vector<SffSprite> out;
     int p11 = Sff_FindPal(d, 1, 1);
-    if (palMode == SFF_PAL_SHARED && p11 < 0 && !images.empty()) {
+    if (palMode != SFF_PAL_OWN && p11 < 0 && !images.empty()) {
         bool same = true;
         for (const Image &img : images) same = same && img.indexed && SamePalette(img.pal, images[0].pal);
         SffPal p;
@@ -732,9 +762,9 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
         SffSprite s;
         s.w = img.w, s.h = img.h;
         std::vector<unsigned char> px;
-        if (palMode == SFF_PAL_SHARED) {
+        if (palMode != SFF_PAL_OWN) {
             const std::vector<unsigned char> &pal = d.pals[p11].rgba;
-            if (img.indexed && SamePalette(img.pal, pal)) {
+            if (img.indexed && (palMode == SFF_PAL_SAME || SamePalette(img.pal, pal))) {
                 px = img.px;
             } else {
                 int inexact = 0;
@@ -783,6 +813,23 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
         out.push_back(s);
     }
     return out;
+}
+
+void Sff_SetImageReader(SffImageReader read) { g_imageReader = read; }
+
+void Sff_SetPixels(SffSprite &s, int w, int h, const std::vector<unsigned char> &px, int bpp) {
+    s.w = w, s.h = h;
+    if (bpp == 1) {
+        s.format = 2, s.depth = 8;
+        s.data = Rle8Encode(px);
+        return;
+    }
+    std::vector<unsigned char> png;
+    if (lodepng::encode(png, px, (unsigned)w, (unsigned)h) != 0) return;
+    s.format = 12, s.depth = 32;
+    s.data = std::make_shared<std::string>(kPrefix, '\0');
+    Put32(*s.data, 0, (unsigned)w * h * 4);
+    s.data->append((const char *)png.data(), png.size());
 }
 
 void Sff_SetAxis(SffSprite &s, int mode) {

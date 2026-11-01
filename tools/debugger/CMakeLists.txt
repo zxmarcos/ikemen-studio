@@ -85,6 +85,7 @@ add_executable(ikemen-debugger WIN32
   src/editor.cpp
   src/air.cpp
   src/sff.cpp
+  src/sffedit.cpp
   src/snd.cpp
   src/cmd.cpp
   src/ini.cpp
@@ -114,7 +115,7 @@ target_sources(ikemen-debugger PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ikdbg.lua")
 # Tests of the parts that do not need a window: scripts/build.ps1 test
 add_executable(air-test tests/air_test.cpp src/air.cpp)
 target_include_directories(air-test PRIVATE src)
-add_executable(sff-test tests/sff_test.cpp src/sff.cpp)
+add_executable(sff-test tests/sff_test.cpp src/sff.cpp src/sffedit.cpp)
 target_include_directories(sff-test PRIVATE src)
 target_link_libraries(sff-test PRIVATE lodepng)
 add_executable(snd-test tests/snd_test.cpp src/snd.cpp)

@@ -56,11 +56,18 @@ bool Sff_SavePng(const SffDoc &doc, const SffSprite &s, const std::string &path,
 // PNG images as sprites (group, number and axis left at 0). Shared: indexed against palette 1,1
 // (made from the images when there is none). Own: a palette (0, n) each, or true colour past
 // 255 colours. log tells what was done.
-enum { SFF_PAL_SHARED, SFF_PAL_OWN };
+// Same: palette 1,1 for an indexed image's indices as they are (a colour's place is what counts).
+// Images: PNG, PCX, and whatever Sff_SetImageReader's function reads (BMP, GIF).
+enum { SFF_PAL_SHARED, SFF_PAL_OWN, SFF_PAL_SAME };
 enum { SFF_AXIS_FEET, SFF_AXIS_CENTRE, SFF_AXIS_TOP_LEFT };
 std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &doc, const std::vector<std::string> &files, int palMode,
                                          const std::function<void(const std::string &)> &log);
 void Sff_SetAxis(SffSprite &s, int mode);
+// Decodes other images to RGBA: the app's, which has the system's codecs.
+typedef bool (*SffImageReader)(const unsigned char *data, size_t size, int &w, int &h, std::vector<unsigned char> &rgba);
+void Sff_SetImageReader(SffImageReader read);
+// A new picture for a sprite (RLE8 with bpp 1, PNG32 with 4), its numbers, axis and palette kept.
+void Sff_SetPixels(SffSprite &s, int w, int h, const std::vector<unsigned char> &px, int bpp);
 
 // An 8-bit PCX image (a .fnt's): its palette indices, and its palette as RGBA (256 x 4 bytes; colour 0
 // transparent).

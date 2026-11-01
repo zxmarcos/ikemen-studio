@@ -65,6 +65,18 @@ become a step of Animation's when that window next shows. Revert is a step too.
 Selecting several: `SpriteFile::picks`, `g_elemPicks` (Ctrl, Shift; Ctrl+A in the
 sprites' list).
 
+Sprites in batch (`src/sffedit.cpp`, tested in `tests/sff_test.cpp`): crop (the
+axis moves with the picture), scale (nearest, bilinear, EPX), export (PNGs and
+`sprites.txt`, aligned or not; Add PNG reads it back, replacing by number),
+sprites from another SFF (own palette, mapped to 1,1, or the same indices).
+`Sff_SetPixels` writes a new picture as RLE8 or PNG32. Linked sprites stay
+linked: each picture is changed once. Add PNG takes the numbers from the names,
+PCX, BMP and GIF (through `Sff_SetImageReader`, the app's WIC; a BMP has no
+transparency, so its top left colour is), a custom axis, crop. A right click on
+a sprite selects its group. The preview's View: lines through the axis, rulers,
+a ghost; Ctrl+drag and the arrows move the axis of all those selected. Not done:
+Fighter Factory's background image behind the sprite.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -318,6 +330,8 @@ tools/debugger/
   src/ikemen_names.inc   the engine's controllers (with their parameters), triggers, statedef parameters (scripts/gen_names)
   src/air.cpp/.h         AIR files: actions, elements, Clsn boxes with their lines; text edits
   src/sff.cpp/.h         SFF files: read v1/v2, decode (raw, RLE8, RLE5, LZ5, PNG), write v2, PNG in and out
+  src/sffedit.cpp/.h     sprites in batch: crop, scale, export and its list, from another SFF
+  src/undo.h             undo and redo by whole states
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
