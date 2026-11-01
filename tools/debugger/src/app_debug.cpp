@@ -247,7 +247,9 @@ void PlayersWindow() {
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable |
                             ImGuiTableFlags_Hideable | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingFixedFit;
-    if (ImGui::BeginTable("players", 14, flags)) {
+    // Tight, whatever the theme's padding: the four columns fit a narrow panel
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ImGui::GetFontSize() * 0.2f, ImGui::GetStyle().CellPadding.y));
+    if (ImGui::BeginTable("fighters", 14, flags)) { // a new name: widths saved under the old font don't apply
         ImGui::TableSetupScrollFreeze(0, 1);
         float em = ImGui::GetFontSize();
         ImGui::TableSetupColumn("Who", ImGuiTableColumnFlags_WidthFixed, em * 3.5f);
@@ -255,7 +257,9 @@ void PlayersWindow() {
         for (const char *h : {"State", "Prev", "Anim", "Elem", "Time", "Type", "Ctrl", "Pos", "Vel", "Life", "Power",
                               "Explods, projs"}) {
             bool shown = !strcmp(h, "State") || !strcmp(h, "Anim") || !strcmp(h, "Life");
-            ImGui::TableSetupColumn(h, shown ? 0 : ImGuiTableColumnFlags_DefaultHide);
+            // Fitted once, while the table is empty: Life's header is narrower than its values
+            float w = !strcmp(h, "Life") ? ImGui::CalcTextSize("10000").x : 0.0f;
+            ImGui::TableSetupColumn(h, shown ? 0 : ImGuiTableColumnFlags_DefaultHide, w);
         }
         ImGui::TableHeadersRow();
         for (const auto &e : g_ents) {
@@ -295,6 +299,7 @@ void PlayersWindow() {
         }
         ImGui::EndTable();
     }
+    ImGui::PopStyleVar();
     ImGui::End();
 }
 
