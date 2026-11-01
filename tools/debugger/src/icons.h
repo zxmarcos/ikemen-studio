@@ -73,3 +73,7 @@
 #define ICON_CARET "\xef\x83\x97" // caret-down
 #define ICON_BACK "\xef\x8f\xa5" // reply
 #define ICON_AGAIN "\xef\x81\xa4" // share
+#define ICON_ERASER "\xef\x84\xad" // eraser
+#define ICON_FILL "\xef\x95\xb6" // fill-drip
+#define ICON_DROPPER "\xef\x87\xbb" // eye-dropper
+#define ICON_SELECT "\xef\x97\x8b" // vector-square

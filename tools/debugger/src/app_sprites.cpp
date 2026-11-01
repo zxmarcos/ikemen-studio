@@ -481,7 +481,7 @@ static struct {
 // The sprite: the wheel zooms at the mouse, a drag pans, Ctrl+drag or the arrows move the axis of
 // the sprites selected, a double click fits; picking (the Palette tab) or with Alt, a click picks
 // the colour under the mouse. Returns the colour picked, -1 none; *shift: Shift was held.
-static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vector<char> *mark, bool picking, bool *shift,
+static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vector<char> *mark, bool picking, bool painting, bool *shift,
                          float height) {
     static float zoom = 2;
     static ImVec2 origin; // the axis, from the canvas's corner
@@ -525,7 +525,8 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
         origin = ImVec2(m.x - (m.x - origin.x) * zoom / before, m.y - (m.y - origin.y) * zoom / before);
     }
     if (ImGui::IsItemActivated()) moved = false;
-    bool dragging = ImGui::IsItemActive() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0));
+    // Painting, the left button is the tool's
+    bool dragging = ImGui::IsItemActive() && ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3) && !painting) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0));
     moved |= dragging;
     bool movingAxis = dragging && io.KeyCtrl && ImGui::IsMouseDown(ImGuiMouseButton_Left);
     if (dragging && !movingAxis) origin.x += io.MouseDelta.x, origin.y += io.MouseDelta.y;
@@ -563,7 +564,9 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
         draw->AddLine(ImVec2(p0.x, axisAt.y), ImVec2(p1.x, axisAt.y), IM_COL32(255, 220, 60, 70));
         draw->AddLine(ImVec2(axisAt.x, p0.y), ImVec2(axisAt.x, p1.y), IM_COL32(255, 220, 60, 70));
     }
-    if (GLuint tex = PalSpriteTexture(sf, sf.sel, view, mark)) {
+    if (painting && PaintCanvas(sf, view, draw, a, zoom, hovered, p0, p1)) {
+        // PaintCanvas drew it
+    } else if (GLuint tex = PalSpriteTexture(sf, sf.sel, view, mark)) {
         draw->AddImage(TexRef(tex), a, ImVec2(a.x + s.w * zoom, a.y + s.h * zoom));
         draw->AddRect(a, ImVec2(a.x + s.w * zoom, a.y + s.h * zoom), IM_COL32(255, 255, 255, 60));
     } else {
@@ -1127,13 +1130,13 @@ void SpritesWindow() {
     HelpMarker("Wheel: zoom at the mouse. Drag or middle drag: pan. Ctrl+drag, or a click on the picture and the arrows "
                "(Shift: ten pixels): move the axis of the sprites selected. Double click: fit. "
                "With the Palette tab (or Alt held), a click picks the colour under the mouse; Shift+click adds it.");
-    static int tab = 0; // 0 the sprite, 1 the palette
+    static int tab = 0; // 0 the sprite, 1 the palette, 2 paint
     static std::vector<char> mark;
     static int colour = -1; // picked on the sprite, for the Palette tab (shown from the next frame)
     static bool shift = false;
     float previewH = wide ? h - ImGui::GetFrameHeightWithSpacing() : std::max(em * 10, (h - ImGui::GetFrameHeightWithSpacing()) * 0.5f);
     bool now = false;
-    if (int c = SpritePreview(sf, view, tab == 1 ? &mark : nullptr, tab == 1, &now, previewH); c >= 0) colour = c, shift = now;
+    if (int c = SpritePreview(sf, view, tab == 1 ? &mark : nullptr, tab == 1, tab == 2, &now, previewH); c >= 0) colour = c, shift = now;
     if (!wide) ImGui::Spacing();
     else ImGui::TableSetColumnIndex(2);
     // The tabs
@@ -1150,6 +1153,11 @@ void SpritesWindow() {
                 tab = 1;
                 PalettePanel(sf, pn, PalFor(sf, view, sf.sel), colour, shift, mark);
                 colour = -1;
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Paint")) {
+                tab = 2;
+                PaintPanel(sf, view);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

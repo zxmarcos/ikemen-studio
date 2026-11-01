@@ -117,6 +117,8 @@ static std::vector<unsigned char> *Colours(SpriteFile &sf, const PalChoice &c) {
     return nullptr;
 }
 
+const std::vector<unsigned char> *PalColours(SpriteFile &sf, const PalChoice &c) { return Colours(sf, c); }
+
 // Textures of sprites drawn with another palette than their own (or with colours flashed)
 struct PalTex {
     GLuint tex = 0;

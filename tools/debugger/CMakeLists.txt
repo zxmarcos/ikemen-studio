@@ -72,6 +72,7 @@ add_executable(ikemen-debugger WIN32
   src/gltf.cpp
   src/app_check.cpp
   src/app_explorer.cpp
+  src/app_paint.cpp
   src/app_palette.cpp
   src/app_start.cpp
   src/app_navigate.cpp
@@ -88,6 +89,7 @@ add_executable(ikemen-debugger WIN32
   src/sffedit.cpp
   src/gif.cpp
   src/palfile.cpp
+  src/pixels.cpp
   src/snd.cpp
   src/cmd.cpp
   src/ini.cpp
@@ -142,6 +144,8 @@ target_include_directories(gif-test PRIVATE src)
 add_executable(palfile-test tests/palfile_test.cpp src/palfile.cpp src/sff.cpp)
 target_include_directories(palfile-test PRIVATE src)
 target_link_libraries(palfile-test PRIVATE lodepng)
+add_executable(pixels-test tests/pixels_test.cpp src/pixels.cpp)
+target_include_directories(pixels-test PRIVATE src)
 add_executable(undo-test tests/undo_test.cpp)
 target_include_directories(undo-test PRIVATE src)
 add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp)

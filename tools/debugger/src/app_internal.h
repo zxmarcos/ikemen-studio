@@ -416,6 +416,11 @@ void PalFrame(SpriteFile &sf, int pn);  // sends the colours changed to the game
 // (-1 none), shift: added to the selection. Fills mark with the colours selected.
 void PalettePanel(SpriteFile &sf, int pn, const PalChoice &target, int picked, bool shift, std::vector<char> &mark);
 std::string PalTakeWanted(); // the label of a palette picked in the Palette tab's list, once; "" none
+const std::vector<unsigned char> *PalColours(SpriteFile &sf, const PalChoice &c); // its 256 RGBA colours, nullptr none
+// Paint (app_paint.cpp): on the Sprites window's preview, the sprite's pixels edited. at: the picture's corner
+// on the screen, zoom: screen pixels for each of its; clipA, clipB: the canvas. False: this sprite can't be painted.
+bool PaintCanvas(SpriteFile &sf, const PalChoice &view, ImDrawList *draw, ImVec2 at, float zoom, bool hovered, ImVec2 clipA, ImVec2 clipB);
+void PaintPanel(SpriteFile &sf, const PalChoice &view); // the Paint tab
 
 // Sounds
 const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)

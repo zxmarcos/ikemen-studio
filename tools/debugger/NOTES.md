@@ -103,6 +103,14 @@ Fighter Factory's two-column editor is the palette combo plus Copy and Paste, wh
 survive a change of palette; its remap table is that combo too. Not done: PalFX
 sent to the game (only the preview and a controller to paste).
 
+Paint (src/app_paint.cpp, on src/pixels.cpp, tested): the Sprites window's third
+tab; the left button on the preview is the tool's. The picture is kept as indices
+and its own texture while the mouse is down, and goes back to the sprite with
+Sff_SetPixels when it lets go, so a stroke is one step of undo. A sprite painted
+stops being linked to the others that shared its picture. No layers, by choice:
+people draw sprites in programs made for it, and export and import go there and
+back.
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -344,6 +352,7 @@ tools/debugger/
   src/app_anim.cpp       Animation window (AIR)
   src/app_sprites.cpp    Sprites window (SFF), file dialogs
   src/app_sffpal.cpp     palettes: a character's (ACT files, SFF 1,N), the Palette tab, sent to the game live
+  src/app_paint.cpp      the Sprites window's Paint tab
   src/app_sounds.cpp     Sounds window (SND)
   src/app_code.cpp       Code window: source files, Apply
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
@@ -360,6 +369,7 @@ tools/debugger/
   src/undo.h             undo and redo by whole states
   src/gif.cpp/.h         animated GIF files
   src/palfile.cpp/.h     palettes in other programs' files, tools on colours, PalFX's sums
+  src/pixels.cpp/.h      a picture of indices: lines, fill, rectangles, flips
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
