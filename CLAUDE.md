@@ -1,6 +1,8 @@
 # Working in this clone
 
-This is the user's clone of Ikemen GO. The local branch `debugger-bridge` adds
+This is ikemen-studio, the user's fork of Ikemen GO (`origin`,
+github.com/zxmarcos/ikemen-studio). The authors of Ikemen GO prefer this out of
+their tree, so nothing here goes upstream. Branch `main` adds
 an external debugger: the engine side in `src/script_debugger.go` and
 `src/editor_*.go` (plus one or two lines each in `compiler.go`, `bytecode.go`,
 `script.go`, `system.go`, `stage.go`, `anim.go`, `common.go`, `render.go`,
@@ -14,14 +16,17 @@ build environment and tests.
 
 - Chat with the user in Portuguese; commit messages in English, ending with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Never push. Commit on `debugger-bridge` (or a branch off it); `develop`
-  tracks upstream.
+- Never push: pushing to `origin` is the user's. Commit on `main` (or a branch
+  off it). `develop` mirrors `upstream` (the engine's repository, push disabled)
+  and stays local: it carries upstream's workflows, which must not run on the fork.
+- Sync with `tools/debugger/scripts/sync_upstream.ps1` (see NOTES.md, "Syncing
+  with upstream"), by merge, never by rebase.
 - At most two background subagents at a time, on disjoint files.
 - Videos sent to the user: 30 MB at most.
-- Keep engine changes inert without `-ikdbg` and easy to upstream: new code
+- Keep engine changes inert without `-ikdbg` and easy to merge: new code
   goes in `src/script_debugger.go` or new `src/editor_*.go` files, with
-  one-line calls elsewhere. The goal is now a live editor (see NOTES.md,
-  "Where it is going").
+  one-line calls elsewhere, on lines of their own: leave upstream's lines as
+  they are. The goal is now a live editor (see NOTES.md, "Where it is going").
 
 ## Environment
 

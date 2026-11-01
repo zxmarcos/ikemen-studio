@@ -1,0 +1,79 @@
+# Does the engine's upstream still merge, build and pass the debugger's unit tests on this fork?
+# A failed run is the warning; nothing is pushed. The merge itself stays a decision made with
+# tools/debugger/scripts/sync_upstream.ps1. The tests that need a window do not run here.
+name: Upstream check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-build-test:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            **/go.sum
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            git
+            make
+            diffutils
+            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-bzip2
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-tools
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-libxmp
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Prepare Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: 1.4.304.1
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Merge upstream
+        shell: pwsh
+        run: |
+          git remote add upstream https://github.com/ikemen-engine/Ikemen-GO.git
+          git config user.name "upstream-check"
+          git config user.email "upstream-check@users.noreply.github.com"
+          ./tools/debugger/scripts/sync_upstream.ps1
+
+      - name: Build the engine
+        shell: 'msys2 {0}'
+        env:
+          BUILD_FFMPEG: "yes"
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "1"
+        run: |
+          go mod download
+          ./build/build.sh Win64
+
+      - name: Build the debugger and run its unit tests
+        shell: 'msys2 {0}'
+        run: tools/debugger/scripts/build.sh debugger test

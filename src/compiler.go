@@ -7391,7 +7391,8 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 
 						// Handle triggerall
 						if isAll {
-							triggerall = append(triggerall, c.debugTrigger(be, int32(c.i+1)))
+							be = c.debugTrigger(be, int32(c.i+1))
+							triggerall = append(triggerall, be)
 							break
 						}
 
@@ -7413,7 +7414,8 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 								trexist[tidx] = 1
 							}
 						} else if trexist[tidx] >= 0 {
-							trigger[tidx] = append(trigger[tidx], c.debugTrigger(be, int32(c.i+1)))
+							be = c.debugTrigger(be, int32(c.i+1))
+							trigger[tidx] = append(trigger[tidx], be)
 							trexist[tidx] = 1
 						}
 					}
@@ -7525,11 +7527,13 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]*StateBytecode, filename
 				//if len(c.block.trigger) == 0 && c.block.persistentIndex < 0 &&
 				if len(c.block.trigger) == 0 && c.block.persistent == 1 && !c.block.ignorehitpause {
 					if _, ok := sctrl.(NullStateController); !ok {
-						sbc.block.ctrls = append(sbc.block.ctrls, c.traced(sctrl, scLine, scType))
+						sctrl = c.traced(sctrl, scLine, scType)
+						sbc.block.ctrls = append(sbc.block.ctrls, sctrl)
 					}
 				} else {
 					if _, ok := sctrl.(NullStateController); !ok {
-						c.block.ctrls = append(c.block.ctrls, c.traced(sctrl, scLine, scType))
+						sctrl = c.traced(sctrl, scLine, scType)
+						c.block.ctrls = append(c.block.ctrls, sctrl)
 					}
 					sbc.block.ctrls = append(sbc.block.ctrls, c.block)
 					if c.block.ignorehitpause {
@@ -8333,8 +8337,8 @@ func (c *CharCompiler) stateBlock(line *string, bl *StateBlock, root bool,
 				c.token = "helper"
 			}
 			if ok {
-				scname := c.token
-				scLine := int32(c.i) // ZSS: c.i is already the 1-based line of the token
+				//scname := c.token
+				scLine, scType := int32(c.i), c.token // ZSS: c.i is already the 1-based line of the token
 				c.scan(line)
 				if err := c.needToken("{"); err != nil {
 					return err
@@ -8361,7 +8365,8 @@ func (c *CharCompiler) stateBlock(line *string, bl *StateBlock, root bool,
 				if sctrl, err := scf(is, sc); err != nil {
 					return err
 				} else {
-					*ctrls = append(*ctrls, c.traced(sctrl, scLine, scname))
+					sctrl = c.traced(sctrl, scLine, scType)
+					*ctrls = append(*ctrls, sctrl)
 				}
 				c.scan(line)
 				continue

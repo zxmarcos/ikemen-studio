@@ -15,9 +15,11 @@ user (2026-10-25):
   inside it (window Game) through shared memory; the editor draws its
   overlays and does the picking itself, from geometry the engine sends with
   each frame. Not ImGui inside the engine, not an overlay window.
-- **Maybe upstream later**: engine code stays in new files (`src/editor_*.go`,
+- **A fork, not upstream** (2026-10-31): Ikemen GO's authors prefer this out of
+  their tree, so it lives in its own repository, ikemen-studio, with the engine
+  in it. Engine code still stays in new files (`src/editor_*.go`,
   `src/script_debugger.go`) with one-line calls elsewhere, inert without
-  `-ikdbg`.
+  `-ikdbg`, now to keep merges easy (see "Syncing with upstream").
 - **Characters first**, then stages, then screenpacks.
 
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
@@ -216,8 +218,8 @@ functions' names, a command's name in `command = "`.
 
 ## Where things are
 
-Branch `debugger-bridge` of this clone (local only, never pushed), on top of
-upstream `develop` (e9bfe112):
+Branch `main` of ikemen-studio, merged from upstream `develop`. The first
+commits, from when it was `debugger-bridge` on top of e9bfe112:
 
 | Commit | What |
 |---|---|
@@ -330,6 +332,32 @@ helper "Bag"):
 - Release assets (`chars`, `stages`, `data`, `font`, `sound`, `video`) were
   copied from the v1.0.0 Windows release; git ignores them. Test
   characters in `chars/`: kfm, kfm720, kfm_zaxis, kfm_zss, ryu_pots.
+
+## Syncing with upstream
+
+Remotes: `origin` is ikemen-studio; `upstream` is ikemen-engine/Ikemen-GO, with
+push disabled. `develop` mirrors upstream and is not pushed. `main` follows
+upstream `develop`, not `release/1.0`, and takes it by merge: rebasing would
+rewrite all of this history at every sync.
+
+- `scripts/sync_upstream.ps1 [ref]` fetches and merges (default
+  `upstream/develop`). Then `scripts/build.ps1`, `scripts/build.ps1 test` and a
+  match through `scripts/test_ui.ps1`: the hooks can stop working without any
+  conflict or compile error.
+- Upstream's workflows and `dependabot.yml` are removed from the fork: they use
+  its tokens, publish its releases, and changed 44 times in the year to
+  2026-11-01. The script takes them out of every merge, changed or new.
+- `.github/workflows/upstream-check.yml` tries the merge every Monday, builds
+  and runs the unit tests. It pushes nothing; a failed run is the warning that
+  upstream changed something `editor_*.go` uses, which is a compile error and
+  not a conflict.
+- The upstream diff is what can conflict: `git diff upstream/develop main --
+  src external ":!src/editor_*.go" ":!src/script_debugger.go"`. Calls stay on
+  lines of their own, next to upstream's. Still edited in place: the model call
+  in `stage.go` (a hook in `loadglTFModel` would add more lines than it saves)
+  and `local t_storyModeList` in `main.lua`, which a function could not leave
+  inside it.
+- `rerere` is on in this clone: a conflict resolved once is resolved again.
 
 ## Testing
 
