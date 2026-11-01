@@ -20,7 +20,7 @@ static int g_spritesShownN;
 void ShowInSprites(SpriteFile &sf, int index, const std::string &what) {
     g_spritesShown = &sf;
     g_spritesShownWhat = what;
-    if (index >= 0) sf.sel = index;
+    if (index >= 0) sf.sel = index, sf.picks.clear();
     g_spritesShownN++;
 }
 
@@ -56,6 +56,60 @@ SpriteFile *SpritesOf(int pn) {
 void SpritesChanged(SpriteFile &sf) {
     sf.dirty = true;
     sf.version++;
+    sf.edits++;
+}
+
+float UndoButtonsWidth() {
+    const ImGuiStyle &style = ImGui::GetStyle();
+    return ImGui::CalcTextSize(ICON_BACK).x + ImGui::CalcTextSize(ICON_AGAIN).x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+}
+
+int UndoButtons(bool canUndo, bool canRedo) {
+    ImGuiIO &io = ImGui::GetIO();
+    bool keys = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && io.KeyCtrl;
+    ImGui::BeginDisabled(!canUndo);
+    bool undo = ImGui::Button(ICON_BACK "##undo");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(canUndo ? "Undo (Ctrl+Z)" : "No change to undo");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!canRedo);
+    bool redo = ImGui::Button(ICON_AGAIN "##redo");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(canRedo ? "Do again (Ctrl+Y)" : "Nothing undone to do again");
+    undo |= keys && canUndo && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z);
+    redo |= keys && canRedo && (ImGui::IsKeyPressed(ImGuiKey_Y) || (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z)));
+    return undo ? -1 : redo ? 1 : 0;
+}
+
+// A change is one step of undo when the mouse lets go of it (a colour dragged, an axis moved).
+static void TrackSprites(SpriteFile &sf, int pn) {
+    SpriteState st;
+    if (!sf.history.Started()) {
+        st.sprites = sf.doc.sprites;
+        PalCapture(sf, pn, st, nullptr);
+        sf.history.Start(std::move(st), !sf.dirty && !PalDirty());
+        sf.recorded = sf.edits;
+        return;
+    }
+    if (sf.recorded != sf.edits && !ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        st.sprites = sf.doc.sprites;
+        PalCapture(sf, pn, st, &sf.history.Current());
+        sf.history.Record(std::move(st));
+        sf.recorded = sf.edits;
+    }
+    if (sf.recorded == sf.edits && !sf.dirty && !PalDirty()) sf.history.MarkSaved();
+}
+
+static void SpritesStep(SpriteFile &sf, int pn, int dir) {
+    const SpriteState &st = dir < 0 ? sf.history.Undo() : sf.history.Redo();
+    bool saved = sf.history.Saved();
+    sf.doc.sprites = st.sprites;
+    PalRestore(sf, pn, st, saved);
+    sf.sel = std::min(sf.sel, (int)sf.doc.sprites.size() - 1);
+    sf.picks.clear();
+    sf.version++;
+    sf.dirty = !saved;
+    sf.recorded = sf.edits;
 }
 
 // Textures of sprites, made when asked for and again after a change.
@@ -170,6 +224,7 @@ void SaveSprites(SpriteFile &sf) {
 
 void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, int group, int number, int axis, int palMode) {
     std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, palMode, SpriteLog);
+    if (!made.empty()) sf.picks.clear();
     for (SffSprite &s : made) {
         while (Sff_FindSprite(sf.doc, group, number) >= 0) number++;
         s.group = group;
@@ -201,8 +256,33 @@ static void Label(const char *label) {
     ImGui::SetCursorPosX(x + ImGui::CalcTextSize("Number").x + ImGui::GetStyle().ItemSpacing.x * 2);
 }
 
+// A click on a sprite of the list: it alone; with Ctrl, one more or one less; with Shift, all
+// those from the current one to it.
+static void PickSprite(SpriteFile &sf, int i, const std::vector<int> &shown) {
+    ImGuiIO &io = ImGui::GetIO();
+    auto from = std::find(shown.begin(), shown.end(), sf.sel), to = std::find(shown.begin(), shown.end(), i);
+    if (io.KeyShift && from != shown.end() && to != shown.end()) {
+        if (from > to) std::swap(from, to);
+        sf.picks.clear();
+        sf.picks.insert(from, to + 1);
+        return;
+    }
+    if (!io.KeyCtrl) {
+        sf.picks.clear();
+        sf.sel = i;
+        return;
+    }
+    if (sf.picks.empty() && sf.sel >= 0) sf.picks.insert(sf.sel);
+    if (!sf.picks.erase(i)) sf.picks.insert(i);
+    if (sf.picks.empty()) sf.picks.insert(i);
+    if (sf.picks.count(i)) sf.sel = i;
+    else sf.sel = *sf.picks.begin();
+    if (sf.picks.size() == 1) sf.picks.clear();
+}
+
 // The sprites, filtered by "group" or "group,number": a list (a small picture, the numbers, the
-// size) or a grid of pictures. A click picks one; the arrows move from one to the next.
+// size) or a grid of pictures. A click picks one, Ctrl and Shift several, Ctrl+A all those shown;
+// the arrows move from one to the next.
 static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, float height) {
     static std::string filter;
     static bool grid = false;
@@ -244,8 +324,10 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
             if (step) {
                 at = at >= (int)shown.size() ? 0 : std::max(0, std::min((int)shown.size() - 1, at + step));
                 sf.sel = shown[at];
+                sf.picks.clear();
                 scroll = true;
             }
+            if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false) && shown.size() > 1) sf.picks.insert(shown.begin(), shown.end());
         }
         float lineH = grid ? cellH + style.ItemSpacing.y : rowH;
         if (scroll && at < (int)shown.size()) {
@@ -277,11 +359,13 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                     if (col) ImGui::SameLine();
                     ImVec2 p = ImGui::GetCursorScreenPos();
                     ImVec2 size = grid ? ImVec2(cellW, cellH) : ImVec2(ImGui::GetContentRegionAvail().x, rowH - style.ItemSpacing.y * 0.5f);
-                    if (ImGui::InvisibleButton("s", size)) sf.sel = i;
-                    bool hot = ImGui::IsItemHovered();
-                    if (cur || hot)
+                    if (ImGui::InvisibleButton("s", size)) PickSprite(sf, i, shown);
+                    bool hot = ImGui::IsItemHovered(), picked = sf.picks.count(i) != 0;
+                    if (cur || hot || picked)
                         draw->AddRectFilled(p, ImVec2(p.x + size.x, p.y + size.y),
-                                            ImGui::GetColorU32(cur ? ImGuiCol_Header : ImGuiCol_HeaderHovered), style.FrameRounding);
+                                            ImGui::GetColorU32(cur || picked ? ImGuiCol_Header : ImGuiCol_HeaderHovered), style.FrameRounding);
+                    if (cur && !sf.picks.empty())
+                        draw->AddRect(p, ImVec2(p.x + size.x, p.y + size.y), ImGui::GetColorU32(ImGuiCol_CheckMark), style.FrameRounding);
                     char num[32], dim[32];
                     snprintf(num, sizeof(num), "%d, %d", s.group, s.number);
                     snprintf(dim, sizeof(dim), "%dx%d", s.w, s.h);
@@ -307,7 +391,10 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
         if (shown.empty()) ImGui::TextDisabled(d.sprites.empty() ? "No sprites." : "None in that group.");
     }
     ImGui::EndChild();
-    ImGui::TextDisabled("%zu of %zu", shown.size(), d.sprites.size());
+    if (sf.picks.empty())
+        ImGui::TextDisabled("%zu of %zu", shown.size(), d.sprites.size());
+    else
+        ImGui::TextDisabled("%zu selected, of %zu", sf.picks.size(), d.sprites.size());
 }
 
 // The sprite: the wheel zooms at the mouse, a drag pans, Ctrl+drag moves the axis, a double click
@@ -409,6 +496,22 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
     return picked;
 }
 
+// The tab when several sprites are selected: what can be done with them all.
+static void SpritesPanel(SpriteFile &sf) {
+    SffDoc &d = sf.doc;
+    ImGui::Text("%zu sprites selected", sf.picks.size());
+    ImGui::Spacing();
+    if (ImGui::Button(ICON_TRASH " Delete them")) {
+        std::vector<SffSprite> kept;
+        for (int i = 0; i < (int)d.sprites.size(); i++)
+            if (!sf.picks.count(i)) kept.push_back(d.sprites[i]);
+        d.sprites.swap(kept);
+        sf.sel = std::min(*sf.picks.begin(), (int)d.sprites.size() - 1);
+        sf.picks.clear();
+        SpritesChanged(sf);
+    }
+}
+
 // The sprite's tab: its number, axis, what it is; replaced, saved, duplicated, deleted; the
 // actions using it. Returns true when it was deleted.
 static bool SpritePanel(SpriteFile &sf, int pn) {
@@ -417,9 +520,10 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     float em = ImGui::GetFontSize();
     static const char *formats[] = {"raw", "?", "RLE8", "RLE5", "LZ5", "?", "?", "?", "?", "?", "PNG8", "PNG24", "PNG32"};
     static int num[2], forSel = -1;
+    static unsigned forVersion;
     static const SpriteFile *forFile;
-    if (forSel != sf.sel || forFile != &sf) {
-        forSel = sf.sel, forFile = &sf;
+    if (forSel != sf.sel || forFile != &sf || forVersion != sf.version) {
+        forSel = sf.sel, forFile = &sf, forVersion = sf.version;
         num[0] = s.group, num[1] = s.number;
     }
     Label("Number");
@@ -581,6 +685,7 @@ void SpritesWindow() {
     const ImGuiStyle &style = ImGui::GetStyle();
     PalFrame(sf, pn);
     if (sf.sel < 0 && !d.sprites.empty()) sf.sel = 0;
+    TrackSprites(sf, pn);
 
     // The palettes the sprites are seen with: the player's at first
     std::vector<PalChoice> choices;
@@ -610,12 +715,18 @@ void SpritesWindow() {
                         dirty ? " *" : "", d.sprites.size());
     ImGui::SetItemTooltip("%s: %zu sprites, %zu palettes", sf.path.c_str(), d.sprites.size(), d.pals.size());
     {
-        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 +
+                  style.ItemSpacing.x * 2 + UndoButtonsWidth();
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < w)
             ImGui::NewLine();
         else
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - w);
+        if (int step = UndoButtons(sf.history.CanUndo(), sf.history.CanRedo())) {
+            SpritesStep(sf, pn, step);
+            dirty = sf.dirty || PalDirty();
+        }
+        ImGui::SameLine();
         ImGui::BeginDisabled(!dirty);
         if (dirty) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
         bool save = ImGui::Button(ICON_SAVE " Save");
@@ -633,6 +744,8 @@ void SpritesWindow() {
                 sf.dirty = false;
                 sf.version++;
             }
+            sf.picks.clear();
+            sf.edits++;
             PalRevert(sf, pn);
         }
         ImGui::EndDisabled();
@@ -710,7 +823,8 @@ void SpritesWindow() {
         if (ImGui::BeginTabBar("tabs")) {
             if (ImGui::BeginTabItem("Sprite")) {
                 tab = 0;
-                stop = SpritePanel(sf, pn);
+                if (sf.picks.empty()) stop = SpritePanel(sf, pn);
+                else SpritesPanel(sf);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Palette", nullptr, colour >= 0 && tab != 1 ? ImGuiTabItemFlags_SetSelected : 0)) {

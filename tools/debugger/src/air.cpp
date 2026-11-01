@@ -336,23 +336,33 @@ bool Air_SetStyle(std::string &text, const AirElem &elem, const AirStyle &st) {
     return true;
 }
 
-bool Air_DuplicateElem(std::string &text, const AirAction &act, int index) {
-    if (index < 0 || index >= (int)act.elems.size()) return false;
-    const AirElem &e = act.elems[index];
-    std::vector<std::string> lines = SplitLines(text);
-    if (e.line > (int)lines.size()) return false;
-    std::vector<std::string> block(lines.begin() + e.first - 1, lines.begin() + e.line);
-    lines.insert(lines.begin() + e.line, block.begin(), block.end());
+bool Air_DuplicateElem(std::string &text, const AirAction &act, int index) { return Air_DuplicateElems(text, act, {index}); }
+
+bool Air_DeleteElem(std::string &text, const AirAction &act, int index) { return Air_DeleteElems(text, act, {index}); }
+
+bool Air_DuplicateElems(std::string &text, const AirAction &act, const std::vector<int> &indices) {
+    std::vector<std::string> lines = SplitLines(text), copies;
+    if (indices.empty()) return false;
+    for (int index : indices) {
+        if (index < 0 || index >= (int)act.elems.size()) return false;
+        const AirElem &e = act.elems[index];
+        if (e.line > (int)lines.size()) return false;
+        copies.insert(copies.end(), lines.begin() + e.first - 1, lines.begin() + e.line);
+    }
+    lines.insert(lines.begin() + act.elems[indices.back()].line, copies.begin(), copies.end());
     text = JoinLines(lines);
     return true;
 }
 
-bool Air_DeleteElem(std::string &text, const AirAction &act, int index) {
-    if (index < 0 || index >= (int)act.elems.size()) return false;
-    const AirElem &e = act.elems[index];
+bool Air_DeleteElems(std::string &text, const AirAction &act, const std::vector<int> &indices) {
     std::vector<std::string> lines = SplitLines(text);
-    if (e.line > (int)lines.size()) return false;
-    lines.erase(lines.begin() + e.first - 1, lines.begin() + e.line);
+    if (indices.empty()) return false;
+    for (int index : indices)
+        if (index < 0 || index >= (int)act.elems.size() || act.elems[index].line > (int)lines.size()) return false;
+    for (size_t i = indices.size(); i-- > 0;) { // from the last: the lines of those before stay where they are
+        const AirElem &e = act.elems[indices[i]];
+        lines.erase(lines.begin() + e.first - 1, lines.begin() + e.line);
+    }
     text = JoinLines(lines);
     return true;
 }

@@ -26,6 +26,8 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -36,6 +38,7 @@
 #include "snd.h"
 #include "ini.h"
 #include "gltf.h"
+#include "undo.h"
 #include "editor.hpp"
 #include <GL/gl.h>
 #include "imgui.h"
@@ -345,6 +348,13 @@ void ApplyAnims(SourceFile &sf);
 void AnimationWindow();
 
 // Sprites
+// What undo and redo put back in a sprite file (the sprites share their pictures with the file's)
+struct SpriteState {
+    std::vector<SffSprite> sprites;
+    std::vector<std::shared_ptr<const SffPal>> pals;        // one not changed is shared with the state before
+    std::map<std::string, std::vector<unsigned char>> acts; // its ACT files' colours, by NormPath
+};
+
 struct SpriteFile {
     SffDoc doc;
     std::string path;   // as the game names it
@@ -352,6 +362,9 @@ struct SpriteFile {
     bool dirty = false;
     unsigned version = 1; // bumped by every change (the textures follow)
     int sel = -1;
+    std::set<int> picks;  // sprites selected with Ctrl or Shift, sel among them; empty: sel alone
+    UndoStack<SpriteState> history;
+    unsigned edits = 0, recorded = 0; // changes made, and those the history has
 };
 
 SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal = ""); // read the first time
@@ -364,6 +377,10 @@ void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
 std::vector<std::string> PickFiles(const char *filter, bool multi);
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name);
 void SpritesChanged(SpriteFile &sf);
+// Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the
+// keyboard: -1 undo, 1 redo, 0 neither. UndoButtonsWidth: what they take.
+int UndoButtons(bool canUndo, bool canRedo);
+float UndoButtonsWidth();
 void SpritesWindow();
 extern std::map<int, int> g_palNo; // pn -> the palette the game gave the player (1..), as @IKFILES tells
 
@@ -387,6 +404,10 @@ int SpritePixel(SpriteFile &sf, int sprite, int x, int y); // its palette index 
 bool PalDirty();               // ACT files changed and not saved
 void PalSave();                // writes them (the first time the old one is kept as .bak)
 void PalRevert(SpriteFile &sf, int pn); // reads its ACT files again; the game gets them back
+// The palettes of a state for undo (before: the state before, whose palettes not changed it shares,
+// nullptr none), and those of a state put back, what changed sent to the game.
+void PalCapture(SpriteFile &sf, int pn, SpriteState &st, const SpriteState *before);
+void PalRestore(SpriteFile &sf, int pn, const SpriteState &st, bool saved);
 void PalFrame(SpriteFile &sf, int pn);  // sends the colours changed to the game (now and then while they change)
 // The Palette tab: the colours of target, picked, edited. picked: a colour picked on the sprite
 // (-1 none), shift: added to the selection. Fills mark with the colours selected.

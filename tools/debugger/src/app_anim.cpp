@@ -180,6 +180,28 @@ bool AnimShowLine(const std::string &path, int line) {
     return true;
 }
 
+// Undo and redo of an AIR file's text: a change is one step when the mouse lets go of it.
+static std::map<std::string, UndoStack<std::string>> g_animHistory; // by file
+
+static UndoStack<std::string> &TrackAnims(const SourceFile &sf) {
+    UndoStack<std::string> &h = g_animHistory[NormPath(sf.path)];
+    if (!h.Started())
+        h.Start(sf.text, !sf.Dirty());
+    else if (sf.text != h.Current() && !ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        h.Record(sf.text);
+    return h;
+}
+
+static std::set<int> g_elemPicks; // elements (1-based) selected with Ctrl or Shift; empty: the one shown alone
+
+// The elements an edit of the selection acts on: indices sorted, the one shown when none is selected.
+static std::vector<int> PickedElems(const AnimTarget &t) {
+    std::vector<int> out;
+    for (int n : g_elemPicks) out.push_back(n - 1);
+    if (out.empty()) out.push_back(t.elem - 1);
+    return out;
+}
+
 // The changed AIR text goes to every player using that file (the file itself is saved apart).
 void ApplyAnims(SourceFile &sf) {
     sf.version++; // the Code window's editor takes the new text
@@ -671,6 +693,9 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
     ImVec2 cell(thumb + pad * 2, thumb + pad * 3 + line);
     int clicked = 0;
     *menu = 0;
+    static int picksOf = -1; // the action the selection is in
+    if (picksOf != g_animAction) picksOf = g_animAction, g_elemPicks.clear();
+    while (!g_elemPicks.empty() && *g_elemPicks.rbegin() > (int)t.act->elems.size()) g_elemPicks.erase(*g_elemPicks.rbegin());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 0.3f, em * 0.3f));
     bool open = ImGui::BeginChild("strip", ImVec2(0, cell.y + em * 0.6f + style.ScrollbarSize + style.ChildBorderSize * 2 + 2),
                                   ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
@@ -695,11 +720,29 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
             ImGui::PushID(n);
             ImVec2 p = ImGui::GetCursorScreenPos();
             ImGui::InvisibleButton("e", cell);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) clicked = n;
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) *menu = n;
-            bool cur = n == t.elem, hot = ImGui::IsItemHovered();
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                // Alone; with Ctrl, one more or one less; with Shift, those from the one shown to it
+                ImGuiIO &io = ImGui::GetIO();
+                if (io.KeyShift) {
+                    g_elemPicks.clear();
+                    for (int k = std::min(n, t.elem); k <= std::max(n, t.elem); k++) g_elemPicks.insert(k);
+                } else if (io.KeyCtrl) {
+                    if (g_elemPicks.empty()) g_elemPicks.insert(t.elem);
+                    if (!g_elemPicks.erase(n)) g_elemPicks.insert(n), clicked = n;
+                    else if (n == t.elem && !g_elemPicks.empty()) clicked = *g_elemPicks.begin();
+                    if (g_elemPicks.size() == 1) g_elemPicks.clear();
+                } else {
+                    g_elemPicks.clear();
+                    clicked = n;
+                }
+            }
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                *menu = n;
+                if (!g_elemPicks.count(n)) g_elemPicks.clear();
+            }
+            bool cur = n == t.elem, hot = ImGui::IsItemHovered(), picked = g_elemPicks.count(n) != 0;
             ImVec2 q(p.x + cell.x, p.y + cell.y);
-            draw->AddRectFilled(p, q, ImGui::GetColorU32(cur ? ImGuiCol_Header : hot ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg),
+            draw->AddRectFilled(p, q, ImGui::GetColorU32(cur || picked ? ImGuiCol_Header : hot ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg),
                                 style.FrameRounding);
             // The sprite, as large as fits (at most twice its size)
             ImVec2 a(p.x + pad, p.y + pad), b(a.x + thumb, a.y + thumb);
@@ -729,7 +772,7 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
                 ImGui::Text("Element %d: sprite %d, %d; offset %d, %d; time %d", n, e.group, e.image, e.x, e.y, e.time);
                 if (act.loopStart == n - 1) ImGui::TextColored(Ink(kYellow), "The loop starts here.");
                 if (n == onGame) ImGui::TextColored(Ink(kGreen), "On the game now.");
-                ImGui::TextDisabled("Right click: duplicate, delete, move, loop from here");
+                ImGui::TextDisabled("Ctrl or Shift+click: select several. Right click: duplicate, delete, move, loop from here");
                 ImGui::EndTooltip();
             }
             if (cur && (scrolledTo != n || scrolledAction != g_animAction)) {
@@ -767,21 +810,24 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2) ImGui::NewLine();
     };
-    char title[48];
-    snprintf(title, sizeof(title), "Element %d of %d", t.elem, count);
+    std::vector<int> group = PickedElems(t);
+    bool several = group.size() > 1;
+    char title[64];
+    if (several) snprintf(title, sizeof(title), "Element %d of %d, %d selected", t.elem, count, (int)group.size());
+    else snprintf(title, sizeof(title), "Element %d of %d", t.elem, count);
     ImGui::SeparatorText(title);
-    if (ImGui::SmallButton(ICON_COPY " Duplicate") && Air_DuplicateElem(sf.text, act, index)) goTo = t.elem + 1;
+    if (ImGui::SmallButton(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, act, group)) goTo = group.back() + 2;
     flow("Delete");
-    ImGui::BeginDisabled(count < 2);
-    if (ImGui::SmallButton(ICON_TRASH " Delete") && Air_DeleteElem(sf.text, act, index)) goTo = std::max(1, t.elem - 1);
+    ImGui::BeginDisabled(count <= (int)group.size());
+    if (ImGui::SmallButton(ICON_TRASH " Delete") && Air_DeleteElems(sf.text, act, group)) goTo = std::max(1, group[0]);
     ImGui::EndDisabled();
     flow("<");
-    ImGui::BeginDisabled(index == 0);
+    ImGui::BeginDisabled(index == 0 || several);
     if (ImGui::SmallButton("<") && Air_MoveElem(sf.text, act, index, -1)) goTo = t.elem - 1;
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Move it earlier");
     ImGui::SameLine(0, 2);
-    ImGui::BeginDisabled(index == count - 1);
+    ImGui::BeginDisabled(index == count - 1 || several);
     if (ImGui::SmallButton(">") && Air_MoveElem(sf.text, act, index, 1)) goTo = t.elem + 1;
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Move it later");
@@ -1016,8 +1062,18 @@ void AnimationWindow() {
     {
         ImGui::SameLine();
         ImGui::TextDisabled("· %s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
-        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+        float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 +
+                  style.ItemSpacing.x * 2 + UndoButtonsWidth();
         rightAlign(w);
+        UndoStack<std::string> &history = TrackAnims(sf);
+        if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+            sf.text = step < 0 ? history.Undo() : history.Redo();
+            apply(sf);
+            g_elemPicks.clear();
+            ImGui::End(); // what was parsed is old
+            return;
+        }
+        ImGui::SameLine();
         ImGui::BeginDisabled(!sf.Dirty());
         if (sf.Dirty()) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
         bool save = ImGui::Button(ICON_SAVE " Save");
@@ -1204,13 +1260,16 @@ void AnimationWindow() {
     int goTo = 0; // element to show after an edit of the elements
     if (ImGui::BeginPopup("element")) {
         int index = t.elem - 1, count = (int)t.act->elems.size();
-        ImGui::TextDisabled("Element %d", t.elem);
-        if (ImGui::MenuItem(ICON_COPY " Duplicate") && Air_DuplicateElem(sf.text, *t.act, index)) goTo = t.elem + 1;
-        if (ImGui::MenuItem(ICON_TRASH " Delete", nullptr, false, count > 1) && Air_DeleteElem(sf.text, *t.act, index))
-            goTo = std::max(1, t.elem - 1);
-        if (ImGui::MenuItem("Move earlier", nullptr, false, index > 0) && Air_MoveElem(sf.text, *t.act, index, -1))
+        std::vector<int> group = PickedElems(t);
+        bool several = group.size() > 1;
+        if (several) ImGui::TextDisabled("%d elements", (int)group.size());
+        else ImGui::TextDisabled("Element %d", t.elem);
+        if (ImGui::MenuItem(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, *t.act, group)) goTo = group.back() + 2;
+        if (ImGui::MenuItem(ICON_TRASH " Delete", nullptr, false, count > (int)group.size()) && Air_DeleteElems(sf.text, *t.act, group))
+            goTo = std::max(1, group[0]);
+        if (ImGui::MenuItem("Move earlier", nullptr, false, index > 0 && !several) && Air_MoveElem(sf.text, *t.act, index, -1))
             goTo = t.elem - 1;
-        if (ImGui::MenuItem("Move later", nullptr, false, index < count - 1) && Air_MoveElem(sf.text, *t.act, index, 1))
+        if (ImGui::MenuItem("Move later", nullptr, false, index < count - 1 && !several) && Air_MoveElem(sf.text, *t.act, index, 1))
             goTo = t.elem + 1;
         bool loopHere = t.act->loopStart == index;
         if (ImGui::MenuItem("Loop from here", nullptr, loopHere) && Air_SetLoopStart(sf.text, *t.act, loopHere ? -1 : index))
@@ -1244,6 +1303,7 @@ void AnimationWindow() {
         apply(sf);
         if (screen) g_animFollow = false;
         showElem(goTo);
+        g_elemPicks.clear();
     }
     ImGui::End();
 }

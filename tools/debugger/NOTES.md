@@ -46,6 +46,25 @@ found it functional but intimidating). It is organized by task, not by tool:
 Still heavy, for a next pass: Animation's and Lab's many controls and terms
 (Clsn, onion...), and Code's state panel beside the editor.
 
+**Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
+community's tool, compared with its help and the program itself), for character
+makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;
+(3) animation; (4) palettes; (5) a small pixel editor. Left out on purpose:
+writing SFF v1 (the game reads v2), SprMaker2's format, splitting channels, the
+layers' blend modes, hqx (LGPL; EPX does most of it).
+
+Undo (`src/undo.h`, `UndoStack`, whole states, `tests/undo_test.cpp`): a window
+records a state once a change is over, that is when no item is active and the
+mouse is up, so a drag is one step. `TrackSprites` (the sprites, sharing their
+pictures, the palettes, shared when not changed, the ACT files' colours; 64
+states) counts changes with `SpriteFile::edits`; `PalRestore` sends the game the
+palettes that changed. `TrackAnims` keeps the AIR file's text. The Code window's
+editor has an undo of its own that a change from outside clears: it holds no old
+text to see what changed, so Animation cannot share it; its changes typed there
+become a step of Animation's when that window next shows. Revert is a step too.
+Selecting several: `SpriteFile::picks`, `g_elemPicks` (Ctrl, Shift; Ctrl+A in the
+sprites' list).
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all

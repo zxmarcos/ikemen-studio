@@ -62,6 +62,9 @@ std::string Air_BlendText(const AirStyle &style);
 // Elements and actions. An element moves with its own box groups.
 bool Air_DuplicateElem(std::string &text, const AirAction &act, int index); // the copy goes after it
 bool Air_DeleteElem(std::string &text, const AirAction &act, int index);
+// Several, indices sorted: the copies go after the last one, in order
+bool Air_DuplicateElems(std::string &text, const AirAction &act, const std::vector<int> &indices);
+bool Air_DeleteElems(std::string &text, const AirAction &act, const std::vector<int> &indices);
 bool Air_MoveElem(std::string &text, const AirAction &act, int index, int dir); // -1 earlier, 1 later
 bool Air_SetLoopStart(std::string &text, const AirAction &act, int index);      // -1: none
 bool Air_CopyAction(std::string &text, const AirAction &act, int newNo);        // at the end of the file

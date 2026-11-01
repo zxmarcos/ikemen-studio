@@ -71,3 +71,5 @@
 #define ICON_ELLIPSIS "\xef\x85\x81" // ellipsis
 #define ICON_ROBOT "\xef\x95\x84" // robot
 #define ICON_CARET "\xef\x83\x97" // caret-down
+#define ICON_BACK "\xef\x8f\xa5" // reply
+#define ICON_AGAIN "\xef\x81\xa4" // share

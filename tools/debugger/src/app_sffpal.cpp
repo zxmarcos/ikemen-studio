@@ -182,6 +182,7 @@ static std::string PalKey(const SpriteFile &sf, int g, int n) {
 }
 
 static void Changed(SpriteFile &sf, const PalChoice &c, bool send) {
+    sf.edits++;
     if (!c.act.empty())
         Act(c.act).dirty = true;
     else
@@ -275,6 +276,44 @@ void PalRevert(SpriteFile &sf, int pn) {
         a.ok = Sff_ReadAct(GamePath(a.path), a.rgba);
         a.dirty = false;
         if (was && c.slot > 0) Send(sf, player, 1, c.slot, c); // the game back to the file's colours
+    }
+}
+
+void PalCapture(SpriteFile &sf, int pn, SpriteState &st, const SpriteState *before) {
+    const std::vector<SffPal> &pals = sf.doc.pals;
+    st.pals.resize(pals.size());
+    for (size_t i = 0; i < pals.size(); i++) {
+        const SffPal *old = before && i < before->pals.size() ? before->pals[i].get() : nullptr;
+        bool same = old && old->group == pals[i].group && old->number == pals[i].number && old->ncolors == pals[i].ncolors &&
+                    old->rgba == pals[i].rgba;
+        st.pals[i] = same ? before->pals[i] : std::make_shared<const SffPal>(pals[i]);
+    }
+    std::vector<PalChoice> choices;
+    PalChoices(sf, pn, choices);
+    for (const PalChoice &c : choices)
+        if (!c.act.empty()) st.acts[NormPath(c.act)] = Act(c.act).rgba;
+}
+
+void PalRestore(SpriteFile &sf, int pn, const SpriteState &st, bool saved) {
+    std::vector<SffPal> old;
+    old.swap(sf.doc.pals);
+    for (const auto &p : st.pals) sf.doc.pals.push_back(*p);
+    std::vector<PalChoice> choices;
+    PalChoices(sf, pn, choices);
+    for (const PalChoice &c : choices) {
+        if (c.own) continue;
+        bool changed = false;
+        if (!c.act.empty()) {
+            ActFile &a = Act(c.act);
+            auto it = st.acts.find(NormPath(c.act));
+            if (it != st.acts.end() && it->second != a.rgba) a.rgba = it->second, changed = true;
+        } else if (c.sff >= 0) {
+            const SffPal &now = sf.doc.pals[c.sff];
+            auto was = std::find_if(old.begin(), old.end(), [&](const SffPal &p) { return p.group == now.group && p.number == now.number; });
+            changed = was != old.end() && was->rgba != now.rgba;
+        }
+        if (changed) Changed(sf, c, true);
+        if (saved && !c.act.empty()) Act(c.act).dirty = false;
     }
 }
 

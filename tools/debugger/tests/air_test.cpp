@@ -143,6 +143,23 @@ int main() {
     Air_Parse(text, air);
     CHECK(!air.actions.count(6) && air.actions.count(0) && air.actions.count(10));
 
+    // Several elements: the copies after the last one, in order; each keeps its own boxes
+    text = kAir;
+    Air_Parse(text, air);
+    CHECK(Air_DuplicateElems(text, air.actions[0], {1, 2}));
+    Air_Parse(text, air);
+    CHECK(air.actions[0].elems.size() == 6);
+    CHECK(air.actions[0].elems[3].image == 1 && air.actions[0].elems[4].image == 2 && air.actions[0].elems[5].image == 3);
+    CHECK(air.actions[0].elems[4].own[0] && air.actions[0].elems[4].clsn[0].size() == 1);
+    CHECK(air.actions[0].loopStart == 5);
+    CHECK(Air_DeleteElems(text, air.actions[0], {3, 4}));
+    Air_Parse(text, air);
+    CHECK(air.actions[0].elems.size() == 4 && air.actions[0].elems[2].image == 2 && air.actions[0].elems[3].image == 3);
+    CHECK(air.actions[0].loopStart == 3);
+    CHECK(air.actions[5].elems.size() == 1);
+    CHECK(!Air_DeleteElems(text, air.actions[0], {}));
+    CHECK(!Air_DuplicateElems(text, air.actions[0], {9}));
+
     printf(g_failed ? "air-test: %d failed\n" : "air-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }
