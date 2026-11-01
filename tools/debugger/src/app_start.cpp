@@ -82,7 +82,7 @@ void StartPageFrame() {
     ImGui::PushFont(nullptr, st.FontSizeBase * 1.5f);
     ImGui::TextUnformatted("What do you want to do?");
     ImGui::PopFont();
-    ImGui::TextDisabled("You can change it at any time, in the tabs at the top.");
+    ImGui::TextDisabled("You can change it at any time, on the bar at the left.");
     ImGui::Dummy(ImVec2(0, em * 0.3f));
 
     bool close = ImGui::IsKeyPressed(ImGuiKey_Escape);
