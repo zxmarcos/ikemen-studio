@@ -594,6 +594,14 @@ void StageWindow() {
     flow("Reload", pad);
     if (ImGui::Button(ICON_RESTART " Reload")) ReloadStage(sf, true);
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
+    UndoStack<std::string> &history = TrackAnims(sf);
+    flow("xx", UndoButtonsWidth());
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        sf.text = step < 0 ? history.Undo() : history.Redo();
+        StageEdited(sf);
+        ImGui::End(); // what was parsed is old
+        return;
+    }
     flow("Limits", box);
     ImGui::Checkbox("Limits", &g_stageLimits);
     ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"
@@ -639,7 +647,7 @@ void StageWindow() {
     if (selSection >= (int)ini.sections.size()) selSection = -1;
 
     // Left: the sections
-    if (ImGui::BeginChild("sections", ImVec2(em * 11, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
+    if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
         for (int i = 0; i < (int)ini.sections.size(); i++) {
             const IniSection &s = ini.sections[i];
             if (s.lower.compare(0, 13, "begin action ") == 0) continue; // the stage's animations
@@ -730,9 +738,10 @@ void StageWindow() {
             }
     }
     if (sf.text == before &&
-        ImGui::BeginTable("fields", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("key");
-        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+        ImGui::TableSetupColumn("what");
         ImGui::TableSetupColumn("");
         static std::string editing;
         static int editLine = -1;
@@ -743,6 +752,7 @@ void StageWindow() {
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(f.key.c_str());
+            ImGui::SetItemTooltip("%s", f.key.c_str());
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-FLT_MIN);
             std::string value = editLine == f.line ? editing : f.value;
@@ -751,6 +761,9 @@ void StageWindow() {
                 editLine = -1;
                 if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
             }
+            ImGui::TableNextColumn();
+            std::string picked;
+            if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
             ImGui::TableNextColumn();
             if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
             ImGui::SetItemTooltip("Remove this line");
@@ -765,6 +778,7 @@ void StageWindow() {
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-FLT_MIN);
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::TableNextColumn();
         ImGui::TableNextColumn();
         add = ImGui::SmallButton(ICON_PLUS) || add;
         if (add && !changed && !newKey.empty() && !newValue.empty()) {

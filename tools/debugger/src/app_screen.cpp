@@ -376,7 +376,7 @@ static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, siz
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(f.key.c_str() + strip);
-    if (strip) ImGui::SetItemTooltip("%s", f.key.c_str());
+    ImGui::SetItemTooltip("%s", f.key.c_str());
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(-FLT_MIN);
     std::string value = editLine == f.line ? editing : f.value;
@@ -385,6 +385,9 @@ static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, siz
         editLine = -1;
         if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
     }
+    ImGui::TableNextColumn();
+    std::string picked;
+    if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
     ImGui::TableNextColumn();
     if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
     ImGui::SetItemTooltip("Remove this line");
@@ -447,12 +450,20 @@ static void ScreenWindow(ScreenDef &d) {
     flow("Reload", pad);
     if (ImGui::Button(ICON_RESTART " Reload")) Reload(d, sf, true);
     ImGui::SetItemTooltip("The game loads the %s again (from the text here), e.g. after its files changed.", d.what);
+    UndoStack<std::string> &history = TrackAnims(sf);
+    ImGui::SameLine();
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        sf.text = step < 0 ? history.Undo() : history.Redo();
+        Edited(d, sf);
+        ImGui::End(); // what was parsed is old
+        return;
+    }
     ImGui::TextDisabled("%s%s  %zu elements drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", d.items.size());
     if (d.motif)
         ImGui::TextDisabled("Some values are read once, when a screen or the game starts: they show then.");
 
     // Left: the sections (not the animations), with how many of their elements are on screen
-    if (ImGui::BeginChild("sections", ImVec2(em * 11, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
+    if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
         for (int i = 0; i < (int)ini.sections.size(); i++) {
             const IniSection &s = ini.sections[i];
             if (s.lower.compare(0, 13, "begin action ") == 0) continue;
@@ -529,9 +540,11 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::Checkbox("All the section's fields", &allFields);
     }
     if (!changed && sf.text == before &&
-        ImGui::BeginTable("fields", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("key");
-        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
+        // Shares, not the longest key: a fight screen's keys would leave no room for the values
+        ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.5f);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.5f);
+        ImGui::TableSetupColumn("what");
         ImGui::TableSetupColumn("");
         bool filter = !d.prefix.empty() && !allFields;
         for (const IniField &f : s.fields) {
@@ -551,6 +564,7 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-FLT_MIN);
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::TableNextColumn();
         ImGui::TableNextColumn();
         add = ImGui::SmallButton(ICON_PLUS) || add;
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
@@ -634,6 +648,15 @@ void ScreenSpritesSaved(const std::string &path) {
     // The fight screen's FX: the SFF they read when the fight screen is loaded
     if (SourceFile *sf = g_fight.Source())
         if (NormPath(DefFile(g_fight.def, "fightfx.sff")) == NormPath(path)) Reload(g_fight, *sf, true, true, true);
+}
+
+void ScreenSoundsSaved(const std::string &path) {
+    for (ScreenDef *d : g_screens) {
+        if (d->def.empty()) continue;
+        bool uses = NormPath(DefFile(d->def, "snd")) == NormPath(path) || (d == &g_fight && NormPath(DefFile(d->def, "common.snd")) == NormPath(path));
+        if (uses)
+            if (SourceFile *sf = d->Source()) Reload(*d, *sf, true);
+    }
 }
 
 static ScreenDef *ScreenOfDef(const std::string &def) {

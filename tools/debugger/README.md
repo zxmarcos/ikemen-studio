@@ -144,7 +144,10 @@ Animation and Sprites work on stages and screenpacks as on characters: the Stage
 Fight screen, Motif and Storyboard windows list every `[Begin Action]` of their def,
 on screen or not; a background picked on the game shows its action and sprite; a
 right click in Explorer opens any def's animations or an AIR file such as
-`fightfx.air`, with the game running or not.
+`fightfx.air`, with the game running or not. In those windows a field naming a
+sprite or an action shows it beside its value (a click picks another), one naming a
+sound plays it, and Ctrl+Z undoes. Sounds opens any SND file (`fight.snd`,
+`system.snd`, `common.snd`) from Explorer.
 
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code

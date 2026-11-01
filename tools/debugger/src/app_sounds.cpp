@@ -1,4 +1,5 @@
-// Sounds: the SND file of the character worked on (the selected player's, or one picked in Explorer).
+// Sounds: the SND file of the character worked on (the selected player's, or one picked in Explorer),
+// or any other a window showed here (a screen's, common.snd).
 #include "app_internal.h"
 
 #include <mmsystem.h>
@@ -13,6 +14,20 @@ struct SoundFile {
     int sel = -1;
 };
 std::map<std::string, SoundFile> g_soundFiles; // by path
+static SoundFile *g_soundsShown;               // a file another window showed here
+static std::string g_soundsShownWhat;
+static int g_soundsShownN;
+static bool g_soundsScroll;
+
+static SoundFile &SoundFileAt(const std::string &path) {
+    auto it = g_soundFiles.find(NormPath(path));
+    if (it != g_soundFiles.end()) return it->second;
+    SoundFile &sf = g_soundFiles[NormPath(path)];
+    sf.path = path;
+    std::string data = ReadWholeFile(GamePath(path)), error;
+    if (!Snd_Parse(data, sf.snd, &error)) sf.error = path + ": " + error;
+    return sf;
+}
 
 SoundFile *SoundsOf(int pn) {
     std::string path = CharFile(pn, "sound");
@@ -20,18 +35,25 @@ SoundFile *SoundsOf(int pn) {
         AirPath(pn); // asks for the files
         return nullptr;
     }
-    auto it = g_soundFiles.find(NormPath(path));
-    if (it != g_soundFiles.end()) return &it->second;
-    SoundFile &sf = g_soundFiles[NormPath(path)];
-    sf.path = path;
-    std::string data = ReadWholeFile(GamePath(path)), error;
-    if (!Snd_Parse(data, sf.snd, &error)) sf.error = path + ": " + error;
-    return &sf;
+    return &SoundFileAt(path);
 }
 
 const SndFile *SndOf(int pn) {
     SoundFile *sf = SoundsOf(pn);
     return sf && sf->error.empty() ? &sf->snd : nullptr;
+}
+
+const SndFile *SndAt(const std::string &path) {
+    SoundFile &sf = SoundFileAt(path);
+    return sf.error.empty() ? &sf.snd : nullptr;
+}
+
+void ShowInSounds(const std::string &path, int index, const std::string &what) {
+    g_soundsShown = &SoundFileAt(path);
+    g_soundsShownWhat = what;
+    if (index >= 0) g_soundsShown->sel = index, g_soundsScroll = true;
+    g_soundsShownN++;
+    ShowWindow("Sounds");
 }
 
 // Plays a WAV file here (PlaySound reads it while it plays: it is kept).
@@ -54,6 +76,7 @@ void SaveSounds(SoundFile &sf) {
     }
     sf.dirty = false;
     Log(LogLine::Info, "Saved " + path);
+    ScreenSoundsSaved(sf.path);
     for (const auto &kv : g_charFiles) {
         auto f = kv.second.find("sound");
         if (f != kv.second.end() && !f->second.empty() && NormPath(f->second[0]) == NormPath(sf.path)) {
@@ -78,16 +101,28 @@ const char kWavFilter[] = "WAV files (*.wav)\0*.wav\0All files (*.*)\0*.*\0";
 
 void SoundsWindow() {
     if (!BeginTool("Sounds")) return;
-    int pn = WorkPn(); // the selected player's character, or one picked in Explorer
-    SoundFile *sp = pn > 0 ? SoundsOf(pn) : nullptr;
+    // Whose: the character worked on, or the file another window showed here, whichever came last
+    static bool shown = false;
+    static int seenSel = -2, seenSelPicked = 0, seenShown = 0;
+    static std::string seenWork;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, shown = false;
+    if (std::string work = WorkDef(); work != seenWork) seenWork = work, shown = false;
+    if (g_soundsShownN != seenShown) seenShown = g_soundsShownN, shown = true;
+    int pn = shown ? 0 : WorkPn(); // the selected player's character, or one picked in Explorer
+    SoundFile *sp = shown ? g_soundsShown : pn > 0 ? SoundsOf(pn) : nullptr;
     if (!sp) {
-        ImGui::TextDisabled(!pn ? "Pick a player in the game, or a character in Explorer."
+        ImGui::TextDisabled(!pn ? "Pick a player in the game, or a character in Explorer. An SND file in Explorer opens here too."
                             : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
         ImGui::End();
         return;
     }
     SoundFile &sf = *sp;
     SndFile &snd = sf.snd;
+    if (shown) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("The %s", g_soundsShownWhat.c_str());
+        ImGui::SameLine();
+    }
     ImGui::BeginDisabled(!sf.dirty);
     if (ImGui::Button(ICON_SAVE " Save")) SaveSounds(sf);
     ImGui::SetItemTooltip("Writes the SND file (the old one is kept as .bak the first time) and the game reads it again.");
@@ -179,28 +214,35 @@ void SoundsWindow() {
         ImGui::TableSetupColumn("Length");
         ImGui::TableSetupColumn("Format", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
-        for (int i = 0; i < (int)snd.sounds.size(); i++) {
-            const SndSound &s = snd.sounds[i];
-            WavInfo info;
-            std::string error;
-            bool ok = Wav_Describe(s.wav, &info, &error);
-            ImGui::PushID(i);
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(s.wav);
-            ImGui::TableNextColumn();
-            char label[48];
-            snprintf(label, sizeof(label), "%d, %d", s.group, s.number);
-            if (ImGui::Selectable(label, sf.sel == i, ImGuiSelectableFlags_SpanAllColumns)) sf.sel = i;
-            ImGui::TableNextColumn();
-            ImGui::Text("%.2f s", info.Seconds());
-            ImGui::TableNextColumn();
-            if (ok)
-                ImGui::TextDisabled("%u Hz, %u bits, %s", info.rate, info.bits, info.channels == 1 ? "mono" : "stereo");
-            else
-                ImGui::TextColored(Ink(kRed), "%s", error.c_str());
-            ImGui::PopID();
-        }
+        // A screen's file has hundreds of sounds: only the rows in view
+        ImGuiListClipper clip;
+        clip.Begin((int)snd.sounds.size());
+        if (g_soundsScroll && sf.sel >= 0) clip.IncludeItemByIndex(sf.sel);
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                const SndSound &s = snd.sounds[i];
+                WavInfo info;
+                std::string error;
+                bool ok = Wav_Describe(s.wav, &info, &error);
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(s.wav);
+                ImGui::TableNextColumn();
+                char label[48];
+                snprintf(label, sizeof(label), "%d, %d", s.group, s.number);
+                if (ImGui::Selectable(label, sf.sel == i, ImGuiSelectableFlags_SpanAllColumns)) sf.sel = i;
+                if (g_soundsScroll && sf.sel == i) ImGui::SetScrollHereY(), g_soundsScroll = false;
+                ImGui::TableNextColumn();
+                ImGui::Text("%.2f s", info.Seconds());
+                ImGui::TableNextColumn();
+                if (ok)
+                    ImGui::TextDisabled("%u Hz, %u bits, %s", info.rate, info.bits, info.channels == 1 ? "mono" : "stereo");
+                else
+                    ImGui::TextColored(Ink(kRed), "%s", error.c_str());
+                ImGui::PopID();
+            }
+        clip.End();
         ImGui::EndTable();
     }
     ImGui::End();

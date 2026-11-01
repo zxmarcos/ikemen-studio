@@ -132,8 +132,36 @@ static void TestSpritesFile() {
     CHECK(Ini_SpritesFile("[Info]\nspr = no.sff\n").empty());
 }
 
+static void TestRefs() {
+    IniFile f;
+    Ini_Parse("[Files]\nspr = a.sff\nsnd = a.snd\n"
+              "[BGdef]\nspr = a.sff\n"
+              "[Lifebar]\np1.bg0.spr = 10,0\np*.ko.anim = 5\ncursor.move.snd = 100,0\nspr.x = 1\nanimated = 5\n"
+              "[BG a]\ntype = anim\nactionno = 5\nspriteno = 1,0\n"
+              "[BGCtrl b]\ntype = Anim\nvalue = 5\n"
+              "[BGCtrl c]\ntype = PosAdd\nvalue = 5\n"
+              "[Begin Action 5]\n",
+              f);
+    auto ref = [&](int s, const char *key) {
+        for (const IniField &k : f.sections[s].fields)
+            if (k.key == key) return Ini_FieldRef(f.sections[s], k);
+        return (IniRefKind)-1;
+    };
+    CHECK(ref(0, "spr") == kIniRefNone && ref(0, "snd") == kIniRefNone && ref(1, "spr") == kIniRefNone);
+    CHECK(ref(2, "p1.bg0.spr") == kIniRefSprite);
+    CHECK(ref(2, "p*.ko.anim") == kIniRefAction);
+    CHECK(ref(2, "cursor.move.snd") == kIniRefSound);
+    CHECK(ref(2, "spr.x") == kIniRefNone && ref(2, "animated") == kIniRefNone);
+    CHECK(ref(3, "actionno") == kIniRefAction && ref(3, "spriteno") == kIniRefSprite);
+    CHECK(ref(4, "value") == kIniRefAction && ref(5, "value") == kIniRefNone);
+    std::vector<std::pair<int, int>> users = Ini_ActionUsers(f, 5);
+    CHECK(users.size() == 3); // p*.ko.anim, actionno, the BGCtrl Anim's value
+    CHECK(Ini_ActionUsers(f, 6).empty());
+}
+
 int main() {
     TestSpritesFile();
+    TestRefs();
     TestParse();
     TestEdits();
     TestSelectors();

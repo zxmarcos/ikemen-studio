@@ -133,6 +133,16 @@ engine refuses ("Invalid BG action"), keeps the stage, and the Checks say so.
 The engine stays on NOW LOADING with `stages/interactivestage.def` under
 `test_ui.ps1` (its `attachedChar`): a copy without that line plays.
 
+A def's fields know what they name (`Ini_FieldRef`, tested; `src/app_refs.cpp`): the
+tables' third column shows a field's sprite or action as a thumbnail, red when it
+is not there, and picks another (`SpriteGrid`, the Animation window's picker
+too); `.snd` fields play and open their sound. `9000,n` is a character's portrait,
+not of this SFF: not an error. Animation says how many fields use an action
+(`ActionUsersNote`). The Stage and screen windows have undo: the same history as
+Animation (`TrackAnims`, by file). Sounds shows any SND (`ShowInSounds`, Explorer
+too), with a clipper: fight.snd and system.snd are not small; saving one reloads
+the screens using it without keeping their files (`ScreenSoundsSaved`).
+
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
 picture (exact pixels), Lua commands through a ring in the same memory (all
@@ -380,6 +390,7 @@ tools/debugger/
   src/app_cmd.cpp        Commands window: input, commands under way, the CMD file
   src/app_stage.cpp      Stage window, and the BGs on the Game window
   src/app_screen.cpp     Fight screen, Motif and Storyboard windows, and their elements on the Game window
+  src/app_refs.cpp       what a def's fields name: thumbnails, pickers, sounds played, the fields using an action
   src/app_debug.cpp      the toolbar, Players, Inspector, Frame data, Trace, Breakpoints, Watch, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands

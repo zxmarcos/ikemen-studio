@@ -354,7 +354,13 @@ void AnimOpenFile(const std::string &path, int action = -1, int elem = 1, bool s
 void AnimFollowFile();                                 // and goes on showing what the game shows of it
 std::string AnimFileOfSprites(const std::string &sff); // the file of actions those sprites are for, "" none
 void ActionList(SourceFile &sf);                       // a def's actions as rows, each opening in Animation
+// A file's text followed by undo, shared by the windows editing it: a change is a step when the mouse lets go
+UndoStack<std::string> &TrackAnims(const SourceFile &sf);
 void AnimationWindow();
+// What a def's fields name (app_refs.cpp). The column beside a field's value: its sprite or action as a
+// thumbnail, which picks another (true: *value is the field's new value), or its sound played
+bool FieldRefCell(SourceFile &sf, const IniSection &s, const IniField &f, std::string *value);
+void ActionUsersNote(SourceFile &sf, int action); // on the same line: how many fields of the def name that action
 
 // Sprites
 // What undo and redo put back in a sprite file (the sprites share their pictures with the file's)
@@ -380,6 +386,10 @@ SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal = ""); 
 SpriteFile *SpritesOf(int pn);
 // The Sprites window shows that file (at that sprite, -1 as it was); what: as "the font x.def"
 void ShowInSprites(SpriteFile &sf, int index, const std::string &what);
+// The sprites of a group as a grid, curGroup, curImage marked; true when one is clicked. SpriteGridSize,
+// before the popup holding it, keeps it as wide from the start, so that it opens inside the window
+bool SpriteGrid(SpriteFile *spf, int &group, int curGroup, int curImage, int *pickGroup, int *pickImage);
+void SpriteGridSize();
 GLuint SpriteTexture(SpriteFile &sf, int index, int pal = -1);
 ImTextureRef TexRef(GLuint tex);
 void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
@@ -431,6 +441,9 @@ void PaintPanel(SpriteFile &sf, const PalChoice &view); // the Paint tab
 
 // Sounds
 const SndFile *SndOf(int pn); // a player's SND file, nullptr until known (or unreadable)
+const SndFile *SndAt(const std::string &path); // an SND file, read the first time; nullptr unreadable
+// The Sounds window shows that file (at that sound, -1 as it was); what: as "fight screen"
+void ShowInSounds(const std::string &path, int index, const std::string &what);
 void PlayWav(const std::string &wav);
 void SoundsWindow();
 
@@ -663,6 +676,7 @@ extern int g_screenPicked;     // bumped when any element of a screen is picked
 // one that element shows, -1 not known
 SpriteFile *SelectedScreenSprites(const char **what = nullptr, int *sprite = nullptr);
 void ScreenSpritesSaved(const std::string &path); // the screens using that SFF read it again
+void ScreenSoundsSaved(const std::string &path);  // the same for an SND
 
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players

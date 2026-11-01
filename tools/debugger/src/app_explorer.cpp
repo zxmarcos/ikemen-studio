@@ -513,10 +513,9 @@ void OpenPath(const std::string &path, bool keep, const std::string &pal) {
         return;
     }
     if (ext == "snd") {
-        ShowWindow("Sounds");
         int pn = WorkPn();
-        if (!pn || NormPath(CharFile(pn, "sound")) != NormPath(path))
-            Log(LogLine::Info, "Sounds shows the SND file of the character worked on (picked in Explorer or in the match).");
+        if (pn && NormPath(CharFile(pn, "sound")) == NormPath(path)) ShowWindow("Sounds");
+        else ShowInSounds(path, -1, "file " + BaseName(path));
         return;
     }
     Log(LogLine::Info, "No window edits ." + ext + " files (" + path + "); Show in folder opens its folder.");

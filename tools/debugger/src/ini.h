@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 struct IniField {
@@ -42,6 +43,14 @@ std::string Ini_SpritesFile(const std::string &text);
 bool Ini_SetField(std::string &text, const IniSection &s, const char *key, const std::string &value);
 // Numbers as a field value: "10, -2.5"
 std::string Ini_Floats(const float *v, int count);
+
+// What a field of a stage's or a screen's def names, by its key: an action of the def ("actionno",
+// "p1.ko.anim", a BGCtrl Anim's "value"), a sprite of its SFF ("spriteno", "p1.bg0.spr"), a sound of its
+// SND ("cursor.move.snd"). A file's name in [Files], [BGdef] and [SceneDef] is none of these.
+enum IniRefKind { kIniRefNone, kIniRefAction, kIniRefSprite, kIniRefSound };
+IniRefKind Ini_FieldRef(const IniSection &s, const IniField &f);
+// The fields naming an action (section index, field index)
+std::vector<std::pair<int, int>> Ini_ActionUsers(const IniFile &ini, int action);
 
 // A fight screen's keys can start with a selector the engine resolves for each player or team
 // (resolveLifebarPrefixOperators): "p*" (every p<n>), "p1|p3" (those).

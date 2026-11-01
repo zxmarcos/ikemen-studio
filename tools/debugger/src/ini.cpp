@@ -90,6 +90,35 @@ std::string Ini_SpritesFile(const std::string &text) {
 // The first word of a section's name, as Ikemen's SectionName cuts it (at the first space).
 static std::string FirstWord(const std::string &lower) { return lower.substr(0, lower.find(' ')); }
 
+IniRefKind Ini_FieldRef(const IniSection &s, const IniField &f) {
+    if (s.lower == "files" || s.lower == "bgdef" || s.lower == "scenedef" || s.lower == "music" ||
+        s.lower.compare(0, 13, "begin action ") == 0)
+        return kIniRefNone;
+    auto named = [&](const char *name) {
+        std::string k = name, tail = "." + k;
+        return f.key == k || (f.key.size() > tail.size() && f.key.compare(f.key.size() - tail.size(), tail.size(), tail) == 0);
+    };
+    if (named("anim") || f.key == "actionno") return kIniRefAction;
+    if (named("spr") || f.key == "spriteno") return kIniRefSprite;
+    if (named("snd")) return kIniRefSound;
+    if (f.key == "value" && FirstWord(s.lower) == "bgctrl") {
+        const IniField *type = s.Field("type");
+        if (type && Lower(type->value) == "anim") return kIniRefAction;
+    }
+    return kIniRefNone;
+}
+
+std::vector<std::pair<int, int>> Ini_ActionUsers(const IniFile &ini, int action) {
+    std::vector<std::pair<int, int>> out;
+    for (size_t i = 0; i < ini.sections.size(); i++)
+        for (size_t k = 0; k < ini.sections[i].fields.size(); k++) {
+            const IniField &f = ini.sections[i].fields[k];
+            if (!f.value.empty() && Ini_FieldRef(ini.sections[i], f) == kIniRefAction && atoi(f.value.c_str()) == action)
+                out.push_back({(int)i, (int)k});
+        }
+    return out;
+}
+
 std::vector<int> IniFile::StageBgs() const {
     std::vector<int> out;
     for (size_t i = 0; i < sections.size(); i++)

@@ -197,7 +197,7 @@ bool AnimShowLine(const std::string &path, int line) {
 // Undo and redo of an AIR file's text: a change is one step when the mouse lets go of it.
 static std::map<std::string, UndoStack<std::string>> g_animHistory; // by file
 
-static UndoStack<std::string> &TrackAnims(const SourceFile &sf) {
+UndoStack<std::string> &TrackAnims(const SourceFile &sf) {
     UndoStack<std::string> &h = g_animHistory[NormPath(sf.path)];
     if (!h.Started())
         h.Start(sf.text, !sf.Dirty());
@@ -299,6 +299,7 @@ void ActionList(SourceFile &sf) {
         snprintf(row, sizeof(row), "Action %d  %s##anim", no, a.name.c_str());
         bool shown = no == g_animAction && NormPath(g_animFile) == NormPath(sf.path);
         if (ImGui::Selectable(row, shown)) AnimOpenFile(sf.path, no);
+        if (!a.name.empty()) ImGui::SetItemTooltip("%s", a.name.c_str());
     }
     if (ImGui::SmallButton(ICON_PLUS " New##animlist")) AnimOpenFile(sf.path, -1);
     ImGui::SetItemTooltip("Shows this file's animations in Animation: its Action menu makes a new one");
@@ -1183,41 +1184,15 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
             return true;
         }
     }
+    SpriteGridSize();
     if (ImGui::BeginPopup("pick")) {
         static int group = 0;
         if (ImGui::IsWindowAppearing()) group = el.group;
-        ImGui::SetNextItemWidth(em * 6);
-        ImGui::InputInt("Group", &group);
-        if (!spf) ImGui::TextDisabled("Waiting for the sprites...");
-        float cell = em * 5;
-        int col = 0, cols = 8;
-        for (int i = 0; spf && i < (int)spf->doc.sprites.size(); i++) {
-            const SffSprite &s = spf->doc.sprites[i];
-            if (s.group != group) continue;
-            if (col++ % cols) ImGui::SameLine();
-            ImGui::PushID(i);
-            ImVec2 p0 = ImGui::GetCursorScreenPos();
-            bool picked = ImGui::InvisibleButton("s", ImVec2(cell, cell + em));
-            ImDrawList *draw = ImGui::GetWindowDrawList();
-            bool cur = s.group == el.group && s.number == el.image;
-            Checkerboard(draw, p0, ImVec2(p0.x + cell, p0.y + cell));
-            if (GLuint tex = SpriteTexture(*spf, i)) {
-                float k = std::min(cell / std::max(1, s.w), cell / std::max(1, s.h));
-                ImVec2 a(p0.x + (cell - s.w * k) * 0.5f, p0.y + (cell - s.h * k) * 0.5f);
-                draw->AddImage(TexRef(tex), a, ImVec2(a.x + s.w * k, a.y + s.h * k));
-            }
-            draw->AddRect(p0, ImVec2(p0.x + cell, p0.y + cell),
-                          cur ? ImGui::GetColorU32(Ink(kYellow)) : ImGui::GetColorU32(ImGuiCol_Text, ImGui::IsItemHovered() ? 0.8f : 0.16f));
-            char label[32];
-            snprintf(label, sizeof(label), "%d, %d", s.group, s.number);
-            draw->AddText(ImVec2(p0.x, p0.y + cell), ImGui::GetColorU32(ImGuiCol_Text), label);
-            if (picked && Air_SetElem(sf.text, el, s.group, s.number, el.x, el.y, el.time)) {
-                apply(sf);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::PopID();
+        int g, n;
+        if (SpriteGrid(spf, group, el.group, el.image, &g, &n) && Air_SetElem(sf.text, el, g, n, el.x, el.y, el.time)) {
+            apply(sf);
+            ImGui::CloseCurrentPopup();
         }
-        if (col == 0 && spf) ImGui::TextDisabled("No sprites in group %d.", group);
         ImGui::EndPopup();
     }
     ImGui::AlignTextToFramePadding();
@@ -1630,6 +1605,8 @@ void AnimationWindow() {
                           : "A character picked in Explorer that is not in the match: its AIR file edited from disk, the "
                             "action drawn below. Save writes it; put the character in the match to see it on the game.");
     }
+    // A def's fields naming the action
+    if (screen && sf.path.size() > 4 && _stricmp(sf.path.c_str() + sf.path.size() - 4, ".def") == 0) ActionUsersNote(sf, g_animAction);
     // What can be done with the action, in a menu
     SpriteFile *spfFor = screen ? sa.sprites : t.pn > 0 ? SpritesOf(t.pn) : nullptr;
     const char *want = nullptr;
