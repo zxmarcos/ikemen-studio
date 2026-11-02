@@ -116,6 +116,10 @@ clears it; `ikdbg.lua` keeps the box from a game going somewhere). A model's nod
 `lua:debugModelNodeTRS(...)`; hiding one is a view, not a change. That folder is not a clean PC: this
 machine's GPU drivers and runtime stay, and Windows Home has no Sandbox to try one.
 
+v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
+next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
+kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.
+
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
 makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;
