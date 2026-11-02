@@ -1,17 +1,19 @@
 // File > New: new things made from a form in a dialog, written into the files and applied (their text
 // by src/make.cpp). Move: an attack's statedef as KFM writes its own, at the end of the character's
 // first state file, and a ChangeState on its command at the top of [Statedef -1]. Character: a new one
-// from another's files. Stage: one of PNG images, put in the match's place. What was filled in stays
-// for the next time until it is made.
+// from another's files. Stage: one of PNG images, or around a 3D model, put in the match's place. What
+// was filled in stays for the next time until it is made.
 #include "app_internal.h"
 
 #include <cfloat>
 #include <cmath>
+#include <cstring>
 
 #include "cns.h"
 #include "imgui_stdlib.h"
 #include "lodepng.h"
 #include "make.h"
+#include "modelfit.h"
 #include "roster.h"
 
 namespace app {
@@ -647,10 +649,24 @@ struct StageLayer {
     GLuint tex = 0;
 };
 
+// A model picked: its copy for the stage takes the changes made here (moved under the fight, its
+// matrices made positions)
+struct ModelForm {
+    std::string source;
+    GltfDoc doc;
+    std::vector<GltfMat> world;
+    unsigned version = 0;
+    ModelFit fit;
+    std::vector<StageFinding> found;
+    bool looked = false; // found is up to date
+};
+
 struct StageForm {
     std::string file, name, author, music;
     int size = 0; // in kStageSizes
+    int from = 0; // 0 images, 1 a model
     std::vector<StageLayer> layers;
+    ModelForm model;
     int zoffset = -1; // -1: not set yet
     bool select = true, use = true;
     std::string status;
@@ -702,6 +718,8 @@ MakeStage StageOf(const StageForm &f) {
     return s;
 }
 
+void FinishStage(StageForm &f, const std::string &def);
+
 void CreateStage(StageForm &f) {
     auto fail = [&](const std::string &why) {
         f.status = why;
@@ -735,7 +753,14 @@ void CreateStage(StageForm &f) {
     if (!written) return fail("Could not write " + sff);
     if (!WriteText(def, Make_StageDef(StageOf(f)))) return fail("Could not write " + def);
     f.status = "Made " + def + " and " + sff;
-    // Into select.def's [ExtraStages]
+    FinishStage(f, def);
+    for (StageLayer &l : f.layers) FreeLayer(l);
+    f.layers.clear();
+    f.file.clear(), f.name.clear();
+}
+
+// A stage made: into select.def's [ExtraStages], the match, the project
+void FinishStage(StageForm &f, const std::string &def) {
     if (f.select && !SelectDef().empty()) {
         SourceFile &sel = LoadSource(SelectDef());
         RosterFile r;
@@ -749,19 +774,224 @@ void CreateStage(StageForm &f) {
             f.status += ", added to " + SelectDef();
         }
     }
+    // The project first: a match on the project takes it
+    ProjectOpen(kProjectStage, def, false);
     if (f.use && Connected() && g_canTrace) {
-        Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
-        g_settings.stage = f.file;
+        PlayStage(def);
         f.status += ", in the match (and the toolbar's stage)";
     } else if (f.use) {
         g_settings.stage = f.file;
         f.status += ", the stage of the next match";
     }
-    ProjectOpen(kProjectStage, def, false);
     Log(LogLine::Info, f.status);
-    for (StageLayer &l : f.layers) FreeLayer(l);
-    f.layers.clear();
+}
+
+void MeasureModel(ModelForm &m) {
+    Gltf_Pose(m.doc, std::vector<float>(), m.world);
+    Gltf_Bounds(m.doc, m.world, m.fit.lo, m.fit.hi);
+    Gltf_Bounds(m.doc, m.world, m.fit.loAll, m.fit.hiAll, true);
+    m.looked = false;
+}
+
+// That point of the model becomes its origin, where the fighters' feet are
+void MoveFightTo(ModelForm &m, const float point[3]) {
+    float by[3] = {-point[0], -point[1], -point[2]};
+    Gltf_MoveRoots(m.doc, by);
+    MeasureModel(m);
+}
+
+// Read, its nodes where the game will have them, the fight in the middle of its lowest floor
+void OpenModel(StageForm &f, const std::string &path) {
+    ModelForm &m = f.model;
+    unsigned version = m.version;
+    m = ModelForm();
+    m.version = version ? version + 1 : 0x40000000; // not one of the Model window's reads
+    f.failed = false;
+    if (!Gltf_Load(m.doc, path, DecodeImage) || m.doc.nodes.empty()) {
+        f.status = m.doc.error.empty() ? path + " has no nodes." : m.doc.error;
+        f.failed = true;
+        return;
+    }
+    m.source = path;
+    if (f.file.empty()) {
+        f.file = BaseName(path);
+        for (char &c : f.file)
+            if (!isalnum((unsigned char)c) && c != '_' && c != '-') c = '_';
+    }
+    if (f.size < 2) f.size = 2, f.zoffset = -1; // models are not for a small screen
+    Gltf_BakeMatrices(m.doc);
+    MeasureModel(m);
+    const ModelFit &fit = m.fit;
+    float point[3] = {(fit.lo[0] + fit.hi[0]) / 2, fit.lo[1], (fit.lo[2] + fit.hi[2]) / 2};
+    Model_FloorAt(m.doc, m.world, point[0], point[2], &point[1]);
+    MoveFightTo(m, point);
+    m.fit.width = kStageSizes[f.size][0], m.fit.height = kStageSizes[f.size][1];
+    m.fit.fighter = Model_GuessFighter(m.fit);
+}
+
+ModelPreviewArgs ModelArgs(ModelForm &m, int w, int h) {
+    static std::vector<char> visible;
+    visible.assign(m.doc.nodes.size(), 1);
+    const ModelPlace &p = m.fit.place;
+    const float none[4] = {0, 0, 0, 1};
+    ModelPreviewArgs a;
+    a.doc = &m.doc, a.version = m.version, a.world = &m.world, a.visible = &visible;
+    a.proj = Perspective(p.fov / 57.29578f, (float)p.width / p.height, p.zNear, p.zFar);
+    a.view = Gltf_Compose(p.offset, none, p.scale);
+    a.w = w, a.h = h;
+    a.lighting = m.doc.lights.empty() ? 0 : 1;
+    return a;
+}
+
+// As the camera sees it at its start, with the fighters' line and their size. A click on the model
+// says where the fight goes.
+void ModelPreview(StageForm &f) {
+    ModelForm &m = f.model;
+    const ModelFit &fit = m.fit;
+    float em = ImGui::GetFontSize(), h = std::min(ImGui::GetContentRegionAvail().x * fit.height / fit.width, em * 18), w = h * fit.width / fit.height;
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ModelPreviewArgs a = ModelArgs(m, (int)w, (int)h);
+    unsigned tex = DrawModelPreview(a);
+    if (!tex) {
+        ImGui::TextDisabled("This OpenGL has no framebuffers: no preview.");
+        return;
+    }
+    ImGui::Image(ImTextureRef((ImTextureID)(intptr_t)tex), ImVec2(w, h), ImVec2(0, 1), ImVec2(1, 0));
+    if (ImGui::IsItemClicked()) {
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        float nx = (mouse.x - p0.x) / w * 2 - 1, ny = 1 - (mouse.y - p0.y) / h * 2, pts[2][3], hit[3];
+        GltfMat inv = Gltf_Invert(Gltf_Mul(a.proj, a.view));
+        for (int k = 0; k < 2; k++) {
+            float in[4] = {nx, ny, k ? 1.0f : -1.0f, 1}, out[4] = {0, 0, 0, 0};
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++) out[r] += inv[c * 4 + r] * in[c];
+            for (int e = 0; e < 3; e++) pts[k][e] = out[3] != 0 ? out[e] / out[3] : out[e];
+        }
+        if (Gltf_Cast(m.doc, m.world, std::vector<char>(), pts[0], pts[1], hit) >= 0) MoveFightTo(m, hit);
+    }
+    ImGui::SetItemTooltip("Click on a surface: the fight goes there.");
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    float k = h / fit.height, line = p0.y + fit.zoffset * k, tall = Model_FighterHeight(fit.height) * k;
+    draw->AddLine(ImVec2(p0.x, line), ImVec2(p0.x + w, line), IM_COL32(80, 230, 120, 255), 2.0f);
+    for (int side = -1; side <= 1; side += 2) {
+        float x = p0.x + w / 2 + side * 70 * fit.width / 320.0f * k, half = tall * 0.2f;
+        draw->AddRectFilled(ImVec2(x - half, line - tall), ImVec2(x + half, line), IM_COL32(80, 220, 255, 90), half);
+        draw->AddRect(ImVec2(x - half, line - tall), ImVec2(x + half, line), IM_COL32(80, 220, 255, 255), half, 1.5f);
+    }
+}
+
+void CreateModelStage(StageForm &f) {
+    auto fail = [&](const std::string &why) {
+        f.status = why;
+        f.failed = true;
+    };
+    ModelForm &m = f.model;
+    f.failed = false;
+    if (f.file.empty() || f.file.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+        return fail("The file name takes letters, digits, '_' and '-' only.");
+    if (m.source.empty()) return fail("Pick a model first.");
+    std::string def = "stages/" + f.file + ".def", sff = "stages/" + f.file + ".sff";
+    // A .gltf comes with its files: in a folder of their own
+    std::string model = m.doc.glb ? f.file + ".glb" : f.file + "/" + BaseName(m.source) + Extension(m.source);
+    if (Exists(def) || Exists(sff) || Exists("stages/" + model)) return fail(def + ", its SFF or its model is there already.");
+
+    // The sprites a stage must have: its portrait, the start of the stage
+    std::vector<unsigned char> rgba;
+    std::string png = GamePath(sff + ".png");
+    if (!ModelPreviewPixels(ModelArgs(m, 160, 90), rgba) || lodepng::encode(png, rgba, 160, 90) != 0)
+        return fail("Could not make the stage's portrait.");
+    SffDoc doc;
+    doc.path = GamePath(sff);
+    std::vector<SffSprite> sprites = Sff_SpritesOfPngs(doc, {png}, SFF_PAL_OWN, [](const std::string &s) { Log(LogLine::Info, s); });
+    DeleteFileA(png.c_str());
+    if (sprites.size() != 1) return fail("Could not make the stage's portrait.");
+    sprites[0].group = 9000, sprites[0].number = 1, sprites[0].x = sprites[0].y = 0;
+    doc.sprites.push_back(sprites[0]);
+    std::string bytes = Sff_Build(doc);
+    FILE *out = fopen(GamePath(sff).c_str(), "wb");
+    bool written = out && fwrite(bytes.data(), 1, bytes.size(), out) == bytes.size();
+    if (out) written &= fclose(out) == 0;
+    if (!written) return fail("Could not write " + sff);
+
+    if (!m.doc.glb) {
+        std::string dir = m.source.substr(0, m.source.find_last_of("\\/") + 1);
+        CreateDirectoryA(GamePath("stages/" + f.file).c_str(), nullptr);
+        for (const std::string &name : Gltf_Files(m.doc))
+            if (!CopyInto(dir + name, "stages/" + f.file + "/" + name)) Log(LogLine::Error, "Could not copy " + dir + name);
+    }
+    std::string error;
+    m.doc.path = GamePath("stages/" + model);
+    if (!Gltf_Save(m.doc, &error, false)) return fail("Not made: " + error);
+
+    MakeStage s = StageOf(f);
+    const ModelPlace &p = m.fit.place;
+    s.layers.clear();
+    s.zoffset = Model_Zoffset(p);
+    s.portrait = true;
+    s.model.file = model;
+    memcpy(s.model.offset, p.offset, sizeof(p.offset));
+    s.model.scale = p.scale[0], s.model.fov = p.fov, s.model.zNear = p.zNear, s.model.zFar = p.zFar;
+    s.model.left = m.fit.left, s.model.right = m.fit.right, s.model.high = m.fit.high;
+    if (!WriteText(def, Make_StageDef(s))) return fail("Could not write " + def);
+    f.status = "Made " + def + ", " + sff + " and stages/" + model;
+    FinishStage(f, def);
+    m = ModelForm();
     f.file.clear(), f.name.clear();
+}
+
+void ModelPart(StageForm &f) {
+    ModelForm &m = f.model;
+    float em = ImGui::GetFontSize();
+    if (ImGui::Button(ICON_CUBE " Pick a .glb or .gltf file...")) {
+        std::vector<std::string> picked = PickFiles("3D models (*.glb;*.gltf)\0*.glb;*.gltf\0", false);
+        if (!picked.empty()) OpenModel(f, picked[0]);
+    }
+    if (m.source.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("It is copied next to the stage, with what it names.");
+        return;
+    }
+    ImGui::SameLine();
+    size_t triangles = 0;
+    for (const GltfNode &n : m.doc.nodes)
+        if (n.mesh >= 0)
+            for (const GltfPrim &p : m.doc.meshes[n.mesh].prims) triangles += p.idx.size() / 3;
+    ImGui::TextDisabled("%s  %zu nodes, %zu triangles", BaseName(m.source).c_str(), m.doc.nodes.size(), triangles);
+
+    ModelFit &fit = m.fit;
+    fit.width = kStageSizes[f.size][0], fit.height = kStageSizes[f.size][1], fit.zoffset = f.zoffset;
+    Model_Fit(fit);
+    ModelPreview(f);
+
+    ImGui::SetNextItemWidth(em * 8);
+    if (ImGui::DragFloat("a fighter's height", &fit.fighter, fit.fighter * 0.01f, 1e-3f, FLT_MAX, "%.3g")) m.looked = false;
+    ImGui::SetItemTooltip("In the model's units: 1.8 if they are metres. It sets how big the model is around the fighters.");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 8);
+    if (ImGui::SliderFloat("field of view", &fit.fov, 10, 90, "%.0f deg")) m.looked = false;
+    ImGui::SetItemTooltip("[Camera] fov: less is flatter, more makes the camera's moves show the depth more.");
+    ImGui::SetNextItemWidth(em * 10);
+    if (ImGui::SliderInt("the fighters' line", &f.zoffset, fit.height / 2, fit.height)) m.looked = false;
+    ImGui::SameLine();
+    ImGui::TextDisabled("boundleft %d, boundright %d", fit.left, fit.right);
+
+    // What the game will make of it, once it is not being dragged
+    if (!m.looked && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        ModelCheckIn in;
+        in.place = fit.place;
+        in.left = (float)fit.left, in.right = (float)fit.right;
+        in.screenLeft = in.screenRight = 15.0f * fit.width / 320;
+        m.found = Model_Check(m.doc, m.world, in);
+        m.looked = true;
+    }
+    const ImVec4 colors[3] = {Ink(kRed), Ink(kYellow), Ink(kBlue)};
+    ImGui::PushTextWrapPos(0);
+    for (const StageFinding &c : m.found) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors[c.level]);
+        ImGui::TextUnformatted(c.text.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::PopTextWrapPos();
 }
 
 // The images as the camera sees them at its start, the camera's range, the screen, the floor
@@ -828,6 +1058,16 @@ void StageDialog() {
     int lw = kStageSizes[f.size][0], lh = kStageSizes[f.size][1];
     if (f.zoffset < 0) f.zoffset = lh * 5 / 6;
 
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("From");
+    ImGui::SameLine();
+    ImGui::RadioButton("PNG images", &f.from, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("a 3D model", &f.from, 1);
+    if (f.from == 1) {
+        ImGui::SeparatorText("The model");
+        ModelPart(f);
+    } else {
     ImGui::SeparatorText("Images, from the back");
     if (ImGui::Button(ICON_PLUS " Add PNG files...")) {
         for (const std::string &p : PickFiles("PNG files (*.png)\0*.png\0", true)) {
@@ -877,6 +1117,7 @@ void StageDialog() {
         ImGui::TextDisabled("boundleft %d, boundright %d, boundhigh %d", left, right, high);
         StagePreview(f);
     }
+    }
 
     ImGui::SeparatorText("The rest");
     ImGui::SetNextItemWidth(em * 14);
@@ -901,7 +1142,8 @@ void StageDialog() {
 
     ImGui::Separator();
     if (ImGui::Button(ICON_WAND " Create the stage")) {
-        CreateStage(f);
+        if (f.from == 1) CreateModelStage(f);
+        else CreateStage(f);
         if (!f.failed) ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
@@ -923,7 +1165,7 @@ void CreateMenu() {
     if (ImGui::MenuItem(ICON_PERSON " A character...")) CreateAsk(kNewCharacter);
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
     if (ImGui::MenuItem(ICON_STAGE " A stage...")) CreateAsk(kNewStage);
-    ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower.");
+    ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower, or around a 3D model.");
 }
 
 void NewDialog() {

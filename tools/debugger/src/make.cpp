@@ -335,6 +335,8 @@ std::string Make_StageDef(const MakeStage &s) {
     double k = s.width / 320.0; // the players' places and bounds, as on a 320 wide stage
     int left, right, high;
     Make_StageBounds(s, &left, &right, &high);
+    bool model = !s.model.file.empty();
+    if (model) left = s.model.left, right = s.model.right, high = s.model.high;
     auto i = [](double v) { return std::to_string((int)std::floor(v + 0.5)); };
     auto num = [](double v) {
         char buf[32];
@@ -351,6 +353,7 @@ std::string Make_StageDef(const MakeStage &s) {
     t += "boundleft = " + std::to_string(left) + "\nboundright = " + std::to_string(right) + "\n";
     t += "boundhigh = " + std::to_string(high) + "\nboundlow = 0\n";
     t += "verticalfollow = .2\nfloortension = 0\ntension = " + i(50 * k) + "\n";
+    if (model) t += "fov = " + num(s.model.fov) + "\nnear = " + num(s.model.zNear) + "\nfar = " + num(s.model.zFar) + "\n";
     t += "\n[PlayerInfo]\np1startx = " + i(-70 * k) + "\np1starty = 0\np1facing = 1\n";
     t += "p2startx = " + i(70 * k) + "\np2starty = 0\np2facing = -1\n";
     t += "leftbound = " + i(-1000 * k) + "\nrightbound = " + i(1000 * k) + "\n";
@@ -360,7 +363,22 @@ std::string Make_StageDef(const MakeStage &s) {
     t += "\n[Shadow]\nintensity = 96\ncolor = 0,0,0\nyscale = .4\n";
     t += "\n[Reflection]\nintensity = 0\n";
     t += "\n[Music]\n" + std::string(s.music.empty() ? ";" : "") + "bgmusic = " + s.music + "\nbgmvolume = 100\n";
-    t += "\n[BGdef]\nspr = " + s.sff + "\ndebugbg = 0\n";
+    t += "\n[BGdef]\nspr = " + s.sff + "\n" + (model ? "model = " + s.model.file + "\n" : "") + "debugbg = 0\n";
+    if (model) {
+        // Five places: scale is small when the model is large
+        auto fine = [](double v) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.5f", v);
+            std::string t = buf;
+            while (t.back() == '0') t.pop_back();
+            if (t.back() == '.') t.pop_back();
+            return t;
+        };
+        const MakeModel &m = s.model;
+        t += "\n[Model]\noffset = " + fine(m.offset[0]) + ", " + fine(m.offset[1]) + ", " + fine(m.offset[2]) + "\n";
+        t += "scale = " + fine(m.scale) + ", " + fine(m.scale) + ", " + fine(m.scale) + "\n";
+    }
+    if (s.portrait) t += "\n[Begin Action 9000]\n9000,1, 0,0,-1\n";
     for (size_t n = 0; n < s.layers.size(); n++) {
         const MakeLayer &l = s.layers[n];
         t += "\n[BG " + l.name + "]\ntype = normal\nspriteno = " + std::to_string(n) + ", 0\nlayerno = 0\n";

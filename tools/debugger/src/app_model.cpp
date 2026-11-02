@@ -11,6 +11,7 @@
 
 #include "imgui_stdlib.h"
 #include "ini.h"
+#include "modelfit.h"
 
 namespace app {
 
@@ -94,12 +95,17 @@ struct ModelFrame {
     bool ok = false, dirty = false;
     int sel = -1, hover = -1, picked = -1;
     std::vector<float> sb, hb, sp, hp; // the selected and hovered nodes' boxes (segments) or points
+    bool drawn = false;                // viewProj and the picture's size are known
     bool mats = false;                 // the selected node's matrices: it can be dragged
     GltfMat viewProj{}, parentWorld{}, world{};
     float w = 0, h = 0; // the game picture's size
+    bool hasHit = false;
+    float hit[3] = {0, 0, 0}; // where the last pick met the model
 };
 ModelFrame g_mframe;
 int g_pickedSeen = -1;
+bool g_putFight;  // the next click on the model says where the fight goes
+bool g_floorGrid; // the grid of the fighters' floor over the game, or the preview
 
 enum SelKind { kNone, kNode, kMaterial, kLight };
 SelKind g_selKind = kNone;
@@ -689,6 +695,55 @@ int AddKey(Channel &c, float t);
 int KeyAt(const Channel &c, float t);
 void DeleteKey(Channel &c, int k);
 std::string AnimName(int i);
+
+// The grid of the floor the fighters stand on: the model's y = 0, with z = 0 (the line they walk
+// on) and x = 0 brighter
+void DrawFloorGrid(ImDrawList *draw, const Picture &p) {
+    float origin[3] = {0, 0, 0}, unit[3] = {1, 0, 0};
+    ImVec2 a, b;
+    if (!WorldToScreen(p, origin, a) || !WorldToScreen(p, unit, b)) return;
+    float px = std::hypot(b.x - a.x, b.y - a.y);
+    if (px <= 0) return;
+    float step = powf(10, std::ceil(log10f(ImGui::GetFontSize() * 2.5f / px)));
+    auto line = [&](const float from[3], const float to[3], ImU32 col, float thick) {
+        float c0[4], c1[4];
+        Project(p.viewProj, from, 1, c0);
+        Project(p.viewProj, to, 1, c1);
+        const float nearest = 1e-3f; // what is behind the camera is cut
+        if (c0[3] < nearest && c1[3] < nearest) return;
+        if (c0[3] < nearest || c1[3] < nearest) {
+            float *behind = c0[3] < nearest ? c0 : c1, *front = c0[3] < nearest ? c1 : c0;
+            float t = (nearest - behind[3]) / (front[3] - behind[3]);
+            for (int k = 0; k < 4; k++) behind[k] += (front[k] - behind[k]) * t;
+        }
+        draw->AddLine(NdcToScreen(p, c0[0] / c0[3], c0[1] / c0[3]), NdcToScreen(p, c1[0] / c1[3], c1[1] / c1[3]), col, thick);
+    };
+    const int n = 40;
+    float reach = n * step, thin = std::max(1.0f, ImGui::GetFontSize() / 16);
+    for (int i = -n; i <= n; i++) {
+        float at = i * step;
+        float x0[3] = {-reach, 0, at}, x1[3] = {reach, 0, at}, z0[3] = {at, 0, -reach}, z1[3] = {at, 0, reach};
+        ImU32 col = IM_COL32(120, 230, 150, 70), middle = IM_COL32(120, 230, 150, 220);
+        line(x0, x1, i ? col : middle, i ? thin : thin * 2);
+        line(z0, z1, i ? col : middle, i ? thin : thin * 2);
+    }
+}
+
+// The fight goes where the model has that point: the fighters' feet are always on the model's
+// origin, so the model moves under them. Its roots do, what is under them with them.
+void PutFightAt(const float point[3]) {
+    ModelView &m = View();
+    std::vector<int> roots;
+    for (const ModelView::Scene &s : m.scenes)
+        for (int r : s.roots)
+            if (r >= 0 && r < (int)m.nodes.size() && std::find(roots.begin(), roots.end(), r) == roots.end()) roots.push_back(r);
+    for (int r : roots) {
+        ModelView::Node &n = m.nodes[r];
+        if (n.animated) Log(LogLine::Error, NodeName(r) + ": an animation moves it, so it stays where the animation has it.");
+        for (int k = 0; k < 3; k++) n.t[k] -= point[k];
+        SendTRS(r);
+    }
+}
 
 // A drag of a node changing a key instead of its place at rest: the animation whose keys are
 // shown, on, moves the node that way (Move: its position, Turn: its rotation, Scale: its scale);
@@ -1809,6 +1864,19 @@ void ReadFloats(const IniFile &ini, const char *section, const char *key, float 
         if (s.lower == section && s.Floats(key, v, count)) std::copy(v, v + count, out);
 }
 
+ModelPlace PlaceOf(const IniFile &ini) {
+    ModelPlace p;
+    float size[2] = {320, 240};
+    ReadFloats(ini, "stageinfo", "localcoord", size, 2);
+    p.width = (int)size[0], p.height = (int)size[1];
+    ReadFloats(ini, "model", "offset", p.offset, 3);
+    ReadFloats(ini, "model", "scale", p.scale, 3);
+    ReadFloats(ini, "camera", "fov", &p.fov, 1);
+    ReadFloats(ini, "camera", "near", &p.zNear, 1);
+    ReadFloats(ini, "camera", "far", &p.zFar, 1);
+    return p;
+}
+
 // sf: the def placing the model (live: the stage in the match, whose game shows each change;
 // from disk: its text changed only, the preview reading it)
 void PlacementSection(SourceFile *sf, float lw) {
@@ -1822,6 +1890,26 @@ void PlacementSection(SourceFile *sf, float lw) {
     ReadFloats(ini, "camera", "fov", &fov, 1);
     ReadFloats(ini, "camera", "near", &nearFar[0], 1);
     ReadFloats(ini, "camera", "far", &nearFar[1], 1);
+    ModelPlace place = PlaceOf(ini);
+
+    if (g_putFight) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    bool put = ImGui::Button(g_putFight ? ICON_SOLO " Click on the model..." : ICON_SOLO " Put the fight on...");
+    if (g_putFight) ImGui::PopStyleColor();
+    ImGui::SetItemTooltip(g_isLive ? "A click on the model, on the Game window, says where the fight goes: the model moves so the\n"
+                                     "fighters stand on that surface. Their feet are always on its origin."
+                                   : "A click on the model, on the preview, says where the fight goes: the model moves so the\n"
+                                     "fighters stand on that surface. Their feet are always on its origin.");
+    if (put) {
+        g_putFight = !g_putFight;
+        if (g_putFight && g_isLive) g_modelPick = true, g_stagePick = g_screenPick = false;
+    }
+    if (g_putFight && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) g_putFight = false;
+    ImGui::SameLine();
+    ImGui::Checkbox("Floor grid", &g_floorGrid);
+    ImGui::SetItemTooltip("The model's y = 0, where the fighters stand; the bright line is the one they walk on.");
+    ImGui::TextDisabled("Floor at %d of %d, 1 model unit = %.1f", Model_Zoffset(place), place.height, Model_Units(place));
+    ImGui::SetItemTooltip("Where the fighters' line is on the screen, and how many of the stage's units a unit of the model is there.\n"
+                          "[StageInfo] zoffset is not read with a model: it comes from [Model] offset.");
     auto rounded = [](float *v, int count, float step) {
         for (int k = 0; k < count; k++) v[k] = std::round(v[k] / step) * step;
         return Ini_Floats(v, count);
@@ -1830,7 +1918,8 @@ void PlacementSection(SourceFile *sf, float lw) {
     Row("offset", lw);
     if (ImGui::DragFloat3("##offset", offset, 0.005f, -FLT_MAX, FLT_MAX, "%.3f"))
         changed = SetDefField(*sf, "model", "offset", rounded(offset, 3, 0.0001f));
-    ImGui::SetItemTooltip("[Model] offset: x, y, z of the model from the camera (z: how far in front of it)");
+    ImGui::SetItemTooltip("[Model] offset: x, y, z of the model from the camera (z: how far in front of it).\n"
+                          "y raises the model and the fighters' line together: it does not change what they stand on.");
     static bool uniform = true;
     Row("scale", lw);
     float before[3] = {scale[0], scale[1], scale[2]};
@@ -2032,14 +2121,22 @@ void ReadModelGeometry(const Json &mdl) {
     floats(mdl["sp"], f.sp);
     floats(mdl["hp"], f.hp);
     f.w = (float)mdl["w"].num(), f.h = (float)mdl["h"].num();
-    f.mats = mdl["vp"].items.size() == 16 && mdl["pw"].items.size() == 16 && mdl["nw"].items.size() == 16 && f.w > 0 && f.h > 0;
+    f.drawn = mdl["vp"].items.size() == 16 && f.w > 0 && f.h > 0;
+    f.mats = f.drawn && mdl["pw"].items.size() == 16 && mdl["nw"].items.size() == 16;
+    for (int k = 0; f.drawn && k < 16; k++) f.viewProj[k] = (float)mdl["vp"].items[k].num();
     for (int k = 0; f.mats && k < 16; k++) {
-        f.viewProj[k] = (float)mdl["vp"].items[k].num(), f.parentWorld[k] = (float)mdl["pw"].items[k].num();
+        f.parentWorld[k] = (float)mdl["pw"].items[k].num();
         f.world[k] = (float)mdl["nw"].items[k].num();
     }
-    // A node picked on the game: selected here
+    f.hasHit = mdl["hit"].items.size() == 3;
+    for (int k = 0; f.hasHit && k < 3; k++) f.hit[k] = (float)mdl["hit"].items[k].num();
+    // A node picked on the game: selected here, or where the fight goes
     if (f.ok && f.picked != g_pickedSeen) {
-        if (g_pickedSeen >= 0 && f.sel >= 0 && g_isLive) {
+        if (g_pickedSeen >= 0 && g_putFight && g_isLive) {
+            if (f.hasHit) PutFightAt(f.hit);
+            g_putFight = false;
+            SendRaw("debugModelSelect(-1)");
+        } else if (g_pickedSeen >= 0 && f.sel >= 0 && g_isLive) {
             g_selKind = kNode;
             g_sel = f.sel;
             g_reveal = true;
@@ -2086,6 +2183,16 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
         ~Restore() { g_view = view; }
     } restore;
     g_view = &g_live;
+    Picture pic;
+    pic.viewProj = f.viewProj;
+    pic.p0 = toScreen(0, 0);
+    ImVec2 p1 = toScreen(f.w, f.h);
+    pic.size = ImVec2(p1.x - pic.p0.x, p1.y - pic.p0.y);
+    if (g_floorGrid && f.drawn && pic.size.x > 0 && pic.size.y > 0) {
+        draw->PushClipRect(pic.p0, p1, true);
+        DrawFloorGrid(draw, pic);
+        draw->PopClipRect();
+    }
     float thick = std::max(1.0f, ImGui::GetFontSize() / 13);
     auto drawBox = [&](const std::vector<float> &seg, const std::vector<float> &pt, ImU32 col, float t, int node) {
         float minX = FLT_MAX, minY = FLT_MAX;
@@ -2111,12 +2218,7 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     // The selected node's handles, or the node itself, pressed on and dragged (the matrices it was
     // seen through at the press)
     static NodeDrag drag;
-    Picture pic;
-    pic.viewProj = f.viewProj;
-    pic.p0 = toScreen(0, 0);
-    ImVec2 p1 = toScreen(f.w, f.h);
-    pic.size = ImVec2(p1.x - pic.p0.x, p1.y - pic.p0.y);
-    bool handles = f.mats && f.sel >= 0 && f.sel < (int)g_live.nodes.size() && pic.size.x > 0 && pic.size.y > 0;
+    bool handles = !g_putFight && f.mats && f.sel >= 0 && f.sel < (int)g_live.nodes.size() && pic.size.x > 0 && pic.size.y > 0;
     bool mine = (handles || drag.node >= 0) &&
                 NodeHandles(drag, g_live, draw, pic, handles ? f.sel : -1, f.hover, f.parentWorld, f.world, hovered, clicked, g_isLive,
                             [](int i) { SendLiveTRS(i, g_live.nodes[i]); });
@@ -2142,7 +2244,7 @@ bool ModelOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
             asked = ImGui::GetTime();
         }
         if (!mine && f.hover >= 0 && f.hover < (int)View().nodes.size())
-            ImGui::SetTooltip("%s\nClick: select it (window Model)", NodeLabel(f.hover).c_str());
+            ImGui::SetTooltip("%s\n%s", NodeLabel(f.hover).c_str(), g_putFight ? "Click: the fight goes here" : "Click: select it (window Model)");
     } else if (wasHovered) {
         SendRaw("debugModelPick()");
         askedAt = ImVec2(-1, -1);
@@ -2228,6 +2330,33 @@ void FillDiskView() {
     }
 }
 
+// The model of a stage's def read for its checks: without its images' pixels, again when its file changes
+struct CheckedModel {
+    std::string path;
+    FILETIME mtime{};
+    GltfDoc doc;
+    std::vector<GltfMat> world;
+    unsigned version = 0;
+    double looked = -100;
+};
+CheckedModel g_checked;
+
+const CheckedModel *CheckedModelOf(const std::string &def) {
+    CheckedModel &c = g_checked;
+    std::string path = ModelOfDef(def);
+    if (path.empty()) return nullptr;
+    if (path == c.path && ImGui::GetTime() - c.looked < 1) return &c;
+    c.looked = ImGui::GetTime();
+    FILETIME t = FileTime(GamePath(path));
+    if (path != c.path || CompareFileTime(&t, &c.mtime) != 0) {
+        c.path = path, c.mtime = t;
+        c.version++;
+        Gltf_Load(c.doc, GamePath(path));
+        Gltf_Pose(c.doc, std::vector<float>(), c.world);
+    }
+    return &c;
+}
+
 void DiskLoad(const std::string &path, const std::string &def) {
     DiskModel &d = g_disk;
     Gltf_Load(d.doc, GamePath(path), DecodeImage);
@@ -2241,6 +2370,28 @@ void DiskLoad(const std::string &path, const std::string &def) {
     g_selKind = kNone, g_sel = -1;
     g_histDisk = History();
     g_keysAnim = -1, g_key = KeySel();
+}
+
+// A change made in the model's file itself, which the game then reads again: with nothing unsaved
+bool EditModelFile(SourceFile *sf, const std::function<bool(GltfDoc &)> &edit) {
+    GltfDoc d;
+    std::string error, file = View().file;
+    if (!Gltf_Load(d, GamePath(file))) error = d.error;
+    else if (!edit(d)) return false;
+    else Gltf_Save(d, &error);
+    if (!error.empty()) {
+        Log(LogLine::Error, file + ": " + error);
+        return false;
+    }
+    Log(LogLine::Info, "Saved " + file);
+    if (g_isLive) {
+        g_histLive = History();
+        g_liveKeys.clear();
+        if (sf) ReloadStage(*sf, true);
+    } else {
+        DiskLoad(g_disk.path, g_disk.def);
+    }
+    return true;
 }
 
 // The model read again when its file changed on disk (and nothing was changed here)
@@ -2298,34 +2449,12 @@ Placement DefPlacement(const std::string &def) {
     return p;
 }
 
-// The meshes' middle and size, without a node much bigger than the others (a sky around them)
+// The meshes' middle and size
 void SceneBounds(float centre[3], float &radius) {
-    const GltfDoc &doc = g_disk.doc;
-    struct Box {
-        float lo[3], hi[3], size;
-    };
-    std::vector<Box> boxes;
-    for (int i = 0; i < (int)doc.nodes.size(); i++) {
-        float c[8][3];
-        if (doc.nodes[i].mesh < 0 || !Gltf_Corners(doc, g_disk.world, i, c)) continue;
-        Box b{{FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX}, 0};
-        for (auto &p : c)
-            for (int a = 0; a < 3; a++) b.lo[a] = std::min(b.lo[a], p[a]), b.hi[a] = std::max(b.hi[a], p[a]);
-        b.size = std::hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]);
-        boxes.push_back(b);
-    }
+    float lo[3], hi[3];
     centre[0] = centre[1] = centre[2] = 0;
     radius = 1;
-    if (boxes.empty()) return;
-    std::vector<float> sizes;
-    for (const Box &b : boxes) sizes.push_back(b.size);
-    std::nth_element(sizes.begin(), sizes.begin() + sizes.size() / 2, sizes.end());
-    float median = sizes[sizes.size() / 2], lo[3] = {FLT_MAX, FLT_MAX, FLT_MAX}, hi[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
-    for (const Box &b : boxes) {
-        if (boxes.size() > 2 && b.size > median * 5) continue;
-        for (int a = 0; a < 3; a++) lo[a] = std::min(lo[a], b.lo[a]), hi[a] = std::max(hi[a], b.hi[a]);
-    }
-    if (lo[0] > hi[0]) return;
+    if (!Gltf_Bounds(g_disk.doc, g_disk.world, lo, hi)) return;
     for (int a = 0; a < 3; a++) centre[a] = (lo[a] + hi[a]) / 2;
     radius = std::max(1e-3f, std::hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2);
 }
@@ -2453,8 +2582,9 @@ void Preview() {
     GltfMat parentWorld = parent >= 0 && parent < (int)d.world.size() ? d.world[parent] : Gltf_Identity();
     ImDrawList *draw = ImGui::GetWindowDrawList();
     draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
+    if (g_floorGrid) DrawFloorGrid(draw, pic);
     bool wasDragging = drag.node >= 0; // its release does not pick the node under the mouse
-    bool mine = (sel >= 0 || drag.node >= 0) &&
+    bool mine = !g_putFight && (sel >= 0 || drag.node >= 0) &&
                 NodeHandles(drag, v, draw, pic, sel, d.hover, parentWorld, sel >= 0 ? d.world[sel] : Gltf_Identity(), hovered,
                             hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left), true, [](int i) { SendTRS(i); });
     draw->PopClipRect();
@@ -2485,8 +2615,16 @@ void Preview() {
     if (hovered && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) d.hover = pickAt(io.MousePos);
     else if (!hovered) d.hover = -1;
     if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !dragged) {
-        int hit = pickAt(io.MousePos);
-        if (hit >= 0) SelectNode(hit, true);
+        if (g_putFight) {
+            float from[3], dir[3], to[3], at[3];
+            Ray(pic, io.MousePos, from, dir);
+            for (int k = 0; k < 3; k++) to[k] = from[k] + dir[k];
+            if (Gltf_Cast(d.doc, d.world, visible, from, to, at) >= 0) PutFightAt(at);
+            g_putFight = false;
+        } else {
+            int hit = pickAt(io.MousePos);
+            if (hit >= 0) SelectNode(hit, true);
+        }
     }
     if (hovered && !mine && d.hover >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
         ImGui::SetTooltip("%s", NodeLabel(d.hover).c_str());
@@ -2563,6 +2701,38 @@ std::string ModelFileInUse() { return g_live.known && g_live.has ? g_live.file :
 void ModelOpenFile(const std::string &path) {
     g_wanted = path;
     ShowWindow("Model");
+}
+
+unsigned ModelCheckVersion(const std::string &def) {
+    const CheckedModel *c = CheckedModelOf(def);
+    return c ? c->version : 0;
+}
+
+void ModelChecks(const SourceFile &sf, const IniFile &ini, std::vector<StageFinding> &out) {
+    const CheckedModel *c = CheckedModelOf(sf.path);
+    if (!c) return;
+    int line = 0;
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef")
+            if (const IniField *f = s.Field("model")) line = f->line;
+    if (!c->doc.error.empty() && c->doc.nodes.empty()) {
+        out.push_back({StageFinding::Error, line, c->doc.error});
+        return;
+    }
+    ModelCheckIn in;
+    in.place = PlaceOf(ini);
+    float k = in.place.width / 320.0f;
+    in.screenLeft = in.screenRight = 15 * k;
+    ReadFloats(ini, "camera", "boundleft", &in.left, 1);
+    ReadFloats(ini, "camera", "boundright", &in.right, 1);
+    ReadFloats(ini, "bound", "screenleft", &in.screenLeft, 1);
+    ReadFloats(ini, "bound", "screenright", &in.screenRight, 1);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "model" && s.Field("environment")) in.environment = true;
+    for (StageFinding f : Model_Check(c->doc, c->world, in)) {
+        f.line = line;
+        out.push_back(f);
+    }
 }
 
 // In the Stage window: what the model is, and the way to the Model window
@@ -2715,6 +2885,30 @@ void ModelWindow() {
         ImGui::SameLine();
         if (ImGui::Button("The stage's model")) g_wanted.clear();
         ImGui::SetItemTooltip("Show the model of the stage (the match's, else the toolbar's) instead of this file");
+    }
+
+    // Nodes the game would leave at their origin
+    const GltfDoc *read = !live ? &g_disk.doc : sf ? (CheckedModelOf(sf->path) ? &g_checked.doc : nullptr) : nullptr;
+    int matrices = 0;
+    if (read)
+        for (const GltfNode &n : read->nodes) matrices += n.hasMatrix;
+    if (matrices) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(Ink(kYellow), ICON_WARNING " %d placed by a matrix", matrices);
+        ImGui::SetItemTooltip("The game does not read a node's matrix: it leaves those nodes at their origin.");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(live && dirty);
+        if (ImGui::Button(ICON_WAND " Fix")) {
+            if (live) {
+                EditModelFile(sf, [](GltfDoc &d) { return Gltf_BakeMatrices(d) > 0; });
+            } else {
+                Gltf_BakeMatrices(g_disk.doc);
+                FillDiskView();
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(live && dirty ? "Save the model first: the game reads its file again."
+                                            : "Each matrix becomes its node's position, rotation and scale.");
     }
 
     PlacementSection(sf, lw);

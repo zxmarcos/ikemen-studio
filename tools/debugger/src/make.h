@@ -68,11 +68,20 @@ struct MakeLayer {
     int w = 0, h = 0;
     float delta = 1;  // how much it moves with the camera (1 like the floor, less far away)
 };
+// A stage's 3D model: its file ("" none), where [Model] puts it and the camera around it
+struct MakeModel {
+    std::string file;
+    float offset[3] = {0, 0, 0}, scale = 1, fov = 30, zNear = 0.1f, zFar = 10000;
+    int left = 0, right = 0, high = 0;
+};
+
 struct MakeStage {
     std::string name, author, sff, music, date;
     int width = 320, height = 240; // localcoord: one pixel of the images is one unit
     int zoffset = 200;             // the floor
     std::vector<MakeLayer> layers;
+    MakeModel model;
+    bool portrait = false; // the SFF has one, 9000,1, as a stage's select screen shows it
 };
 // How far the camera goes: as long as every image covers the whole screen.
 void Make_StageBounds(const MakeStage &s, int *left, int *right, int *high);

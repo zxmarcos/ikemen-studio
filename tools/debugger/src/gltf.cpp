@@ -239,6 +239,36 @@ void ReadFloatsInto(const Json &a, float *out, int count) {
 // An extra's string, as model.go compares it ("0", "false")
 bool ExtraIs(const Json &v, const char *a, const char *b) { return v.type == Json::String && (v.s == a || v.s == b); }
 
+// What an image file is, and its size where its head says it
+void ImageFormat(const std::string &b, GltfImage &img) {
+    auto u8 = [&](size_t at) { return at < b.size() ? (unsigned char)b[at] : 0u; };
+    auto be32 = [&](size_t at) { return (int)(u8(at) << 24 | u8(at + 1) << 16 | u8(at + 2) << 8 | u8(at + 3)); };
+    auto le32 = [&](size_t at) { return (int)(u8(at) | u8(at + 1) << 8 | u8(at + 2) << 16 | u8(at + 3) << 24); };
+    if (b.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0) {
+        img.format = "png";
+        img.w = be32(16), img.h = be32(20);
+    } else if (u8(0) == 0xFF && u8(1) == 0xD8) {
+        img.format = "jpeg";
+        // The frame's head: its height and width
+        for (size_t at = 2; at + 9 < b.size() && u8(at) == 0xFF;) {
+            unsigned kind = u8(at + 1);
+            if (kind >= 0xC0 && kind <= 0xCF && kind != 0xC4 && kind != 0xC8 && kind != 0xCC) {
+                img.h = (int)(u8(at + 5) << 8 | u8(at + 6)), img.w = (int)(u8(at + 7) << 8 | u8(at + 8));
+                break;
+            }
+            at += 2 + (u8(at + 2) << 8 | u8(at + 3));
+        }
+    } else if (b.compare(0, 4, "DDS ") == 0) {
+        // Its pixel format with a fourCC: compressed
+        img.format = le32(80) & 4 ? "dxt" : "dds";
+        img.h = le32(12), img.w = le32(16);
+    } else if (b.compare(0, 4, "RIFF") == 0 && b.compare(8, 4, "WEBP") == 0) {
+        img.format = "webp";
+    } else if (b.compare(1, 3, "KTX") == 0) {
+        img.format = "ktx2";
+    }
+}
+
 } // namespace
 
 bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode) {
@@ -345,6 +375,10 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
         ReadFloatsInto(n["translation"], node.t, 3);
         ReadFloatsInto(n["rotation"], node.r, 4);
         ReadFloatsInto(n["scale"], node.s, 3);
+        if (n["matrix"].size() == 16) {
+            node.hasMatrix = true;
+            ReadFloatsInto(n["matrix"], node.matrix, 16);
+        }
         const Json &light = n["extensions"]["KHR_lights_punctual"];
         if (!light.isNull()) node.light = light["light"].i(-1);
         const Json &x = n["extras"];
@@ -356,6 +390,7 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
             if (ExtraIs(x["castShadow"], "0", "false")) node.shadow = false;
             if (x["layerNumber"].type == Json::Number) node.hasLayer = true, node.layer = x["layerNumber"].i();
             node.outline = (float)x["meshOutline"].num(0);
+            node.id = x["id"].i(0);
         }
         doc.nodes.push_back(node);
     }
@@ -395,6 +430,7 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
             UriBytes(path, im["uri"].str(), bytes);
             if (img.name.empty()) img.name = im["uri"].str().compare(0, 5, "data:") == 0 ? "" : im["uri"].str();
         }
+        ImageFormat(bytes, img);
         if (decode && !bytes.empty() && !decode((const unsigned char *)bytes.data(), bytes.size(), img.w, img.h, img.rgba))
             img.rgba.clear(), img.w = img.h = 0;
         doc.images.push_back(std::move(img));
@@ -413,6 +449,7 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
     for (const Json &a : j["animations"].items) {
         GltfAnim anim;
         anim.name = a["name"].str();
+        anim.id = a["extras"]["id"].i(0);
         for (const Json &c : a["channels"].items) {
             std::string p = c["target"]["path"].str();
             GltfAnim::Channel ch;
@@ -523,7 +560,13 @@ void Gltf_Pose(const GltfDoc &doc, const std::vector<float> &animTimes, std::vec
 
 int Gltf_Pick(const GltfDoc &doc, const std::vector<GltfMat> &world, const std::vector<char> &visible,
               const float from[3], const float towards[3]) {
-    float best = FLT_MAX;
+    float hit[3];
+    return Gltf_Cast(doc, world, visible, from, towards, hit);
+}
+
+int Gltf_Cast(const GltfDoc &doc, const std::vector<GltfMat> &world, const std::vector<char> &visible,
+              const float from[3], const float towards[3], float hit[3]) {
+    float best = FLT_MAX; // along the segment: the same in every node's space
     int found = -1;
     for (int i = 0; i < (int)doc.nodes.size() && i < (int)world.size(); i++) {
         const GltfNode &n = doc.nodes[i];
@@ -565,6 +608,8 @@ int Gltf_Pick(const GltfDoc &doc, const std::vector<GltfMat> &world, const std::
             }
         }
     }
+    if (found >= 0)
+        for (int a = 0; a < 3; a++) hit[a] = from[a] + (towards[a] - from[a]) * best;
     return found;
 }
 
@@ -609,6 +654,97 @@ bool Gltf_Corners(const GltfDoc &doc, const std::vector<GltfMat> &world, int nod
     if (!any) return false;
     for (int k = 0; k < 8; k++) corner(wlo, whi, k, corners[k]);
     return true;
+}
+
+bool Gltf_Bounds(const GltfDoc &doc, const std::vector<GltfMat> &world, float lo[3], float hi[3], bool all) {
+    struct Box {
+        float lo[3], hi[3], size;
+    };
+    std::vector<Box> boxes;
+    for (int i = 0; i < (int)doc.nodes.size(); i++) {
+        float c[8][3];
+        if (doc.nodes[i].mesh < 0 || !Gltf_Corners(doc, world, i, c)) continue;
+        Box b{{FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX}, 0};
+        for (auto &p : c)
+            for (int a = 0; a < 3; a++) b.lo[a] = std::min(b.lo[a], p[a]), b.hi[a] = std::max(b.hi[a], p[a]);
+        b.size = std::hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]);
+        boxes.push_back(b);
+    }
+    if (boxes.empty()) return false;
+    std::vector<float> sizes;
+    for (const Box &b : boxes) sizes.push_back(b.size);
+    std::nth_element(sizes.begin(), sizes.begin() + sizes.size() / 2, sizes.end());
+    float median = sizes[sizes.size() / 2];
+    for (int a = 0; a < 3; a++) lo[a] = FLT_MAX, hi[a] = -FLT_MAX;
+    for (const Box &b : boxes) {
+        if (!all && boxes.size() > 2 && b.size > median * 5) continue;
+        for (int a = 0; a < 3; a++) lo[a] = std::min(lo[a], b.lo[a]), hi[a] = std::max(hi[a], b.hi[a]);
+    }
+    return lo[0] <= hi[0];
+}
+
+std::vector<std::string> Gltf_Files(const GltfDoc &doc) {
+    std::vector<std::string> files;
+    for (const char *list : {"buffers", "images"})
+        for (const Json &v : doc.json[list].items) {
+            std::string uri = v["uri"].str();
+            if (!uri.empty() && uri.compare(0, 5, "data:") != 0) files.push_back(UrlDecode(uri));
+        }
+    return files;
+}
+
+std::vector<int> Gltf_Roots(const GltfDoc &doc) {
+    std::vector<int> roots;
+    for (const GltfScene &s : doc.scenes)
+        for (int r : s.roots)
+            if (r >= 0 && r < (int)doc.nodes.size() && std::find(roots.begin(), roots.end(), r) == roots.end()) roots.push_back(r);
+    return roots;
+}
+
+void Gltf_MoveRoots(GltfDoc &doc, const float by[3]) {
+    for (int r : Gltf_Roots(doc)) {
+        for (int a = 0; a < 3; a++) doc.nodes[r].t[a] += by[a];
+        doc.trs.insert(r);
+    }
+}
+
+int Gltf_BakeMatrices(GltfDoc &doc) {
+    int count = 0;
+    for (int i = 0; i < (int)doc.nodes.size(); i++) {
+        GltfNode &n = doc.nodes[i];
+        if (!n.hasMatrix) continue;
+        const float *m = n.matrix;
+        float c[3][3] = {{m[0], m[1], m[2]}, {m[4], m[5], m[6]}, {m[8], m[9], m[10]}};
+        for (int a = 0; a < 3; a++) {
+            n.t[a] = m[12 + a];
+            n.s[a] = std::hypot(c[a][0], c[a][1], c[a][2]);
+        }
+        float det = c[0][0] * (c[1][1] * c[2][2] - c[1][2] * c[2][1]) - c[1][0] * (c[0][1] * c[2][2] - c[0][2] * c[2][1]) +
+                    c[2][0] * (c[0][1] * c[1][2] - c[0][2] * c[1][1]);
+        if (det < 0) n.s[0] = -n.s[0]; // a mirror
+        for (int a = 0; a < 3; a++)
+            for (int b = 0; b < 3; b++) c[a][b] = n.s[a] != 0 ? c[a][b] / n.s[a] : 0;
+        // The rotation's quaternion, from its largest component
+        float tr = c[0][0] + c[1][1] + c[2][2], q[4];
+        if (tr > 0) {
+            float s = std::sqrt(tr + 1) * 2;
+            q[3] = s / 4, q[0] = (c[1][2] - c[2][1]) / s, q[1] = (c[2][0] - c[0][2]) / s, q[2] = (c[0][1] - c[1][0]) / s;
+        } else if (c[0][0] > c[1][1] && c[0][0] > c[2][2]) {
+            float s = std::sqrt(1 + c[0][0] - c[1][1] - c[2][2]) * 2;
+            q[3] = (c[1][2] - c[2][1]) / s, q[0] = s / 4, q[1] = (c[1][0] + c[0][1]) / s, q[2] = (c[2][0] + c[0][2]) / s;
+        } else if (c[1][1] > c[2][2]) {
+            float s = std::sqrt(1 + c[1][1] - c[0][0] - c[2][2]) * 2;
+            q[3] = (c[2][0] - c[0][2]) / s, q[0] = (c[1][0] + c[0][1]) / s, q[1] = s / 4, q[2] = (c[2][1] + c[1][2]) / s;
+        } else {
+            float s = std::sqrt(1 + c[2][2] - c[0][0] - c[1][1]) * 2;
+            q[3] = (c[0][1] - c[1][0]) / s, q[0] = (c[2][0] + c[0][2]) / s, q[1] = (c[2][1] + c[1][2]) / s, q[2] = s / 4;
+        }
+        memcpy(n.r, q, sizeof(q));
+        n.hasMatrix = false;
+        doc.trs.insert(i);
+        count++;
+    }
+    return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +828,7 @@ int WriteKeys(GltfDoc &doc, int acc, const std::vector<float> &data, int n, bool
 
 } // namespace
 
-bool Gltf_Save(GltfDoc &doc, std::string *error) {
+bool Gltf_Save(GltfDoc &doc, std::string *error, bool backup) {
     Json &j = doc.json;
     for (int i : doc.trs) {
         if (i < 0 || i >= (int)j["nodes"].size()) continue;
@@ -805,7 +941,7 @@ bool Gltf_Save(GltfDoc &doc, std::string *error) {
     }
     // The file as it was, once
     std::string bak = doc.path + ".bak";
-    if (GetFileAttributesA(bak.c_str()) == INVALID_FILE_ATTRIBUTES && !CopyFileA(doc.path.c_str(), bak.c_str(), TRUE)) {
+    if (backup && GetFileAttributesA(bak.c_str()) == INVALID_FILE_ATTRIBUTES && !CopyFileA(doc.path.c_str(), bak.c_str(), TRUE)) {
         if (error) *error = "could not write " + bak;
         return false;
     }

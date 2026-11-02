@@ -250,12 +250,40 @@ static void TestStage() {
     }
 }
 
+// A stage of a model: the def has what stage.go reads for one, no BG
+static void TestModelStage() {
+    MakeStage s;
+    s.name = "Test";
+    s.sff = "test.sff";
+    s.width = 1280, s.height = 720, s.zoffset = 600;
+    s.portrait = true;
+    s.model.file = "test.glb";
+    s.model.offset[1] = -0.05f, s.model.offset[2] = -1;
+    s.model.scale = 0.00123f;
+    s.model.fov = 30, s.model.zNear = 0.01f, s.model.zFar = 12;
+    s.model.left = -300, s.model.right = 400, s.model.high = -216;
+    IniFile f;
+    Ini_Parse(Make_StageDef(s), f);
+    const IniSection *cam = nullptr, *bgdef = nullptr, *model = nullptr;
+    for (const auto &sec : f.sections) {
+        if (sec.lower == "camera") cam = &sec;
+        if (sec.lower == "bgdef") bgdef = &sec;
+        if (sec.lower == "model") model = &sec;
+    }
+    CHECK(f.StageBgs().empty());
+    CHECK(cam && cam->Field("boundleft")->value == "-300" && cam->Field("boundright")->value == "400" && cam->Field("boundhigh")->value == "-216");
+    CHECK(cam && cam->Field("fov")->value == "30" && cam->Field("near")->value == "0.01" && cam->Field("far")->value == "12");
+    CHECK(bgdef && bgdef->Field("model")->value == "test.glb");
+    CHECK(model && model->Field("offset")->value == "0, -0.05, -1" && model->Field("scale")->value == "0.00123, 0.00123, 0.00123");
+}
+
 int main() {
     TestCns();
     TestZss();
     TestMove();
     TestNewChar();
     TestStage();
+    TestModelStage();
     printf(g_failed ? "make-test: %d failed\n" : "make-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

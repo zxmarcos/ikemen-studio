@@ -188,6 +188,20 @@ GltfMat LookAt(const float eye[3], const float at[3]) {
     return m;
 }
 
+bool ModelPreviewPixels(const ModelPreviewArgs &a, std::vector<unsigned char> &rgba) {
+    unsigned tex = DrawModelPreview(a);
+    if (!tex) return false;
+    std::vector<unsigned char> flipped((size_t)a.w * a.h * 4);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, flipped.data());
+    rgba.resize(flipped.size());
+    size_t row = (size_t)a.w * 4;
+    for (int y = 0; y < a.h; y++) memcpy(&rgba[y * row], &flipped[(a.h - 1 - y) * row], row);
+    for (size_t n = 3; n < rgba.size(); n += 4) rgba[n] = 255;
+    return true;
+}
+
 unsigned DrawModelPreview(const ModelPreviewArgs &a) {
     if (!LoadGl() || a.w <= 0 || a.h <= 0 || !a.doc || !MakeTarget(a.w, a.h)) return 0;
     const GltfDoc &doc = *a.doc;

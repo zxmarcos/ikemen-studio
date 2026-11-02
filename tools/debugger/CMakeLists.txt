@@ -79,6 +79,7 @@ add_executable(ikemen-debugger WIN32
   src/app_model.cpp
   src/app_modelview.cpp
   src/gltf.cpp
+  src/modelfit.cpp
   src/app_check.cpp
   src/app_explorer.cpp
   src/app_paint.cpp
@@ -169,5 +170,5 @@ add_executable(story-test tests/story_test.cpp src/story.cpp src/ini.cpp)
 target_include_directories(story-test PRIVATE src)
 add_executable(undo-test tests/undo_test.cpp)
 target_include_directories(undo-test PRIVATE src)
-add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp)
+add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp src/modelfit.cpp)
 target_include_directories(gltf-test PRIVATE src)

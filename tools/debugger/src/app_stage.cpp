@@ -128,10 +128,25 @@ std::string StageNameOf(const std::string &def) {
     return n;
 }
 
+// Width over height of a def's localcoord
+static float AspectOfDef(const std::string &def) {
+    IniFile ini;
+    Ini_Parse(LoadSource(def).text, ini);
+    float size[2] = {320, 240}, v[2];
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "stageinfo" && s.Floats("localcoord", v, 2) && v[1] > 0) size[0] = v[0], size[1] = v[1];
+    return size[0] / size[1];
+}
+
 void PlayStage(const std::string &def) {
     g_settings.stage = StageNameOf(def);
-    if (Connected() && g_canTrace && NormPath(def) != NormPath(g_stageDef))
-        Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
+    if (!Connected() || !g_canTrace || NormPath(def) == NormPath(g_stageDef)) return;
+    // A fight's aspect is set when it starts: a stage of another one shows wrongly in it, a model most
+    if (g_stageRun && !g_stageDef.empty() && std::fabs(AspectOfDef(def) - AspectOfDef(g_stageDef)) > 0.01f) {
+        Launch();
+        return;
+    }
+    Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
 }
 
 // The game on the stage's workspace stays on the project. Coming in, one that was started otherwise
@@ -630,22 +645,30 @@ const SpriteFile *StageSpriteFile(const SourceFile &sf, const IniFile &ini) {
 // was read
 const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini, bool *sffRead = nullptr) {
     static std::string path, text;
-    static unsigned sffVersion;
+    static unsigned sffVersion, modelVersion;
     static ParallaxView camera;
     static std::vector<StageFinding> found;
     static bool done, read;
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
     ParallaxView view = StageParallaxView(ini);
-    if (!done || path != sf.path || text != sf.text || sffVersion != (spr ? spr->version : 0) || memcmp(&camera, &view, sizeof(view)) != 0) {
+    bool model = StageHasModel(ini);
+    unsigned modelNow = model ? ModelCheckVersion(sf.path) : 0;
+    // The rays through a model wait for the end of a drag
+    bool changed = !done || path != sf.path || text != sf.text || sffVersion != (spr ? spr->version : 0) || modelVersion != modelNow ||
+                   memcmp(&camera, &view, sizeof(view)) != 0;
+    if (changed && !(model && done && path == sf.path && ImGui::IsMouseDown(ImGuiMouseButton_Left))) {
         path = sf.path;
         text = sf.text;
         sffVersion = spr ? spr->version : 0;
+        modelVersion = modelNow;
         camera = view;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
         const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, sffVersion);
         // A model may cover what the BGs leave: the Camera tab's Check the limits sees that
-        if (!StageHasModel(ini)) {
+        if (model) {
+            ModelChecks(sf, ini, found);
+        } else {
             std::vector<StageFinding> holes = Parallax_Check(ini, bgs, view);
             found.insert(found.end(), holes.begin(), holes.end());
         }
@@ -732,12 +755,17 @@ void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &foun
             ImGui::TableNextColumn();
             if (f.line) ImGui::Text("%d", f.line);
             ImGui::TableNextColumn();
-            if (ImGui::Selectable(f.text.c_str(), false, ImGuiSelectableFlags_SpanAllColumns) && f.line) {
+            // As tall as its text wrapped: a narrow window shows all of it
+            ImVec2 at = ImGui::GetCursorPos();
+            float height = ImGui::CalcTextSize(f.text.c_str(), nullptr, false, ImGui::GetContentRegionAvail().x).y;
+            if (ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, height)) && f.line) {
                 g_codeFile = sf.path;
                 g_codeLine = g_codeScrollTo = f.line;
                 g_codeHold = true;
             }
             if (f.line) ImGui::SetItemTooltip("Show the line in Code");
+            ImGui::SetCursorPos(at);
+            ImGui::TextWrapped("%s", f.text.c_str());
             ImGui::PopID();
         }
         ImGui::EndTable();

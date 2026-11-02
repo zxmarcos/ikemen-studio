@@ -62,6 +62,7 @@ type editorModelState struct {
 	sel       int
 	hover     int
 	picked    int // bumped when a node is picked on the game
+	hit       *mgl.Vec3 // where the last pick met it, in the model's space
 	trs       map[int]bool
 	props     map[int]bool
 	materials map[int]bool
@@ -450,15 +451,20 @@ func editorModelPick(m *Model, x, y float32) int {
 			}
 		}
 	}
+	edModel.hit = nil
+	if found >= 0 {
+		hit := p0.Vec3().Add(p1.Vec3().Sub(p0.Vec3()).Mul(best))
+		edModel.hit = &hit
+	}
 	return found
 }
 
 // The frame geometry's model: "mdl": {"sel", "hover": nodes (-1 none), "picked": bumped at each
 // pick, "dirty": changed since its file was read, "sb", "hb": the selected and hovered nodes'
 // boxes as segments [x0, y0, x1, y1, ...], or "sp", "hp": [x, y] where they are, in the game
-// picture's pixels; with a node selected, "vp": the view-projection matrix, "pw": the world
-// matrix of the selected node's parent, "nw": its own (column-major), "w", "h": the picture's
-// size}
+// picture's pixels; "vp": the view-projection matrix, "w", "h": the picture's size; with a node
+// selected, "pw": the world matrix of its parent, "nw": its own (column-major); "hit": where the
+// last pick met the model, in its space}
 func editorModelGeometry(b []byte) []byte {
 	m, _ := editorStageModelNow()
 	if m == nil {
@@ -495,6 +501,26 @@ func editorModelGeometry(b []byte) []byte {
 		nums("hb", l)
 		nums("hp", p)
 	}
+	exact := func(key string, v []float32) {
+		b = append(b, `,"`+key+`":[`...)
+		for i, f := range v {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = strconv.AppendFloat(b, float64(f), 'g', -1, 32)
+		}
+		b = append(b, ']')
+	}
+	if e.hit != nil {
+		exact("hit", e.hit[:])
+	}
+	if e.drawn {
+		exact("vp", e.viewProj[:])
+		b = append(b, `,"w":`...)
+		b = strconv.AppendInt(b, int64(sys.scrrect[2]), 10)
+		b = append(b, `,"h":`...)
+		b = strconv.AppendInt(b, int64(sys.scrrect[3]), 10)
+	}
 	// What dragging the selected node needs: the matrices it is seen through
 	if e.drawn && e.sel >= 0 && e.sel < len(m.nodes) {
 		parent := mgl.Ident4()
@@ -505,23 +531,8 @@ func editorModelGeometry(b []byte) []byte {
 				}
 			}
 		}
-		mat := func(key string, v mgl.Mat4) {
-			b = append(b, `,"`+key+`":[`...)
-			for i, f := range v {
-				if i > 0 {
-					b = append(b, ',')
-				}
-				b = strconv.AppendFloat(b, float64(f), 'g', -1, 32)
-			}
-			b = append(b, ']')
-		}
-		mat("vp", e.viewProj)
-		mat("pw", parent)
-		mat("nw", m.nodes[e.sel].worldTransform)
-		b = append(b, `,"w":`...)
-		b = strconv.AppendInt(b, int64(sys.scrrect[2]), 10)
-		b = append(b, `,"h":`...)
-		b = strconv.AppendInt(b, int64(sys.scrrect[3]), 10)
+		exact("pw", parent[:])
+		exact("nw", m.nodes[e.sel].worldTransform[:])
 	}
 	e.drawn = false
 	return append(b, '}')

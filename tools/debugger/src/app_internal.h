@@ -776,6 +776,8 @@ void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &foun
 void OnModel(const Json &j);
 void OnModelKeys(const Json &j); // an animation's keys (ikdbg.modelKeys)
 void ModelSection(bool stageHasModel);
+void ModelChecks(const SourceFile &sf, const IniFile &ini, std::vector<StageFinding> &out); // what the game will make of the stage's model
+unsigned ModelCheckVersion(const std::string &def); // changes when the file of the def's model does
 void ModelWindow();
 std::string ModelFileInUse();                 // the model file of the stage in the match, as the game names it; "" none
 void ModelOpenFile(const std::string &path);  // a .glb or .gltf shown in the Model window (from disk unless the match's)
@@ -796,6 +798,7 @@ struct ModelPreviewArgs {
     int lighting = 0; // 0 unlit, 1 the model's lights, 2 an environment map (and the lights)
 };
 unsigned DrawModelPreview(const ModelPreviewArgs &a); // the picture's texture, 0 when it cannot be drawn
+bool ModelPreviewPixels(const ModelPreviewArgs &a, std::vector<unsigned char> &rgba); // the same as pixels, top first
 void ReadModelGeometry(const Json &mdl); // the frame geometry's stage "mdl"
 extern bool g_modelPick;                 // the Game window picks the model's nodes, not the players
 void ModelPickToggle();                  // its checkbox on the Game window's toolbar
