@@ -404,6 +404,32 @@ void FitStage() {
     SendFreeCamera();
 }
 
+// On the Game window's line on the stage's workspace: they all act on the picture
+void StageGameControls() {
+    ImGui::BeginDisabled(!StageInMatch());
+    SameLineFits(CheckboxWidth("Limits"));
+    ImGui::Checkbox("Limits", &g_stageLimits);
+    ImGui::SetItemTooltip("How far the camera goes (orange), the players' bounds (red), the floor, the starting positions.\n"
+                          "Their handles can be dragged.");
+    SameLineFits(CheckboxWidth("Scale"));
+    ImGui::Checkbox("Scale", &g_stageScale);
+    ImGui::SetItemTooltip("P1 standing at the players' bounds, and the highest its head gets in a jump,\n"
+                          "to judge the stage's proportions and where the sky has to reach.");
+    SameLineFits(CheckboxWidth("Free camera"));
+    bool free = g_freeCam;
+    if (ImGui::Checkbox("Free camera", &free)) SetFreeCamera(free);
+    ImGui::SetItemTooltip("Only what is drawn moves: the wheel zooms, the right button pans.\n"
+                          "The game's camera, and what the players can do, stay as they are.");
+    SameLineFits(ImGui::CalcTextSize(ICON_SEARCH " Fit the stage").x + ImGui::GetStyle().FramePadding.x * 2);
+    if (ImGui::Button(ICON_SEARCH " Fit the stage")) FitStage();
+    ImGui::SetItemTooltip("The free camera, with all the stage in view");
+    ImGui::EndDisabled();
+    // The game restarted, or another tool turned it off
+    static int offFrames;
+    offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
+    if (offFrames > 60) g_freeCam = false;
+}
+
 bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt) {
     const StageView &v = g_stageView;
     if (!g_freeCam || !v.ok || v.cam[5] <= 0 || v.cam[6] <= 0) return false;
@@ -918,7 +944,7 @@ void StageWindow() {
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + extra) ImGui::NewLine();
     };
-    float box = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
+    float pad = ImGui::GetStyle().FramePadding.x * 2;
     flow("Reload", pad);
     if (ImGui::Button(ICON_RESTART " Reload")) ReloadStage(sf, true);
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
@@ -930,28 +956,6 @@ void StageWindow() {
         ImGui::End(); // what was parsed is old
         return;
     }
-    // What needs the game's picture
-    ImGui::BeginDisabled(!live);
-    flow("Limits", box);
-    ImGui::Checkbox("Limits", &g_stageLimits);
-    ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"
-                          "the starting positions. In pick mode their handles can be dragged.");
-    flow("Scale", box);
-    ImGui::Checkbox("Scale", &g_stageScale);
-    ImGui::SetItemTooltip("On the Game window: P1 standing at the players' bounds, and the highest its head gets in a jump,\n"
-                          "to judge the stage's proportions and where the sky has to reach.");
-    flow("Free camera", box);
-    bool free = g_freeCam;
-    if (ImGui::Checkbox("Free camera", &free)) SetFreeCamera(free);
-    ImGui::SetItemTooltip("Only what is drawn moves: the wheel zooms, the right button pans (on the Game window).\n"
-                          "The game's camera, and what the players can do, stay as they are.");
-    flow("Fit the stage", pad);
-    if (ImGui::Button(ICON_SEARCH " Fit the stage")) FitStage();
-    ImGui::EndDisabled();
-    // The game restarted, or another tool turned it off
-    static int offFrames;
-    offFrames = g_freeCam && g_stageView.ok && !g_stageView.free ? offFrames + 1 : 0;
-    if (offFrames > 60) g_freeCam = false;
     std::vector<int> ctrls = ini.StageBgCtrls();
     const StageView &sv = g_stageView;
     if (live) {

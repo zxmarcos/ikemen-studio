@@ -162,7 +162,8 @@ two you give.
 a light, which adds two BGCtrls at the end of the def. Stop takes them away. The numbers it
 writes are in the layer's fields, to change.
 
-**Scale**, beside Limits, stands P1 at the players' bounds and draws a line where its head
+Limits, Scale, the free camera and Fit the stage are on the Game window's line, on this
+workspace. **Scale** stands P1 at the players' bounds and draws a line where its head
 gets in a jump, to judge the stage's proportions and how high the sky has to go.
 
 **Make it a floor**, under a selected BG, turns it into `type = parallax`, keeping it where

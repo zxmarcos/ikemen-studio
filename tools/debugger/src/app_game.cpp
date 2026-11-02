@@ -493,6 +493,7 @@ void GameWindow() {
         ImGui::SetItemTooltip("A click selects an element of the fight screen or the menus (lifebars, time...), a drag\nmoves it with its group, Alt+drag alone.");
     }
     ModelPickToggle();
+    if (CurrentProject() == kProjectStage) StageGameControls();
     SameLineFits(CheckboxWidth(ICON_WATCH " Show " ICON_CARET));
     if (ImGui::Button(ICON_WATCH " Show " ICON_CARET)) ImGui::OpenPopup("show");
     ImGui::SetItemTooltip("What is drawn over the game");

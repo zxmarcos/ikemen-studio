@@ -747,6 +747,7 @@ void StageSpritesSaved(const std::string &path); // the stage using that SFF rea
 void StageOpen();                                // another stage is open: nothing of the last one stays selected
 void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
 void StageRunFrame();                            // each frame: on the stage's workspace, the game stays on the project
+void StageGameControls();                        // Limits, Scale, the free camera, on the Game window's line
 const SpriteFile *StageSpriteFile(const SourceFile &sf, const IniFile &ini); // the SFF of a stage's def, as Sprites has it
 extern bool g_freeCam;                           // the free camera: the world point in the middle, at the ground line's height, and its scale
 extern float g_freeX, g_freeY, g_freeScale;
