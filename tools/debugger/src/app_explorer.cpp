@@ -460,7 +460,7 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
     if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open")) OpenPath(path, true, pal);
     // A character's AIR file: its actions drawn and edited (the character becomes the project)
     if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
-        ProjectOpen(kProjectCharacter, g_rowChar);
+        ProjectOpen(kProjectCharacter, g_rowChar, false);
         AnimOpenFile("");
     }
     // Actions of their own: a stage's or a screen's def, an AIR file no character uses
@@ -523,7 +523,6 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
     bool expanded = ImGui::TreeNodeEx(label.c_str(), flags);
     if (!exists) ImGui::PopStyleColor();
     bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen();
-    if (clicked && !g_rowChar.empty()) ProjectOpen(kProjectCharacter, g_rowChar);
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) OpenPath(path, true, pal);
     else if (clicked) OpenPath(path, false, pal);
     ImGui::SetItemTooltip("%s%s", path.c_str(), exists ? "" : "\nnot found");
@@ -536,6 +535,13 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
         DefChildren(path, "", all, depth + 1);
         ImGui::TreePop();
     }
+}
+
+// A character's or a stage's row double clicked, not on its arrow: opening one can start the match
+// again, so a click only shows its files, and toggling the tree fast does not count
+bool RowOpened() {
+    return ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+           ImGui::GetMousePos().x > ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing();
 }
 
 // The players a character's def is in the match as ("P1 P2")
@@ -557,9 +563,9 @@ void CharNode(const Entry &p) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
     if (CurrentProject() == kProjectCharacter && NormPath(ProjectDef(kProjectCharacter)) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.name.c_str(), flags);
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ProjectOpen(kProjectCharacter, p.def);
-    ImGui::SetItemTooltip(Connected() ? "%s\nA click opens it as the project. Not in the match, it takes P1's place and the match starts again."
-                                      : "%s\nA click opens it as the project, and Launch starts with it as P1.", p.def.c_str());
+    if (RowOpened()) ProjectOpen(kProjectCharacter, p.def);
+    ImGui::SetItemTooltip(Connected() ? "%s\nA double click opens it as the project. Not in the match, it takes P1's place and the match starts again."
+                                      : "%s\nA double click opens it as the project, and Launch starts with it as P1.", p.def.c_str());
     std::string players = PlayersOf(p.def);
     if (!players.empty()) RowNote(players.c_str(), ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
@@ -596,9 +602,9 @@ void StageNode(const Entry &p) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
     if (shown && CurrentProject() == kProjectStage && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.def.c_str(), flags, "%s", p.name.c_str());
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ProjectOpen(kProjectStage, p.def);
-    ImGui::SetItemTooltip(Connected() ? "%s\nA click opens it as the project: it takes the match's place, and the match goes on."
-                                      : "%s\nA click opens it as the project, and Launch starts on it.", p.def.c_str());
+    if (RowOpened()) ProjectOpen(kProjectStage, p.def);
+    ImGui::SetItemTooltip(Connected() ? "%s\nA double click opens it as the project: it takes the match's place, and the match goes on."
+                                      : "%s\nA double click opens it as the project, and Launch starts on it.", p.def.c_str());
     bool playing = NormPath(p.def) == NormPath(g_stageDef);
     if (playing) RowNote("playing", ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {

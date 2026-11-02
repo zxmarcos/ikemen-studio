@@ -130,8 +130,10 @@ sends to the game asks `StageInMatch`, or `g_stageDef` against the file (`Reload
 reach it with the match's def while the project is another). `StageOverlay` stops there too, because
 the game's BG numbers mean other BGs in another def. A screenpack has no such gap: the slot is the
 session's `-r`, the game's motif wins while it runs, and another one takes starting the game again
-(`debugReloadMotif` only reads the same one again). A character swap is asked once while it goes in, or
-a double click in Explorer starts the match twice. The panel was renamed from Project to Files; a saved
+(`debugReloadMotif` only reads the same one again). In Explorer a click only shows a character's or a
+stage's files and a double click opens it (`RowOpened`, not on the arrow): a click that could start the
+match again was too easy to make while debugging. A file's row never changes the project. A character
+swap is asked once while it goes in (`GoingIn`). The panel was renamed from Project to Files; a saved
 arrangement is translated as it is read and laid out again, since ImGui docks windows by name.
 
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the

@@ -101,8 +101,8 @@ tab on the Stage and Screenpack workspaces (Ctrl+Shift+P still shows it).
 
 The **project** is what you are working on: one character, stage or screenpack, named
 at the left of the toolbar with where it is (`P1`, `in the match`, `not in the match`).
-Its button lists the last ones and opens another; Explorer and the start page open
-them too. The editors work on the project and nothing else changes it, so a click on
+Its button lists the last ones and opens another; the start page opens them too, and
+so does a double click in Explorer. The editors work on the project and nothing else changes it, so a click on
 a fighter does not move them: it selects that fighter for Fighters and the Inspector,
 and when it is another character's, the line above the game offers **Open** with its
 name. Each workspace keeps its kind: Test, Code and Character use the character, Stage
@@ -129,8 +129,8 @@ the common files (`config.ini` and its `[Common]` files), each with the files
 its def names, found as the engine finds them (a missing one in red). The
 characters in the match are marked P1, P2, the stage playing too. A click
 opens a file in its window (text in Code, an SFF in Sprites, an SND in
-Sounds), and a click on a character, on one of its files or on a stage opens it
-as the project. Analysis, Animation, Sounds, Commands (its CMD file), Sprites and
+Sounds) and leaves the project alone; a click on a character or a stage shows
+its files, and a double click opens it as the project. Analysis, Animation, Sounds, Commands (its CMD file), Sprites and
 File > New > A move show the project, read from disk when it is not in the match; a
 character from disk has **Put in the match** in Animation. Right click on a character
 puts it in P1's or P2's place (the match starts again) or makes it the toolbar's; on a
