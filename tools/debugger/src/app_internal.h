@@ -295,6 +295,7 @@ CtrlBreak *FindCtrlBreak(const std::string &file, int line);
 void ToggleCtrlBreak(const std::string &file, int line);
 void Launch(bool menus = false); // menus: without -p1 -p2, the game starts in its menus
 extern bool g_stageRun;          // it was started on the stage project (the stage's workspace)
+extern double g_launchTime;      // when it was started, in ImGui's time
 
 // ---------------------------------------------------------------------------
 // The windows

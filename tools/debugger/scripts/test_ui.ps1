@@ -28,6 +28,12 @@ public class W {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  delegate bool EnumProc(IntPtr h, IntPtr p);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr p);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Ansi)] static extern int GetClassNameA(IntPtr h, StringBuilder s, int n);
+  // The game's window, hidden or not (a Process only gives shown ones)
+  public static IntPtr GameWindow() { IntPtr r = IntPtr.Zero; foreach (var p in System.Diagnostics.Process.GetProcessesByName("Ikemen_GO")) EnumWindows((h, x) => { uint pid; GetWindowThreadProcessId(h, out pid); if (pid != p.Id) return true; var s = new StringBuilder(64); GetClassNameA(h, s, 64); if (s.ToString() != "SDL_app") return true; r = h; return false; }, IntPtr.Zero); return r; }
   [StructLayout(LayoutKind.Sequential)] public struct COPYDATA { public IntPtr dwData; public int cbData; public IntPtr lpData; }
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, ref COPYDATA l);
   public static void Lua(IntPtr h, string s) { byte[] b = Encoding.UTF8.GetBytes(s); IntPtr p = Marshal.AllocHGlobal(b.Length); Marshal.Copy(b, 0, p, b.Length); COPYDATA d = new COPYDATA(); d.dwData = (IntPtr)0x4D47; d.cbData = b.Length; d.lpData = p; SendMessage(h, 0x004A, IntPtr.Zero, ref d); Marshal.FreeHGlobal(p); }
@@ -46,9 +52,9 @@ $t0 = Get-Date
 while (((Get-Date) - $t0).TotalSeconds -lt 20) { $dbg.Refresh(); if ($dbg.MainWindowHandle -ne 0) { break }; Start-Sleep -Milliseconds 200 }
 $hd = $dbg.MainWindowHandle
 [W]::SetWindowPos($hd, [IntPtr]::Zero, 0, 0, 1600, 1000, 0x0040) | Out-Null
-$game = $null
-while (-not $NoLaunch -and ((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($game) { break }; Start-Sleep -Milliseconds 300 }
-if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } elseif (-not $NoLaunch) { "game window not found" }
+$found = $false
+while (-not $NoLaunch -and ((Get-Date) - $t0).TotalSeconds -lt 30) { if ([W]::GameWindow() -ne [IntPtr]::Zero) { $found = $true; break }; Start-Sleep -Milliseconds 300 }
+if (-not $found -and -not $NoLaunch) { "game window not found" }
 Start-Sleep -Seconds $Wait
 
 $shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F3 = 0x72; F5 = 0x74; F10 = 0x79; F11 = 0x7A; F12 = 0x7B; ESCAPE = 0x1B; RETURN = 0x0D; DELETE = 0x2E; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10; CTRL = 0x11; TAB = 0x09; SPACE = 0x20 }
@@ -66,8 +72,8 @@ foreach ($a in ($Actions -split '\|' | Where-Object { $_ })) {
     'down' { [W]::PostMessage($hd, 0x100, [IntPtr]$vk[$arg], [IntPtr]1) | Out-Null }
     'up' { [W]::PostMessage($hd, 0x101, [IntPtr]$vk[$arg], [IntPtr]0xC0000001) | Out-Null }
     'keys' { foreach ($k in $arg -split ',') { $code = $vk[$k.Substring(1)]; if ($k[0] -eq '+') { [W]::PostMessage($hd, 0x100, [IntPtr]$code, [IntPtr]1) | Out-Null } else { [W]::PostMessage($hd, 0x101, [IntPtr]$code, [IntPtr]0xC0000001) | Out-Null }; Start-Sleep -Milliseconds 50 } }
-    'visible' { "game window visible: " + [W]::IsWindowVisible($game.MainWindowHandle) }
-    'game' { $g = $game.MainWindowHandle; switch ($arg) { 'hide' { [W]::ShowWindow($g, 0) | Out-Null } 'show' { [W]::ShowWindow($g, 5) | Out-Null } 'min' { [W]::ShowWindow($g, 6) | Out-Null } 'off' { [W]::SetWindowPos($g, [IntPtr]::Zero, -5000, -5000, 0, 0, 0x0001 -bor 0x0004 -bor 0x0010) | Out-Null } } }
+    'visible' { "game window visible: " + [W]::IsWindowVisible([W]::GameWindow()) }
+    'game' { $g = [W]::GameWindow(); switch ($arg) { 'hide' { [W]::ShowWindow($g, 0) | Out-Null } 'show' { [W]::ShowWindow($g, 5) | Out-Null } 'min' { [W]::ShowWindow($g, 6) | Out-Null } 'off' { [W]::SetWindowPos($g, [IntPtr]::Zero, -5000, -5000, 0, 0, 0x0001 -bor 0x0004 -bor 0x0010) | Out-Null } } }
     'rclick' { $x, $y = $arg -split ','; $l = [IntPtr](([int]$y -shl 16) -bor [int]$x); $m = 0x8000 + 0x4D47; [W]::PostMessage($hd, $m, [IntPtr]0, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]3, $l) | Out-Null; Start-Sleep -Milliseconds 80; [W]::PostMessage($hd, $m, [IntPtr]4, $l) | Out-Null }
     'mark' { $logMark = @(Get-Content "$dir\ikemen-debugger.log" -ErrorAction SilentlyContinue).Count }
     'until' { $end = (Get-Date).AddSeconds(240); while ((Get-Date) -lt $end) { $lines = @(Get-Content "$dir\ikemen-debugger.log" -ErrorAction SilentlyContinue); if (@($lines | Select-Object -Skip ([int]$logMark) | Where-Object { $_ -like "*$arg*" }).Count -gt 0) { break }; Start-Sleep -Milliseconds 500 }; if ((Get-Date) -ge $end) { "until: no '$arg' in the log" }; $logMark = $lines.Count }

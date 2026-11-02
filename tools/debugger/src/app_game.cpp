@@ -19,8 +19,12 @@ void ReadBoxes(const Json &j, std::vector<ImVec4> &out) {
         out.push_back(ImVec4((float)j[n].num(), (float)j[n + 1].num(), (float)j[n + 2].num(), (float)j[n + 3].num()));
 }
 
+// A game with no frames by now will not send them: Vulkan, or an Ikemen GO without the patch. A long
+// time on purpose: one that was only slow hides again when they come.
+bool FramesGivenUp() { return !g_frameLink.IsOpen() && ImGui::GetTime() - g_launchTime > 20; }
+
 // The game's own window: hidden while its frames are shown in Game (unless the settings say
-// otherwise). Hidden, not minimized: a minimized window stops drawing.
+// otherwise), from the start (Launch). Hidden, not minimized: a minimized window stops drawing.
 void UpdateGameWindow() {
     static double lastCheck;
     if (ImGui::GetTime() - lastCheck < 0.5) return;
@@ -43,7 +47,7 @@ void UpdateGameWindow() {
         },
         (LPARAM)&find);
     if (!find.hwnd) return;
-    bool show = g_settings.gameWindow || !g_frameLink.IsOpen();
+    bool show = g_settings.gameWindow || FramesGivenUp();
     if (show != (IsWindowVisible(find.hwnd) != 0)) ShowWindow(find.hwnd, show ? SW_SHOWNOACTIVATE : SW_HIDE);
 }
 
@@ -524,8 +528,8 @@ void GameWindow() {
         if (!g_bridge.Running()) {
             EmptyNote("The game shows here, and everything on it can be clicked.");
             if (ImGui::Button(ICON_PLAY " Launch (F5)")) Launch();
-        } else ImGui::TextDisabled(!g_frameLink.IsOpen() ? "Waiting for the game's frames (they need the patched Ikemen GO)."
-                                                       : "Waiting for the first frame...");
+        } else ImGui::TextDisabled(FramesGivenUp() ? "No frames from the game: it is in its own window (they need OpenGL and the patched Ikemen GO)."
+                                                   : "Starting the game...");
         ImGui::End();
         return;
     }

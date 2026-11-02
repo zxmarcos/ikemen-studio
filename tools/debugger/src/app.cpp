@@ -18,6 +18,7 @@ Bridge g_bridge;
 Settings g_settings;
 std::string g_iniPath;
 bool g_firstRun, g_autoLaunch, g_stageRun;
+double g_launchTime;
 
 bool g_hello;
 std::string g_modVersion, g_ikemenVersion;
@@ -295,7 +296,8 @@ void Launch(bool menus) {
     g_filesAsked.clear();
     for (auto &b : g_ctrlBreaks) b.hits = 0;
     std::string error;
-    if (!g_bridge.Launch(s.exe, args, error)) {
+    g_launchTime = ImGui::GetTime();
+    if (!g_bridge.Launch(s.exe, args, error, !s.gameWindow)) {
         Log(LogLine::Error, error);
         return;
     }

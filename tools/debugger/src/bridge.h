@@ -19,7 +19,7 @@ public:
     ~Bridge() { Stop(); }
 
     // exe is Ikemen_GO.exe; it runs in its own folder.
-    bool Launch(const std::string &exe, const std::string &args, std::string &error);
+    bool Launch(const std::string &exe, const std::string &args, std::string &error, bool hidden = false);
     // Ends the game if it still runs.
     void Stop();
     bool Running() const;

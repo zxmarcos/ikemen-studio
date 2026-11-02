@@ -146,6 +146,14 @@ a character's session after it has an endless round until Restart. Explorer's "O
 it is" went with this: on that workspace the stage cannot stay out of the match, though `StageInMatch` is
 still asked while a game loads, and when a stage fails to go in.
 
+The game's window no longer flashes for the 4 seconds before its first frame: `Bridge::Launch` starts the
+process with `STARTF_USESHOWWINDOW` and `SW_HIDE`, which Windows applies to the first window it shows, so
+the engine did not have to change (a window never shown draws and reads back as a hidden one does). The
+Settings' "Show the game's own window" starts it as before. With no link to its frames after 20 seconds
+(`FramesGivenUp`: Vulkan, an engine without the patch) its window is shown; a slow one hides again when
+they come. `test_ui.ps1` finds the window by its class now, as a `Process` only gives shown windows, and
+no longer places it: `SWP_SHOWWINDOW` there would have shown it.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.

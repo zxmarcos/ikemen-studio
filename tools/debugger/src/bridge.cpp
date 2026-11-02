@@ -7,7 +7,7 @@ static std::wstring Widen(const std::string &s) {
     return w;
 }
 
-bool Bridge::Launch(const std::string &exe, const std::string &args, std::string &error) {
+bool Bridge::Launch(const std::string &exe, const std::string &args, std::string &error, bool hidden) {
     Stop();
 
     SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
@@ -30,7 +30,9 @@ bool Bridge::Launch(const std::string &exe, const std::string &args, std::string
     std::wstring cmd = L"\"" + wexe + L"\" " + Widen(args);
 
     STARTUPINFOW si = {sizeof(si)};
-    si.dwFlags = STARTF_USESTDHANDLES;
+    // Hidden: Windows applies it to the first window the process shows, so the game never appears
+    si.dwFlags = STARTF_USESTDHANDLES | (hidden ? STARTF_USESHOWWINDOW : 0);
+    si.wShowWindow = SW_HIDE;
     si.hStdInput = inRead;
     si.hStdOutput = outWrite;
     si.hStdError = errWrite;
