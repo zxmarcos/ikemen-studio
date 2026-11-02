@@ -117,7 +117,10 @@ SourceFile *StageSource() {
 
 bool StageInMatch() { return Connected() && !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(ProjectDef(kProjectStage)); }
 
-void StageOpen() { g_stageBg = -1; }
+void StageOpen() {
+    g_stageBg = -1;
+    StageLayersClear();
+}
 
 std::string StageNameOf(const std::string &def) {
     std::string n = def.compare(0, 7, "stages/") == 0 ? def.substr(7) : def;
@@ -465,6 +468,8 @@ static void ShowBg(int index) {
     ShowInSprites(sprites, g >= 0 ? Sff_FindSprite(sprites.doc, g, n) : -1, "stage");
 }
 
+void ShowStageBg(int index) { ShowBg(index); }
+
 static BgEdit g_bgEdit; // an edit of the stage's BGs, as the next frame starts
 
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
@@ -472,15 +477,20 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     static int dragBg = -1;
     static ImVec2 rest;
     // What the game draws is the match's stage: another's def has other BGs under the same numbers
-    if (!StageInMatch()) return false;
+    if (!StageInMatch()) {
+        SendHiddenBgs(nullptr);
+        return false;
+    }
+    SourceFile *sf = StageSource();
+    const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
+    SendHiddenBgs(ini);
+    if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
     // The limits' handles first
     if (LimitsOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, toScreen)) {
         hovered = clicked = false;
         if (g_stagePick) return true;
     }
-    SourceFile *sf = StageSource();
-    const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
-    if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
+    auto locked = [&](const FrameBg &b) { return ini && StageBgLocked(*ini, b.index); };
     auto corners = [&](const FrameBg &b, ImVec2 &lo, ImVec2 &hi) {
         lo = toScreen(b.rect.x, b.rect.y);
         hi = toScreen(b.rect.x + b.rect.z, b.rect.y + b.rect.w);
@@ -493,13 +503,13 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
         for (int i = (int)g_frameBgs.size() - 1; i >= 0 && hover < 0; i--) {
             ImVec2 lo, hi;
             corners(g_frameBgs[i], lo, hi);
-            if (m.x >= lo.x && m.x < hi.x && m.y >= lo.y && m.y < hi.y) hover = i;
+            if (m.x >= lo.x && m.x < hi.x && m.y >= lo.y && m.y < hi.y && !locked(g_frameBgs[i])) hover = i;
         }
         // A tiled BG is sent as one tile: past it, it is still there along the axes it repeats on
         for (int i = (int)g_frameBgs.size() - 1; i >= 0 && hover < 0 && ini; i--) {
             const IniSection *s = g_frameBgs[i].tiled ? BgSection(*ini, g_frameBgs[i].index) : nullptr;
             const IniField *tile = s ? s->Field("tile") : nullptr;
-            if (!tile) continue;
+            if (!tile || locked(g_frameBgs[i])) continue;
             int x = 0, y = 0;
             sscanf(tile->value.c_str(), "%d , %d", &x, &y);
             ImVec2 lo, hi;
@@ -784,6 +794,7 @@ void StageWindow() {
     ModelSection(hasModel);
     ChecksSection(sf, ini);
     ParallaxSection(sf, ini);
+    LayersSection(sf, ini, g_bgEdit);
 
     if (g_stageBg != selBg) {
         selBg = g_stageBg;

@@ -131,6 +131,11 @@ keeps it over the screen from one limit to the other, and the line beside it say
 it should be for the delta it has. The sums follow the engine, and leave out BGCtrls,
 velocity and a sprite's transparent parts, which count as drawn on.
 
+**Layers** lists the BGs in the order they are drawn, each with its picture, its delta
+(drag it: the game follows) and whether it is behind or in front of the fighters. The eye
+hides a layer, the target shows it alone, and the lock has a click on the game go through it
+to what is behind. These three last for the session and change nothing in the def.
+
 **File > Package** makes a zip of the project and says what it holds, what the def
 names that is missing, and what is not saved; Show in folder opens it. **Help** has the
 start page, the first steps, the keyboard shortcuts and the words used here.

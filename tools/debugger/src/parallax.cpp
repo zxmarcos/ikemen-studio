@@ -132,7 +132,7 @@ std::vector<ParallaxBg> Parallax_Bgs(const IniFile &ini, const AirFile &air, con
         const SffSprite &image = sff.sprites[found];
 
         ParallaxBg b;
-        b.index = n, b.line = s.line, b.name = s.name, b.linked = linked != 0;
+        b.index = n, b.line = s.line, b.name = s.name, b.linked = linked != 0, b.sprite = found;
         float scale[2] = {1, 1}, width[2] = {0, 0};
         Numbers(s, "scalestart", scale, 2);
         b.delta[0] = delta[0], b.delta[1] = delta[1];

@@ -25,6 +25,7 @@ struct ParallaxView {
 struct ParallaxBg {
     int index = -1, line = 0;
     std::string name;
+    int sprite = -1;                       // in the SFF
     float left = 0, top = 0, w = 0, h = 0; // with the camera at 0; w is the top's width
     float delta[2] = {1, 1};
     float zoomDelta[2] = {-1, -1}; // -1: the delta does it

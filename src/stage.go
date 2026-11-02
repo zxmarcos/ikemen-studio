@@ -2217,6 +2217,9 @@ func (s *Stage) draw(layer int32, x, y, scl float32) {
 	for _, b := range s.bg {
 		// Draw only when visible and enabled.
 		if b.layerno == layer && b.visible && b.enabled && (b.anim.spr != nil || b._type == BG_Video) {
+			if editorBgHidden(s, b) {
+				continue
+			}
 			editorStageBgDraw(s, b)
 			b.draw(pos, scl, bgscl, s.localscl, s.scale, shake[1], true, overdrawClip)
 		}

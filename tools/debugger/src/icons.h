@@ -44,6 +44,10 @@
 #define ICON_PLAYERS "\xef\x83\x80" // users
 #define ICON_BREAKPOINT "\xef\x86\x92" // circle-dot
 #define ICON_WATCH "\xef\x81\xae" // eye
+#define ICON_EYE_OFF "\xef\x81\xb0" // eye-slash
+#define ICON_LOCK "\xef\x80\xa3" // lock
+#define ICON_SOLO "\xef\x85\x80" // bullseye
+#define ICON_LAYERS "\xef\x97\xbd" // layer-group
 #define ICON_INSPECTOR "\xef\x87\x9e" // sliders
 #define ICON_TRACE "\xef\x93\x97" // route
 #define ICON_TABLE "\xef\x83\x8e" // table

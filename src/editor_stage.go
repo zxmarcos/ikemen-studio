@@ -32,6 +32,7 @@ type EditorStage struct {
 	ran    []int // the BGCtrls that ran on the stage's last step
 	ranAt  int32 // its stage time
 	ranFor *Stage
+	hidden map[int]bool // the BGs the editor hides, by index
 	// The last stage model read, kept for the editor's reloads (a big glTF takes a while)
 	reloading bool
 	model     *Model
@@ -173,6 +174,20 @@ func editorDrawCamera() (x, y, scale float32) {
 		return sys.cam.Pos[0], sys.cam.Pos[1], sys.cam.Scale
 	}
 	return edCam.drawX, edCam.drawY, edCam.drawScl * sys.cam.BaseScale()
+}
+
+// editorBgHidden runs in Stage.draw: a BG the editor hides, apart from visible, which the def and
+// the BGCtrls set, so that nothing of it stays in the stage.
+func editorBgHidden(s *Stage, b *backGround) bool {
+	if len(edStage.hidden) == 0 {
+		return false
+	}
+	for i, bg := range s.bg {
+		if bg == b {
+			return edStage.hidden[i]
+		}
+	}
+	return false
 }
 
 // editorStageBgDraw runs before Stage.draw draws a BG.
@@ -520,6 +535,21 @@ func editorStageFunctions(l *lua.LState) {
 			bgFrom = editorBgList(strArg(l, 3))
 		}
 		return result(l, editorReloadStage(textFile, !nilArg(l, 2) && boolArg(l, 2), bgFrom))
+	})
+	luaRegister(l, "debugStageBgHide", func(l *lua.LState) int {
+		/*Say which BGs of the stage the editor does not want drawn; the stage itself does not change.
+		@function debugStageBgHide
+		@tparam string list "0,3": their indices, "" none.*/
+		if !debuggerAttached() {
+			return 0
+		}
+		edStage.hidden = make(map[int]bool)
+		if list := strArg(l, 1); list != "" {
+			for _, i := range editorBgList(list) {
+				edStage.hidden[i] = true
+			}
+		}
+		return 0
 	})
 	luaRegister(l, "debugBgFrom", func(l *lua.LState) int {
 		/*Say, before debugReloadMotif or debugReloadStoryboard, which BG each new one of a BGDef was.

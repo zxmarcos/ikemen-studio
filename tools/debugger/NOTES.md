@@ -167,6 +167,13 @@ def's bounds; `lim` now sends that, the lowest scale, the aspect correction and 
 `Parallax_ViewOf` works from the def alone. `Parallax_Check` reports a stop only when it is emptier than
 the camera's start, since a stage that never filled the screen (4:3 with `bgclearcolor`) is not a hole.
 
+Layers (same file): hiding goes through `debugStageBgHide` and a check of its own in `Stage.draw`, not
+`visible`, which the def and BGCtrls set and `editorKeepStage` carries over. A BG goes by its section's
+name and place among those of the name (`LayerKeys`), so the list sent to the game is worked out each
+frame and only sent when it changes, or when the game is another: moving or adding a BG needs nothing
+more. The delta dragged reaches the stage through `g_bgEdit`, as the next frame starts, since `ini` is in
+use until then; each step of a drag is a step of undo. Hidden layers still count in `Parallax_Empty`.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.

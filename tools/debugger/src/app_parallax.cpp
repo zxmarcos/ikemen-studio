@@ -1,10 +1,12 @@
 // The Stage window's parallax tools, on src/parallax.cpp: the free camera taken along its limits, by
-// hand or by itself, what shows nothing there marked on the game, and a BG's delta worked out.
+// hand or by itself, what shows nothing there marked on the game, a BG's delta worked out; and the
+// layers listed, each with what it shows and its delta, to hide, show alone or lock on the game.
 #include "app_internal.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <set>
 
 #include "air.h"
 #include "ini.h"
@@ -208,8 +210,9 @@ void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini,
     if (!g_showEmpty || !g_freeCam || !v.ok || v.lim[0] <= 0) return;
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     if (!spr || !spr->doc.error.empty()) return;
-    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, &spr->doc, spr->version);
     ParallaxView view = StageParallaxView(ini);
+    // What is hidden here stays in the stage: it still covers what is behind it
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, &spr->doc, spr->version);
     const int cols = 96, rows = 54;
     std::vector<char> grid = Parallax_Empty(bgs, view, FreeStop(), cols, rows);
     float l = v.lim[0], w = view.width / cols, h = view.height / rows;
@@ -222,6 +225,147 @@ void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini,
             draw->AddRectFilled(corner(x, y), corner(end + 1, y + 1), IM_COL32(230, 40, 40, 110));
             x = end;
         }
+}
+
+// ---------------------------------------------------------------------------
+// The layers: hidden, alone and locked are this session's, not the def's. A BG goes by its section's
+// name and place among those of the name, so that moving or adding BGs does not move them.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::set<std::string> g_hiddenBgs, g_lockedBgs;
+std::string g_aloneBg;
+
+std::vector<std::string> LayerKeys(const IniFile &ini) {
+    std::vector<std::string> keys;
+    std::map<std::string, int> seen;
+    for (int section : ini.StageBgs()) {
+        const std::string &name = ini.sections[section].lower;
+        keys.push_back(name + "#" + std::to_string(seen[name]++));
+    }
+    return keys;
+}
+
+// A small on or off button: lit when on
+bool LayerToggle(const char *icon, bool on, const char *tip) {
+    if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    bool clicked = IconButton(icon);
+    if (on) ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("%s", tip);
+    return clicked;
+}
+
+} // namespace
+
+void StageLayersClear() {
+    g_hiddenBgs.clear(), g_lockedBgs.clear(), g_aloneBg.clear();
+}
+
+bool StageBgLocked(const IniFile &ini, int index) {
+    std::vector<std::string> keys = LayerKeys(ini);
+    return index >= 0 && index < (int)keys.size() && g_lockedBgs.count(keys[index]);
+}
+
+void SendHiddenBgs(const IniFile *ini) {
+    std::string list;
+    if (ini) {
+        std::vector<std::string> keys = LayerKeys(*ini);
+        for (int n = 0; n < (int)keys.size(); n++)
+            if (g_aloneBg.empty() ? g_hiddenBgs.count(keys[n]) != 0 : keys[n] != g_aloneBg) list += (list.empty() ? "" : ",") + std::to_string(n);
+    }
+    static std::string sent;
+    static unsigned long game;
+    if (!Connected() || (game == g_bridge.Pid() && sent == list)) return;
+    game = g_bridge.Pid(), sent = list;
+    SendRaw("debugStageBgHide('" + list + "')");
+}
+
+void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
+    std::vector<int> sections = ini.StageBgs();
+    char header[64];
+    snprintf(header, sizeof(header), ICON_LAYERS " Layers (%zu)###layers", sections.size());
+    if (!ImGui::CollapsingHeader(header)) return;
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
+    const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0);
+    std::vector<std::string> keys = LayerKeys(ini);
+    float em = ImGui::GetFontSize(), row = ImGui::GetFrameHeightWithSpacing();
+    float height = row * std::min<float>((float)sections.size() + 1, 8);
+    if (!ImGui::BeginTable("layers", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit, ImVec2(0, height))) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("##hide");
+    ImGui::TableSetupColumn("##alone");
+    ImGui::TableSetupColumn("##lock");
+    ImGui::TableSetupColumn("##picture");
+    ImGui::TableSetupColumn("Layer", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Delta");
+    ImGui::TableSetupColumn("##where");
+    ImGui::TableHeadersRow();
+    for (int n = 0; n < (int)sections.size(); n++) {
+        const IniSection &s = ini.sections[sections[n]];
+        const ParallaxBg *b = nullptr;
+        for (const ParallaxBg &one : bgs)
+            if (one.index == n) b = &one;
+        ImGui::PushID(n);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        bool hidden = g_hiddenBgs.count(keys[n]) != 0, alone = g_aloneBg == keys[n], locked = g_lockedBgs.count(keys[n]) != 0;
+        if (LayerToggle(hidden ? ICON_EYE_OFF : ICON_WATCH, hidden, "Hides this layer on the game, for now: the def does not change.")) {
+            if (hidden) g_hiddenBgs.erase(keys[n]);
+            else g_hiddenBgs.insert(keys[n]);
+        }
+        ImGui::TableNextColumn();
+        if (LayerToggle(ICON_SOLO, alone, "Shows only this layer on the game, for now")) g_aloneBg = alone ? "" : keys[n];
+        ImGui::TableNextColumn();
+        if (LayerToggle(ICON_LOCK, locked, "A click on the game no longer picks or drags this layer")) {
+            if (locked) g_lockedBgs.erase(keys[n]);
+            else g_lockedBgs.insert(keys[n]);
+        }
+        ImGui::TableNextColumn();
+        if (b && b->sprite >= 0 && spr) {
+            const SffSprite &image = spr->doc.sprites[b->sprite];
+            float fit = std::min(em * 2 / std::max(image.w, 1), ImGui::GetFrameHeight() / std::max(image.h, 1));
+            ImGui::Image(TexRef(SpriteTexture(const_cast<SpriteFile &>(*spr), b->sprite)), ImVec2(image.w * fit, image.h * fit));
+        }
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        if (ImGui::Selectable(s.name.c_str(), g_stageBg == n)) {
+            g_stageBg = n;
+            ShowStageBg(n);
+        }
+        ImGui::SetItemTooltip("[%s]\nLayers are drawn in this order: the last one is in front.", s.name.c_str());
+        ImGui::TableNextColumn();
+        if (b && !b->linked) {
+            float delta = b->delta[0] / b->units, deltaY = b->delta[1] / b->units;
+            ImGui::SetNextItemWidth(em * 3);
+            if (ImGui::DragFloat("##delta", &delta, 0.005f, 0, 10, "%.3g")) {
+                edit = [n, delta, deltaY](SourceFile &file) {
+                    float both[2] = {delta, deltaY};
+                    std::vector<int> now = StageIni(file).StageBgs();
+                    if (n < (int)now.size() && Ini_SetField(file.text, StageIni(file).sections[now[n]], "delta", Ini_Floats(both, 2))) StageEdited(file);
+                    return n;
+                };
+            }
+            ImGui::SetItemTooltip("How much of the camera's movement it follows: 1 with the fighters, 0 not at all. Drag it; the game follows.");
+        } else if (b) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("linked");
+            ImGui::SetItemTooltip("positionlink: it has the delta of the layer it follows");
+        }
+        ImGui::TableNextColumn();
+        float layerNo = 0;
+        s.Floats("layerno", &layerNo, 1);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", layerNo != 0 ? "front" : "back");
+        ImGui::SetItemTooltip(layerNo != 0 ? "layerno 1: in front of the fighters" : "layerno 0: behind the fighters");
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
+    if (!g_hiddenBgs.empty() || !g_aloneBg.empty()) {
+        if (ImGui::Button(ICON_WATCH " Show all")) g_hiddenBgs.clear(), g_aloneBg.clear();
+        ImGui::SetItemTooltip("Back to every layer on the game");
+    }
 }
 
 } // namespace app

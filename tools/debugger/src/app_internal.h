@@ -751,6 +751,11 @@ const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniF
 void ParallaxSection(const SourceFile &sf, const IniFile &ini);
 void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index);
 void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
+void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit);
+void StageLayersClear();                         // another stage: nothing hidden, alone or locked
+bool StageBgLocked(const IniFile &ini, int index);
+void SendHiddenBgs(const IniFile *ini);          // what the game does not draw; nullptr: it draws everything
+void ShowStageBg(int index);                     // Animation and Sprites show what that BG shows
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
 void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);
