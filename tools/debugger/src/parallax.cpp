@@ -231,6 +231,24 @@ float Parallax_FitDelta(const ParallaxBg &b, const ParallaxView &v) {
 
 float Parallax_WidthFor(const ParallaxView &v, float delta) { return v.width + std::max(0.0f, v.right - v.left) * std::max(0.0f, delta); }
 
+ParallaxShape Parallax_Shape(const ParallaxBg &b, const ParallaxView &v, const ParallaxStop &at) {
+    float zx = Zoomed(at.scale, b.zoomDelta[0], b.delta[0]), zy = Zoomed(at.scale, b.zoomDelta[1], b.delta[1]);
+    ParallaxShape s;
+    s.top = zy * (b.top - at.y * b.delta[1]) + v.zoffset * (1 - zy) - v.lift;
+    s.bottom = s.top + b.h * zy;
+    float left = (b.left - at.x * b.delta[0]) * zx, width = b.w * zx;
+    s.topLeft = left, s.topRight = left + width;
+    s.bottomLeft = left * b.widen, s.bottomRight = (left + width) * b.widen;
+    return s;
+}
+
+float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v) {
+    if (b.h <= 0) return -1;
+    float t = (v.zoffset - b.top) / b.h;
+    if (t < 0 || t > 1) return -1;
+    return 1 / (1 + (b.widen - 1) * t);
+}
+
 std::vector<StageFinding> Parallax_Check(const IniFile &ini, const std::vector<ParallaxBg> &bgs, const ParallaxView &v) {
     std::vector<StageFinding> out;
     const int cols = 64, rows = 36;

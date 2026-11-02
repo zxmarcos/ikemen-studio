@@ -174,6 +174,15 @@ frame and only sent when it changes, or when the game is another: moving or addi
 more. The delta dragged reaches the stage through `g_bgEdit`, as the next frame starts, since `ini` is in
 use until then; each step of a drag is a step of undo. Hidden layers still count in `Parallax_Empty`.
 
+Floors: a row of a `width` parallax is at `left * rowWidth / topWidth`, so the bottom's corners are the
+top's multiplied by the widening; the grid laid on the engine's trapezoid agrees at the camera's start
+and at its limits, slanted edge included. `Parallax_FloorDelta` is `1 / (1 + (widen - 1) * t)`, t being
+how far down the floor the ground is, zoffset in the def's y: above, it is -1, and there is no button. The
+corners take the mouse before the limits and the BGs. `xscale` floors (no `width`) are drawn with a shear
+that is not modelled: their bottom row is taken for their top's, and giving one handles writes `width`,
+which the engine then reads instead. Checked on the release's stages (`parallax-test` prints what it
+says of them): no holes, and one note, kfm's ceiling, 2 units short.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.

@@ -3,6 +3,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #include "air.h"
@@ -166,6 +168,26 @@ static void TestFit() {
     CHECK(Parallax_FitDelta(s.bgs[0], s.view) < 0);
 }
 
+static void TestFloor() {
+    Parsed p(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 180\nwidth = 200, 600\ndelta = .5\n");
+    const ParallaxBg &b = p.bgs[0];
+    ParallaxStop rest{"", 0, 0, 1}, along{"", 100, 0, 1};
+    ParallaxShape s = Parallax_Shape(b, p.view, rest);
+    NEAR(s.top, 180);
+    NEAR(s.bottom, 220);
+    NEAR(s.topLeft, -100);
+    NEAR(s.topRight, 100);
+    NEAR(s.bottomLeft, -300);
+    NEAR(s.bottomRight, 300);
+    s = Parallax_Shape(b, p.view, along);
+    NEAR(s.topLeft, -150); // half the camera's 100
+    NEAR(s.bottomLeft, -450);
+    // The ground, at 200, is half way down: the row there is twice the top's, so half the delta
+    NEAR(Parallax_FloorDelta(b, p.view), 0.5f);
+    Parsed q(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 300\nwidth = 200, 600\n");
+    CHECK(Parallax_FloorDelta(q.bgs[0], q.view) < 0); // the ground is above it
+}
+
 static void TestStops() {
     Parsed p(std::string(kCamera) + "boundhigh = -40\nzoomout = 0.5\n");
     std::vector<ParallaxStop> stops = Parallax_Stops(p.view);
@@ -211,11 +233,36 @@ static void TestCheck() {
     CHECK(Has(found, StageFinding::Warning, "up high, the top 40 units"));
 }
 
+// The release's stages (run from the game's folder): what is said of them, to read
+static void TestRelease() {
+    for (const char *name : {"stage0", "stage0-720", "stage1", "stageZ", "kfm", "stage3d", "interactivestage"}) {
+        std::string def = std::string("stages/") + name + ".def";
+        std::ifstream in(def, std::ios::binary);
+        if (!in) continue;
+        std::stringstream text;
+        text << in.rdbuf();
+        IniFile ini;
+        Ini_Parse(text.str(), ini);
+        std::string spr = Ini_SpritesFile(text.str());
+        SffDoc sff;
+        if (!Sff_Load(sff, "stages/" + spr) && !Sff_Load(sff, spr)) continue;
+        AirFile air;
+        Air_Parse(text.str(), air);
+        ParallaxView view = Parallax_ViewOf(ini);
+        std::vector<ParallaxBg> bgs = Parallax_Bgs(ini, air, sff);
+        std::vector<StageFinding> found = Parallax_Check(ini, bgs, view);
+        printf("%s: %zu BGs measured, camera %.0f to %.0f\n", def.c_str(), bgs.size(), view.left, view.right);
+        for (const StageFinding &f : found) printf("  %d: %s\n", f.line, f.text.c_str());
+    }
+}
+
 int main() {
+    TestRelease();
     TestView();
     TestBgs();
     TestCovers();
     TestFit();
+    TestFloor();
     TestStops();
     TestCheck();
     if (g_failed) {

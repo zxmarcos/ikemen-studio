@@ -172,14 +172,143 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
     ImGui::EndDisabled();
 }
 
-void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index) {
+namespace {
+
+bool g_floorHandles; // the selected floor's corners on the Game window
+
+const ParallaxBg *BgOf(const SourceFile &sf, const IniFile &ini, int index) {
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
-    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0);
-    const ParallaxBg *b = nullptr;
-    for (const ParallaxBg &one : bgs)
-        if (one.index == index) b = &one;
+    for (const ParallaxBg &one : StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0))
+        if (one.index == index) return &one;
+    return nullptr;
+}
+
+// The camera the frame was drawn with
+ParallaxStop ShownStop() {
+    const StageView &v = g_stageView;
+    float l = v.lim[0] > 0 ? v.lim[0] : 1;
+    if (g_freeCam) return FreeStop();
+    return {"", v.cam[0] / l, v.cam[2] > 0 ? v.cam[1] / v.cam[2] / l : 0, v.cam[2] > 0 ? v.cam[2] : 1};
+}
+
+// Making a BG a floor, or what a floor can do. True when the text changed.
+bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const ParallaxView &view) {
+    const IniField *type = s.Field("type");
+    bool floor = type && !type->value.empty() && tolower((unsigned char)type->value[0]) == 'p';
+    bool edited = false;
+    if (!floor) {
+        if (ImGui::Button(ICON_STAGE " Make it a floor")) {
+            int top = (int)std::lround(b.w / b.units);
+            // The engine centres a floor on its start: this keeps it where it is
+            float own[2] = {0, 0};
+            s.Floats("start", own, 2);
+            float start[2] = {(b.left + b.w / 2) / b.units, own[1]};
+            std::string text = sf.text; // all of it, or nothing
+            auto set = [&](const char *key, const std::string &value) {
+                IniFile parsed;
+                Ini_Parse(text, parsed); // a field added moves what follows
+                for (const IniSection &now : parsed.sections)
+                    if (now.line == s.line) return Ini_SetField(text, now, key, value);
+                return false;
+            };
+            if (set("type", "parallax") && set("start", Ini_Floats(start, 2)) &&
+                set("width", std::to_string(top) + ", " + std::to_string(top * 2))) {
+                sf.text = text;
+                g_floorHandles = edited = true;
+                StageEdited(sf);
+            }
+        }
+        ImGui::SetItemTooltip("type = parallax, its bottom wider than its top: it scrolls and widens more the nearer it is.");
+        return edited;
+    }
+    ImGui::Checkbox("Floor handles", &g_floorHandles);
+    ImGui::SetItemTooltip("On the Game window: this floor's corners and a grid. Drag a corner to change the width of its top or\n"
+                          "its bottom; the lines should run as the picture's own lines do.");
+    float fit = Parallax_FloorDelta(b, view);
+    if (fit < 0) return false;
+    float value = std::round(fit / b.units * 1000) / 1000;
+    if (std::fabs(value - b.delta[0] / b.units) < 0.0005f) return false;
+    SameLineFits(ImGui::CalcTextSize("With the fighters").x + ImGui::GetStyle().FramePadding.x * 2);
+    if (ImGui::Button("With the fighters")) {
+        float both[2] = {value, b.delta[1] / b.units};
+        edited = Ini_SetField(sf.text, s, "delta", Ini_Floats(both, 2));
+        if (edited) StageEdited(sf);
+    }
+    ImGui::SetItemTooltip("Delta %.3g: the row of the floor at the fighters' feet scrolls as they do, so they do not slide on it.", value);
+    return edited;
+}
+
+} // namespace
+
+bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen) {
+    const StageView &v = g_stageView;
+    static int drag = -1; // 0 the top, 1 the bottom
+    static float rest;
+    const ParallaxBg *b = g_floorHandles && v.ok && v.lim[0] > 0 ? BgOf(sf, ini, g_stageBg) : nullptr;
+    const IniSection *s = nullptr;
+    std::vector<int> sections = ini.StageBgs();
+    if (b && g_stageBg < (int)sections.size()) s = &ini.sections[sections[g_stageBg]];
+    const IniField *type = s ? s->Field("type") : nullptr;
+    if (!type || type->value.empty() || tolower((unsigned char)type->value[0]) != 'p') {
+        drag = -1;
+        return false;
+    }
     ParallaxView view = StageParallaxView(ini);
+    ParallaxShape shape = Parallax_Shape(*b, view, ShownStop());
+    float l = v.lim[0];
+    auto point = [&](float x, float y) { return toScreen((x * l + v.cam[4] / 2) * v.cam[5], y * l * v.cam[6]); };
+    ImVec2 tl = point(shape.topLeft, shape.top), tr = point(shape.topRight, shape.top);
+    ImVec2 bl = point(shape.bottomLeft, shape.bottom), br = point(shape.bottomRight, shape.bottom);
+
+    // The grid
+    ImU32 line = IM_COL32(255, 220, 60, 150), edge = IM_COL32(255, 220, 60, 255);
+    const int kLines = 8;
+    for (int i = 0; i <= kLines; i++) {
+        float t = (float)i / kLines;
+        draw->AddLine(ImVec2(tl.x + (tr.x - tl.x) * t, tl.y), ImVec2(bl.x + (br.x - bl.x) * t, bl.y), i == 0 || i == kLines ? edge : line);
+    }
+    draw->AddLine(tl, tr, edge, 2);
+    draw->AddLine(bl, br, edge, 2);
+
+    // The corners: both of a side move together, about the middle
+    ImVec2 m = ImGui::GetMousePos();
+    float reach = ImGui::GetFontSize() * 0.6f;
+    ImVec2 corners[4] = {tl, tr, bl, br};
+    int over = -1;
+    for (int i = 0; i < 4; i++) {
+        bool hot = (i / 2 == drag) || (drag < 0 && hovered && std::hypot(m.x - corners[i].x, m.y - corners[i].y) < reach);
+        if (hot && drag < 0) over = i;
+        draw->AddCircleFilled(corners[i], reach * 0.5f, hot ? IM_COL32_WHITE : edge);
+    }
+    if (over >= 0) {
+        ImGui::SetTooltip("Drag: the width of its %s", over < 2 ? "top" : "bottom");
+        if (clicked) drag = over / 2, rest = 0;
+    }
+    if (drag >= 0) {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            drag = -1;
+        } else if (ImGui::GetIO().MouseDelta.x != 0) {
+            float perUnit = std::max(0.01f, (tr.x - tl.x) / std::max(1.0f, b->w)); // screen pixels
+            bool rightSide = m.x > (tl.x + tr.x) / 2;
+            rest += (rightSide ? 2 : -2) * ImGui::GetIO().MouseDelta.x / perUnit;
+            int change = (int)std::trunc(rest);
+            if (change) {
+                rest -= change;
+                float units = b->units;
+                int width[2] = {(int)std::lround(b->w / units), (int)std::lround(b->w * b->widen / units)};
+                width[drag] = std::max(1, width[drag] + change);
+                if (Ini_SetField(sf.text, *s, "width", std::to_string(width[0]) + ", " + std::to_string(width[1]))) StageEdited(sf);
+            }
+        }
+    }
+    return drag >= 0 || over >= 0;
+}
+
+void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index) {
+    const ParallaxBg *b = BgOf(sf, ini, index);
+    ParallaxView view = StageParallaxView(ini);
+    if (b && !b->linked && FloorLine(sf, s, *b, view)) return; // what was parsed is old
     if (!b || view.right <= view.left) return;
     ImGui::AlignTextToFramePadding();
     if (b->tile[0] == 1) {

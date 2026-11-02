@@ -136,6 +136,12 @@ velocity and a sprite's transparent parts, which count as drawn on.
 hides a layer, the target shows it alone, and the lock has a click on the game go through it
 to what is behind. These three last for the session and change nothing in the def.
 
+**Make it a floor**, under a selected BG, turns it into `type = parallax`, keeping it where
+it is, and **Floor handles** draw its corners and a grid on the game: drag a corner to set
+the width of its top or bottom, and the grid shows where its lines run. **With the
+fighters** sets the delta at which the row at the fighters' feet scrolls as they do, so
+they do not slide on the floor. It needs the ground to be on that BG.
+
 **File > Package** makes a zip of the project and says what it holds, what the def
 names that is missing, and what is not saved; Show in folder opens it. **Help** has the
 start page, the first steps, the keyboard shortcuts and the words used here.

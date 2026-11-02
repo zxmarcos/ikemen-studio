@@ -751,6 +751,8 @@ const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniF
 void ParallaxSection(const SourceFile &sf, const IniFile &ini);
 void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index);
 void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
+// The selected floor's corners on the Game window. True when it has the mouse.
+bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
 void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit);
 void StageLayersClear();                         // another stage: nothing hidden, alone or locked
 bool StageBgLocked(const IniFile &ini, int index);

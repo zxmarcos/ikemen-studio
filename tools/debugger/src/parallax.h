@@ -60,6 +60,16 @@ float Parallax_FitDelta(const ParallaxBg &b, const ParallaxView &v);
 // How wide a BG centred on the screen has to be for a delta.
 float Parallax_WidthFor(const ParallaxView &v, float delta);
 
+// A BG's corners on the screen, x from its middle and y from its top; a parallax BG's bottom differs.
+struct ParallaxShape {
+    float top, bottom;
+    float topLeft, topRight, bottomLeft, bottomRight;
+};
+ParallaxShape Parallax_Shape(const ParallaxBg &b, const ParallaxView &v, const ParallaxStop &at);
+// The delta at which the row of a floor the fighters stand on scrolls as they do, -1 when the
+// ground is not on it.
+float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v);
+
 // What the camera's limits show and its start does not, and the BGs that fill the screen at the
 // start and end before it at a limit.
 std::vector<StageFinding> Parallax_Check(const IniFile &ini, const std::vector<ParallaxBg> &bgs, const ParallaxView &v);

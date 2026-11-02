@@ -485,6 +485,7 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
     SendHiddenBgs(ini);
     if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
+    if (ini && FloorOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, *sf, *ini, toScreen)) return true;
     // The limits' handles first
     if (LimitsOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, toScreen)) {
         hovered = clicked = false;
