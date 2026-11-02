@@ -192,6 +192,48 @@ ParallaxStop ShownStop() {
     return {"", v.cam[0] / l, v.cam[2] > 0 ? v.cam[1] / v.cam[2] / l : 0, v.cam[2] > 0 ? v.cam[2] : 1};
 }
 
+// Where a BG that repeats meets itself: the end of one copy and the start of the next, side by side
+// and enlarged, to see the join as the game will draw it
+void JoinButton(const SourceFile &sf, const IniFile &ini, const ParallaxBg &b) {
+    int axis = b.tile[0] ? 0 : b.tile[1] ? 1 : -1;
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
+    if (axis < 0 || !spr || b.sprite < 0) return;
+    if (ImGui::Button(ICON_SEARCH " See the join")) ImGui::OpenPopup("join");
+    ImGui::SetItemTooltip("Where this layer meets itself as it repeats.");
+    if (!ImGui::BeginPopup("join")) return;
+    static bool down;
+    if (b.tile[0] && b.tile[1]) {
+        ImGui::Checkbox("Down, not across", &down);
+        axis = down ? 1 : 0;
+    }
+    const SffSprite &image = spr->doc.sprites[b.sprite];
+    GLuint tex = SpriteTexture(const_cast<SpriteFile &>(*spr), b.sprite);
+    // A window of the picture on each side of the join, the same size, at 4 times
+    const float zoom = 4, each = ImGui::GetFontSize() * 10;
+    float span = each / zoom, cross = 2 * each / zoom;
+    float u = std::min(1.0f, span / std::max(image.w, 1)), v = std::min(1.0f, span / std::max(image.h, 1));
+    float crossU = std::min(1.0f, cross / std::max(image.w, 1)), crossV = std::min(1.0f, cross / std::max(image.h, 1));
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImVec2 size;
+    if (axis == 0) {
+        float w = u * image.w * zoom, h = crossV * image.h * zoom;
+        draw->AddImage(TexRef(tex), p, ImVec2(p.x + w, p.y + h), ImVec2(1 - u, 0), ImVec2(1, crossV));
+        draw->AddImage(TexRef(tex), ImVec2(p.x + w, p.y), ImVec2(p.x + 2 * w, p.y + h), ImVec2(0, 0), ImVec2(u, crossV));
+        draw->AddLine(ImVec2(p.x + w, p.y - 4), ImVec2(p.x + w, p.y), IM_COL32(255, 220, 60, 255), 2);
+        size = ImVec2(2 * w, h);
+    } else {
+        float h = v * image.h * zoom, w = crossU * image.w * zoom;
+        draw->AddImage(TexRef(tex), p, ImVec2(p.x + w, p.y + h), ImVec2(0, 1 - v), ImVec2(crossU, 1));
+        draw->AddImage(TexRef(tex), ImVec2(p.x, p.y + h), ImVec2(p.x + w, p.y + 2 * h), ImVec2(0, 0), ImVec2(crossU, v));
+        draw->AddLine(ImVec2(p.x - 4, p.y + h), ImVec2(p.x, p.y + h), IM_COL32(255, 220, 60, 255), 2);
+        size = ImVec2(w, 2 * h);
+    }
+    ImGui::Dummy(size);
+    ImGui::TextDisabled("The mark shows the join, at 4 times.");
+    ImGui::EndPopup();
+}
+
 // Making a BG a floor, or what a floor can do. True when the text changed.
 bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const ParallaxView &view) {
     // A parallax BG without a width is a plain picture: making it a floor gives it one
@@ -309,10 +351,12 @@ void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int
     const ParallaxBg *b = BgOf(sf, ini, index);
     ParallaxView view = StageParallaxView(ini);
     if (b && !b->linked && FloorLine(sf, s, *b, view)) return; // what was parsed is old
+    if (b) JoinButton(sf, ini, *b);
     if (!b || view.right <= view.left) return;
     ImGui::AlignTextToFramePadding();
     if (b->tile[0] == 1) {
-        ImGui::TextDisabled("Repeats across: at any delta it reaches the screen's edges.");
+        ImGui::TextDisabled("Repeats across: reaches the edges");
+        ImGui::SetItemTooltip("At any delta it reaches the screen's edges.");
         return;
     }
     float delta = b->delta[0] / b->units;

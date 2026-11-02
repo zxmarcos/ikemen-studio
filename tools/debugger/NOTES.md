@@ -184,6 +184,12 @@ video's path that is not found is an error in Output and the stage stays as it w
 a video did not show on the game, in the def from the start too; not looked into. A parallax BG without
 `width` is a plain picture, so handles need it (`Make it a floor` gives it one).
 
+Seams (`Parallax_Seam`, tested): a join counts when the picture's opposite edges differ by over 16 of 255
+and by more than 3 times what neighbouring pixels differ by inside it, so that a noisy texture is not
+called out, and by more than twice what an edge differs from the column beside it: the release's walls
+and grids have a line along an edge, which the first version took for a join on nearly every tile. Only
+BGs that repeat with no gap, and only sprites, not the frames of an action.
+
 Scale (`ScaleOverlay`): `leftbound` and `rightbound` are -1000 and 1000 unless a def says otherwise, so
 the silhouettes stand where the screen's edge stops a player with the camera at its limit, 15 units in.
 They are seen with Fit the stage or the sweep. The jump is `jump.neu`'s y squared over twice `yaccel`, from

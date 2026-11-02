@@ -1,6 +1,7 @@
 // Tests of src/parallax.cpp: stages written here, on sprites made up, against the camera.
 #include "parallax.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -188,6 +189,45 @@ static void TestFloor() {
     CHECK(Parallax_FloorDelta(q.bgs[0], q.view) < 0); // the ground is above it
 }
 
+static void TestSeam() {
+    const int w = 40, h = 20;
+    std::vector<unsigned char> img((size_t)w * h * 4);
+    auto paint = [&](auto colour) {
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                unsigned char *p = &img[((size_t)y * w + x) * 4];
+                int v = colour(x, y);
+                p[0] = p[1] = p[2] = (unsigned char)std::min(v, 255), p[3] = v < 0 ? 0 : 255;
+            }
+    };
+    // Flat, and a wave that comes back to where it started: no join
+    paint([](int, int) { return 100; });
+    CHECK(!Parallax_Seam(img.data(), w, h, 0));
+    paint([&](int x, int) { return 128 + (int)(100 * sinf(x * 6.2832f / w)); });
+    CHECK(!Parallax_Seam(img.data(), w, h, 0));
+    // A ramp: dark meets bright where it repeats, across and not down
+    paint([&](int x, int) { return x * 255 / (w - 1); });
+    CHECK(Parallax_Seam(img.data(), w, h, 0));
+    CHECK(!Parallax_Seam(img.data(), w, h, 1));
+    // Down too
+    paint([&](int, int y) { return y * 255 / (h - 1); });
+    CHECK(Parallax_Seam(img.data(), w, h, 1));
+    // Noise changes as much inside as at its edges: it hides a join
+    paint([&](int x, int y) { return (x * 37 + y * 91) % 2 ? 40 : 200; });
+    CHECK(!Parallax_Seam(img.data(), w, h, 0));
+    // A grid: a line along an edge is the picture, as the release's stages have them
+    paint([&](int x, int) { return x == 0 ? 220 : 60; });
+    CHECK(!Parallax_Seam(img.data(), w, h, 0));
+    // A cut-out against nothing at one edge
+    paint([&](int x, int) { return x < 3 ? -1 : 100; });
+    CHECK(Parallax_Seam(img.data(), w, h, 0));
+    // All transparent at both edges
+    paint([&](int x, int) { return x < 3 || x >= w - 3 ? -1 : 100; });
+    CHECK(!Parallax_Seam(img.data(), w, h, 0));
+    // Too small to say
+    CHECK(!Parallax_Seam(img.data(), 2, h, 0));
+}
+
 static void TestStops() {
     Parsed p(std::string(kCamera) + "boundhigh = -40\nzoomout = 0.5\n");
     std::vector<ParallaxStop> stops = Parallax_Stops(p.view);
@@ -253,6 +293,7 @@ static void TestRelease() {
         std::vector<StageFinding> found = Parallax_Check(ini, bgs, view);
         printf("%s: %zu BGs measured, camera %.0f to %.0f\n", def.c_str(), bgs.size(), view.left, view.right);
         for (const StageFinding &f : found) printf("  %d: %s\n", f.line, f.text.c_str());
+        for (const StageFinding &f : Parallax_Seams(bgs, sff)) printf("  %d: %s\n", f.line, f.text.c_str());
     }
 }
 
@@ -263,6 +304,7 @@ int main() {
     TestCovers();
     TestFit();
     TestFloor();
+    TestSeam();
     TestStops();
     TestCheck();
     if (g_failed) {

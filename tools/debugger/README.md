@@ -143,6 +143,10 @@ sprite and action pickers where they apply; what the engine does not read for th
 in the def, dimmed, so going back to the type finds it. `trans`, `scalemode` and `scalefilter`
 are lists too.
 
+A layer that repeats has **See the join**: the end of one copy against the start of the
+next, enlarged. The Checks name a layer whose opposite edges do not match, unless its
+picture changes as much inside as it does there.
+
 **Scale**, beside Limits, stands P1 at the players' bounds and draws a line where its head
 gets in a jump, to judge the stage's proportions and how high the sky has to go.
 

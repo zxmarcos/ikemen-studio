@@ -249,6 +249,56 @@ float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v) {
     return 1 / (1 + (b.widen - 1) * t);
 }
 
+// Two pixels' difference, 0 to 255: a pixel against nothing is the most there is
+static float PixelDiff(const unsigned char *a, const unsigned char *b) {
+    bool seen = a[3] >= 128, other = b[3] >= 128;
+    if (!seen && !other) return 0;
+    if (seen != other) return 255;
+    return (std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2])) / 3.0f;
+}
+
+bool Parallax_Seam(const unsigned char *rgba, int w, int h, int axis) {
+    int across = axis == 0 ? w : h, along = axis == 0 ? h : w;
+    if (across < 4 || along < 1) return false;
+    auto at = [&](int i, int j) { return rgba + ((size_t)(axis == 0 ? j : i) * w + (axis == 0 ? i : j)) * 4; };
+    float edge = 0;
+    for (int j = 0; j < along; j++) edge += PixelDiff(at(across - 1, j), at(0, j));
+    edge /= along;
+    // What the picture itself changes by from one pixel to the next: enough places across it to tell
+    float inside = 0;
+    int measured = 0, step = std::max(1, across / 32);
+    for (int i = 0; i + 1 < across; i += step)
+        for (int j = 0; j < along; j++, measured++) inside += PixelDiff(at(i, j), at(i + 1, j));
+    inside /= std::max(measured, 1);
+    // A line drawn along an edge, as a grid has, stands out from the pixels beside it too: that is the
+    // picture, not a join
+    float first = 0, last = 0;
+    for (int j = 0; j < along; j++) {
+        first += PixelDiff(at(0, j), at(1, j));
+        last += PixelDiff(at(across - 2, j), at(across - 1, j));
+    }
+    float beside = std::max(first, last) / along;
+    return edge > 16 && edge > inside * 3 && edge > beside * 2;
+}
+
+std::vector<StageFinding> Parallax_Seams(const std::vector<ParallaxBg> &bgs, const SffDoc &sff) {
+    std::vector<StageFinding> out;
+    for (const ParallaxBg &b : bgs) {
+        bool across = b.tile[0] != 0 && b.step[0] <= b.w, down = b.tile[1] != 0 && b.step[1] <= b.h;
+        if ((!across && !down) || b.sprite < 0) continue;
+        const SffSprite &s = sff.sprites[b.sprite];
+        std::vector<unsigned char> px, rgba;
+        int bpp = 0;
+        if (!Sff_Decode(s, px, &bpp)) continue;
+        Sff_ToRgba(sff, s, px, bpp, rgba);
+        if (across && Parallax_Seam(rgba.data(), s.w, s.h, 0))
+            out.push_back({StageFinding::Note, b.line, "[" + b.name + "] repeats across and its left and right edges do not match: the join shows"});
+        if (down && Parallax_Seam(rgba.data(), s.w, s.h, 1))
+            out.push_back({StageFinding::Note, b.line, "[" + b.name + "] repeats down and its top and bottom edges do not match: the join shows"});
+    }
+    return out;
+}
+
 std::vector<StageFinding> Parallax_Check(const IniFile &ini, const std::vector<ParallaxBg> &bgs, const ParallaxView &v) {
     std::vector<StageFinding> out;
     const int cols = 64, rows = 36;

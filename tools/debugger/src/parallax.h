@@ -70,6 +70,12 @@ ParallaxShape Parallax_Shape(const ParallaxBg &b, const ParallaxView &v, const P
 // ground is not on it.
 float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v);
 
+// Whether a picture of w by h pixels (RGBA, by rows) shows where it repeats, across (axis 0) or down:
+// its opposite edges differ far more than its neighbouring pixels do.
+bool Parallax_Seam(const unsigned char *rgba, int w, int h, int axis);
+// The BGs that repeat with no gap and show where they do.
+std::vector<StageFinding> Parallax_Seams(const std::vector<ParallaxBg> &bgs, const SffDoc &sff);
+
 // What the camera's limits show and its start does not, and the BGs that fill the screen at the
 // start and end before it at a limit.
 std::vector<StageFinding> Parallax_Check(const IniFile &ini, const std::vector<ParallaxBg> &bgs, const ParallaxView &v);

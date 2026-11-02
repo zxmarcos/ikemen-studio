@@ -615,8 +615,13 @@ const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini,
         sffVersion = spr ? spr->version : 0;
         camera = view;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
-        std::vector<StageFinding> holes = Parallax_Check(ini, StageParallaxBgs(sf, ini, sff, sffVersion), view);
+        const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, sffVersion);
+        std::vector<StageFinding> holes = Parallax_Check(ini, bgs, view);
         found.insert(found.end(), holes.begin(), holes.end());
+        if (sff) {
+            std::vector<StageFinding> seams = Parallax_Seams(bgs, *sff);
+            found.insert(found.end(), seams.begin(), seams.end());
+        }
         std::stable_sort(found.begin(), found.end(), [](const StageFinding &a, const StageFinding &b) { return a.level < b.level; });
         done = true;
         read = sff != nullptr;
