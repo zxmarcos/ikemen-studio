@@ -1156,10 +1156,16 @@ if main and start then
 		end
 		report()
 	end
-	-- Going somewhere: no logo and intro on the way
+	-- Going somewhere: no logo and intro on the way, nor the first run's box, which waits for a key
 	main.f_storyboard = function(path, ...)
 		if ikdbg.goal and not ikdbg.goal.running then return false end
 		return story(path, ...)
+	end
+	local warning = main.f_warning
+	main.f_warning = function(text, ...)
+		-- The title takes the goal first, so by then it may be held, or a match on the way
+		if (ikdbg.goal or ikdbg.held or ikdbg.going) and text == motif.infobox.text.text then return true end
+		return warning(text, ...)
 	end
 	main.f_drawTimer = function(value, params)
 		local v, active = timer(value, params)

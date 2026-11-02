@@ -1,7 +1,8 @@
-param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [switch]$NoLaunch, [string]$Exe = (Resolve-Path "$PSScriptRoot\..\..\..\Ikemen_GO.exe").Path, [string]$P1 = "kfm", [string]$P2 = "kfm", [string]$IniExtra = "", [string]$Shots = "$PSScriptRoot\..\build\shots")
+param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [switch]$NoLaunch, [string]$Exe = (Resolve-Path "$PSScriptRoot\..\..\..\Ikemen_GO.exe").Path, [string]$P1 = "kfm", [string]$P2 = "kfm", [string]$IniExtra = "", [string]$Shots = "$PSScriptRoot\..\build\shots", [string]$Folder = "")
 # UI test: starts build\ikemen-debugger.exe --launch, lays out both windows, runs actions and saves
 # the debugger's frames as PNGs in $Shots. -Fresh writes a new ini (AI on both sides). -NoLaunch
-# starts it as a person would: the start page, no game.
+# starts it as a person would: the start page, no game. -Folder: the debugger of another folder, a
+# package laid out to try it as it ships.
 # Clicks are WM_APP+0x4D47 messages (wParam 0 move, 1/2 left down/up; lParam x|y<<16) and frames
 # are saved by the app itself on WM_APP+0x4D48, so the real mouse and screen are never used.
 # Coordinates are client pixels of the debugger window (sized to 1600x1000).
@@ -35,7 +36,7 @@ public class W {
 }
 "@
 [W]::SetProcessDPIAware() | Out-Null
-$dir = (Resolve-Path "$PSScriptRoot\..\build").Path
+$dir = if ($Folder) { (Resolve-Path $Folder).Path } else { (Resolve-Path "$PSScriptRoot\..\build").Path }
 $shots = $Shots
 New-Item -ItemType Directory -Force $shots | Out-Null
 if ($Fresh) { "[IkemenDebugger][Settings]`nExe=$Exe`nP1=$P1`nP2=$P2`nStage=stage0`nExtra=-windowed -nosound`nAI1=1`nAI2=1`n$IniExtra" | Set-Content "$dir\ikemen-debugger.ini" -Encoding ascii }
