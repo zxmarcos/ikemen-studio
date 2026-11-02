@@ -74,6 +74,7 @@ bool SaveSource(SourceFile &sf) {
     }
     sf.disk = sf.text;
     sf.mtime = FileTime(GamePath(sf.path));
+    Log(LogLine::Info, "Saved " + sf.path);
     return true;
 }
 

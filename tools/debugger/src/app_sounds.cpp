@@ -75,7 +75,7 @@ void SaveSounds(SoundFile &sf) {
         return;
     }
     sf.dirty = false;
-    Log(LogLine::Info, "Saved " + path);
+    Log(LogLine::Info, "Saved " + sf.path);
     ScreenSoundsSaved(sf.path);
     for (const auto &kv : g_charFiles) {
         auto f = kv.second.find("sound");

@@ -79,6 +79,12 @@ all waits up to 3 s for the row to go. `SaveSource` keeps a `.bak` as the others
 save text must remove it too. In `test_ui.ps1`, `ps:$dbg.CloseMainWindow()` closes as a person does;
 most number fields are dragged (`drag:`), not typed into.
 
+`Log` also feeds the status bar (`g_note`): every Info, Result and Error but what was typed in the
+Console and its answer; errors go to Problems too (`ToolError`). A new message needs no other call.
+`WorkPn` and `GetAnimTarget` ignore the selected player while the Game window picks stages or screens:
+that selection is automatic, nobody chose it, and it left a fighter in half of those workspaces with
+Save writing to the character's file.
+
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
 makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;

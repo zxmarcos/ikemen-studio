@@ -76,7 +76,14 @@ every kind (text, sprites, palettes, sounds, fonts, 3D models; a click lists the
 and saves them all), the workspace. **Closing the window** with files not saved
 asks first: Save all, Don't save or Cancel. **File > Save and apply** saves them
 all too. Text files keep a `.bak` of what they were before their first save, as
-the others do.
+the others do. Between the two sides of the bar, how the last thing done went, for
+a few seconds: what was saved or applied, in red for a while longer what failed,
+which also stays in Problems; a click shows the whole log in Console.
+
+On the Stage and Screenpack workspaces, Animation and Assets show what the workspace
+is about, not the player that happens to be selected: the stage's or the screen's
+sprites, and a background's or an element's animation once one is picked. A
+character picked in Explorer still takes them, and so does Fighters on the Game window.
 
 The editor works without the game too: **Explorer** lists the game's
 characters (`chars/`), stages (`stages/`), the screenpack (the motif

@@ -466,6 +466,19 @@ void StatusBar() {
         float total = 0;
         for (const Item &it : right) total += ImGui::CalcTextSize(it.text.c_str()).x + em * 1.5f;
         float at = ImGui::GetWindowWidth() - total - ImGui::GetStyle().WindowPadding.x;
+        // How the last thing done went, for a while, in the room between them; a click: all of them
+        if (ImGui::GetTime() - g_noteAt < (g_noteError ? 15 : 6)) {
+            ImGui::SameLine(0, em * 2);
+            float room = at - ImGui::GetCursorPosX() - em;
+            if (room > em * 6) {
+                ImGui::PushStyleColor(ImGuiCol_Text, g_noteError ? Ink(kRed) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                if (ImGui::Selectable((g_note + "##note").c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups,
+                                      ImVec2(std::min(room, ImGui::CalcTextSize(g_note.c_str()).x), 0)))
+                    ShowWindow("Console");
+                ImGui::PopStyleColor();
+                ImGui::SetItemTooltip("%s", g_note.c_str());
+            }
+        }
         if (at > ImGui::GetCursorPosX() + em) ImGui::SameLine(at);
         else ImGui::SameLine(0, em * 2);
         for (const Item &it : right) {

@@ -65,6 +65,15 @@ void EngineLine(const std::string &line) {
     if (g_engine.size() > 500) g_engine.erase(g_engine.begin());
 }
 
+void ToolError(const std::string &text) {
+    for (Problem &p : g_engine)
+        if (p.text == text) {
+            p.count++;
+            return;
+        }
+    g_engine.push_back({0, "Debugger", "", 0, text});
+}
+
 void ClearEngineProblems() { g_engine.clear(); }
 
 // Gathered again a few times a second (the Lint's model hashes the character's files to know

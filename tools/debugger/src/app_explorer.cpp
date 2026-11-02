@@ -642,8 +642,10 @@ int WorkPn() {
     if (!g_workDef.empty() && g_selPicked != g_workSelPicked) g_workDef.clear();
     std::string def = g_workDef;
     if (def.empty()) {
-        if (const Entity *e = FindEntity(g_selId)) return e->pn;
-        if (Connected() || g_stagePick || g_screenPick) return 0; // on a stage or a screen: nobody chose one
+        // On a stage or a screen nobody chose one: the player selected by itself is not what is worked on
+        bool stageOrScreen = g_stagePick || g_screenPick;
+        if (const Entity *e = stageOrScreen ? nullptr : FindEntity(g_selId)) return e->pn;
+        if (Connected() || stageOrScreen) return 0;
         def = CharDefOf(g_settings.p1); // the game not running: the character its match starts with
     }
     if (int pn = PlayerOf(def)) return pn;

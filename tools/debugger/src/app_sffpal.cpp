@@ -277,7 +277,7 @@ void PalSave() {
             continue;
         }
         a.dirty = false;
-        Log(LogLine::Info, "Saved " + path);
+        Log(LogLine::Info, "Saved " + a.path);
     }
 }
 

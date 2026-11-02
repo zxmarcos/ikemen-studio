@@ -209,7 +209,7 @@ void SaveSprites(SpriteFile &sf) {
     }
     sf.dirty = false;
     sf.doc.converted = false;
-    Log(LogLine::Info, "Saved " + path);
+    Log(LogLine::Info, "Saved " + sf.path);
     ScreenSpritesSaved(sf.path);
     StageSpritesSaved(sf.path);
     FontSpritesSaved(sf.path);
@@ -916,6 +916,23 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     return false;
 }
 
+// On a stage or a screen with no character chosen: what they are made of
+static SpriteFile *WorkspaceSprites(const char **what) {
+    if (g_screenPick)
+        if (SpriteFile *spf = SelectedScreenSprites(what)) return spf;
+    std::string def;
+    if (g_stagePick) {
+        SourceFile *sf = StageSource();
+        def = sf ? sf->path : SettingsStageDef();
+    } else if (g_screenPick) {
+        def = FightScreenDef();
+    }
+    std::string sff = def.empty() ? "" : SpritesFileOf(def);
+    if (sff.empty()) return nullptr;
+    *what = g_stagePick ? "stage" : "fight screen";
+    return &SpriteFileAt(sff);
+}
+
 void SpritesWindow() {
     if (!BeginTool("Sprites")) return;
     // Whose: the selected player's, the SFF of the screen whose element was picked last, or the
@@ -942,11 +959,10 @@ void SpritesWindow() {
         const Entity *e = FindEntity(g_selId);
         const FrameEntity *fe = FindFrameEntity(g_selId);
         if (e && e->pn == pn && fe && fe->animPn > 0) pn = fe->animPn;
-        spf = pn > 0 ? SpritesOf(pn) : nullptr;
+        spf = pn > 0 ? SpritesOf(pn) : !pn ? WorkspaceSprites(&screen) : nullptr;
         if (!spf) {
-            ImGui::TextDisabled(!pn ? "Pick a player or a character in Explorer, or an element of a screen (Fight "
-                                      "screen, Motif, Storyboard)."
-                                : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+            if (!pn) EmptyNote("Pick a fighter or a character in Explorer, or an element of a stage or a screen.");
+            else ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
             ImGui::End();
             return;
         }

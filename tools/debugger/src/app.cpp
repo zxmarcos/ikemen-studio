@@ -62,6 +62,9 @@ std::map<int, std::map<std::string, std::vector<std::string>>> g_charFiles; // p
 std::map<int, double> g_filesAsked;
 
 FILE *g_logFile; // the log also goes to ikemen-debugger.log next to the exe (read by test scripts)
+std::string g_note; // the last result, on the status bar for a while
+bool g_noteError;
+double g_noteAt = -100;
 
 void Log(LogLine::Kind kind, const std::string &text) {
     if (g_logFile) {
@@ -71,6 +74,14 @@ void Log(LogLine::Kind kind, const std::string &text) {
     g_log.push_back({kind, text});
     while (g_log.size() > kLog) g_log.pop_front();
     if (kind == LogLine::Engine) EngineLine(text);
+    if (kind == LogLine::Error) ToolError(text);
+    // What the user did and how it went: not what was typed in the Console and its answer
+    bool typed = text.compare(0, 2, "> ") == 0 || text.compare(0, 2, "= ") == 0;
+    if (kind == LogLine::Error || ((kind == LogLine::Info || kind == LogLine::Result) && !typed)) {
+        g_note = text;
+        g_noteError = kind == LogLine::Error;
+        g_noteAt = ImGui::GetTime();
+    }
     g_logScroll = true;
 }
 

@@ -240,6 +240,9 @@ extern std::map<int, double> g_filesAsked;
 const size_t kHistory = 1200, kTrace = 4000, kLog = 4000;
 
 void Log(LogLine::Kind kind, const std::string &text);
+extern std::string g_note; // the last result logged, shown for a while on the status bar
+extern bool g_noteError;
+extern double g_noteAt;
 std::string Who(int pn, bool helper, int id);
 const Entity *FindEntity(int id);
 const FrameEntity *FindFrameEntity(int id);
@@ -590,6 +593,7 @@ struct Problem {
     int count = 1;      // the engine's: times logged
 };
 void EngineLine(const std::string &text); // a line of the engine's log: kept when a warning or an error
+void ToolError(const std::string &text);  // an error of the debugger's own, also in Problems
 void ClearEngineProblems();
 void LintProblems(std::vector<Problem> &out);  // app_check.cpp: the character worked on
 void StageProblems(std::vector<Problem> &out); // app_stage.cpp: the match's stage, or the toolbar's

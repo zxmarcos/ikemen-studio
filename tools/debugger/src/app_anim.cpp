@@ -151,10 +151,11 @@ const FrameEntity *FindFrameEntity(int id) {
 
 AnimTarget GetAnimTarget() {
     AnimTarget t;
-    if (WorkPn() == kDiskPn) {
+    int work = WorkPn();
+    if (work == kDiskPn) {
         // A character picked in Explorer, not in the match: its AIR file from disk
         t.pn = kDiskPn;
-    } else {
+    } else if (work || (!g_stagePick && !g_screenPick)) { // on a stage or a screen, only a character chosen
         t.e = FindEntity(g_selId);
         t.fe = FindFrameEntity(g_selId);
         t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : t.e ? t.e->pn : 0;
@@ -1446,8 +1447,11 @@ void AnimationWindow() {
     };
     bool disk = !screen && t.pn == kDiskPn; // a character not in the match, from disk: no game to show it
     if (!screen && !t.e && !disk) {
-        ImGui::TextDisabled("Pick a player in the Game or Players window, a character in Explorer, or an animated\n"
-                            "element of a screen or a stage. A right click in Explorer opens any def's animations.");
+        EmptyNote(g_stagePick    ? "Click an animated background on the game, or pick it in the Stage editor: its animation shows here. "
+                                   "Add layer makes one. A right click in Explorer opens any def's animations."
+                  : g_screenPick ? "Click an animated element on the game, or pick it in the Screenpack panel: its animation shows here. "
+                                   "A right click in Explorer opens any def's animations."
+                                 : "Pick a fighter on the game or a character in Explorer. A right click in Explorer opens any def's animations.");
         ImGui::End();
         return;
     }

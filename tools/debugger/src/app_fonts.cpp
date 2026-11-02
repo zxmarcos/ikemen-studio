@@ -95,7 +95,7 @@ static bool SaveFnt(const std::string &sel, FntEdit &e) {
         return false;
     }
     FntRead(sel, e);
-    Log(LogLine::Info, "Saved " + path);
+    Log(LogLine::Info, "Saved " + sel);
     return true;
 }
 
