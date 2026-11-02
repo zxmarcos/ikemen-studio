@@ -44,6 +44,15 @@ bool Ini_SetField(std::string &text, const IniSection &s, const char *key, const
 // Numbers as a field value: "10, -2.5"
 std::string Ini_Floats(const float *v, int count);
 
+// When a BGCtrl runs, as the engine reads it: time = start, end, looptime; end left out is start, and
+// the looptime left out is its BGCtrlDef's (-1 none). ownLoop: its time gives one.
+struct IniBgTime {
+    int start = 0, end = 0, loop = -1;
+    bool ownLoop = false;
+};
+IniBgTime Ini_BgCtrlTime(const IniFile &ini, int section);
+std::string Ini_BgTimeValue(const IniBgTime &t); // as its time's value, no longer than it needs
+
 // What a field of a stage's or a screen's def names, by its key: an action of the def ("actionno",
 // "p1.ko.anim", a BGCtrl Anim's "value"), a sprite of its SFF ("spriteno", "p1.bg0.spr"), a sound of its
 // SND ("cursor.move.snd"). A file's name in [Files], [BGdef] and [SceneDef] is none of these.

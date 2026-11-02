@@ -52,6 +52,7 @@ ToolWindow g_windows[] = {
     {"Analysis", "", "", true, "Testing"},
     {"Performance", "", "", true, "Testing"},
     {"Animation", "Making", "Code|Inspector|Stage editor"},
+    {"Scenes", "Making", "Animation|Code|Output"},
     {"Assets", "Making", "Inspector|Stage editor|Screenpack|Animation"},
     {"Sprites", "", "", false, "Assets"},
     {"Sounds", "", "", false, "Assets"},
@@ -89,10 +90,10 @@ Workspace g_spaces[] = {
     {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its animations, sprites, checks and 3D model.",
      "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
     {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, their animations and sprites, the roster and fonts.",
-     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
+     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Scenes,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
 };
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
-const int kLayoutVersion = 7;
+const int kLayoutVersion = 8;
 int g_layoutVersion;
 bool g_advanced;          // the advanced tools are shown
 int g_space;              // the workspace shown
@@ -115,7 +116,7 @@ const char *WindowIcon(const char *name) {
         {"Console", ICON_CONSOLE}, {"Performance", ICON_PERF}, {"Lab", ICON_LAB}, {"Analysis", ICON_ANALYSIS},
         {"Animation", ICON_ANIM}, {"Sprites", ICON_IMAGE}, {"Sounds", ICON_SOUND}, {"Commands", ICON_KEYBOARD},
         {"Stage", ICON_STAGE}, {"Model", ICON_CUBE}, {"Fight screen", ICON_FIGHT}, {"Motif", ICON_PALETTE},
-        {"Storyboard", ICON_CLAPPER}, {"Roster", ICON_ROSTER}, {"Fonts", ICON_FONT}, {"Create", ICON_WAND}};
+        {"Storyboard", ICON_CLAPPER}, {"Scenes", ICON_CLAPPER}, {"Roster", ICON_ROSTER}, {"Fonts", ICON_FONT}, {"Create", ICON_WAND}};
     auto it = icons.find(name);
     return it == icons.end() ? "" : it->second;
 }

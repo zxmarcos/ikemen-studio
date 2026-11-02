@@ -223,7 +223,8 @@ func editorAddRect(r [4]float32, window *[4]int32) {
 //	  index in "fonts", 0 none);
 //	"motif": {"def", "items": [...]}: the same for the motif's animations and texts, and its BGs:
 //	  [bgdef's name, "", x, y, w, h, kx, ky, 1 + the BG's index, action, elem, 0] (kx, ky: per unit of its start);
-//	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go);
+//	"storyboard": {"def", "items": [...]}: the same for the storyboard playing (editor_storyboard.go),
+//	"storyState": its [scene, time in it, paused];
 //	"select": the motif's select.def (editor_select.go);
 //	"fonts": the font files loaded, in the order they were first loaded (editor_font.go).
 func editorScreenGeometry(b []byte) []byte {
@@ -271,6 +272,7 @@ func editorScreenGeometry(b []byte) []byte {
 	block("motif", sys.motif.Def, sys.motif.Sff, editorFileMotif)
 	if sys.storyboard.active {
 		block("storyboard", sys.storyboard.Def, sys.storyboard.Sff, editorFileStoryboard)
+		b = editorStoryboardState(b)
 	}
 	if sys.motif.Def != "" && sys.motif.Files.Select != "" {
 		b = append(b, `,"select":`...)

@@ -174,7 +174,28 @@ static void TestRefs() {
     CHECK(refIn(1, "p1.bg0.anim") == kIniRefAction);
 }
 
+static void TestBgTime() {
+    IniFile f;
+    Ini_Parse("[BGCtrlDef A]\nlooptime = 100\n[BGCtrl a]\ntime = 10\n[BGCtrl b]\ntime = 10, 20\n[BGCtrl c]\ntime = 10, , 50\n"
+              "[BGCtrlDef B]\n[BGCtrl d]\ntime = 1, 2, 3\n[BGCtrl e]\ntype = null\n",
+              f);
+    IniBgTime t = Ini_BgCtrlTime(f, 1);
+    CHECK(t.start == 10 && t.end == 10 && t.loop == 100 && !t.ownLoop);
+    CHECK(Ini_BgTimeValue(t) == "10");
+    t = Ini_BgCtrlTime(f, 2);
+    CHECK(t.start == 10 && t.end == 20 && t.loop == 100 && !t.ownLoop);
+    CHECK(Ini_BgTimeValue(t) == "10, 20");
+    t = Ini_BgCtrlTime(f, 3); // an empty part keeps what it had
+    CHECK(t.start == 10 && t.end == 10 && t.loop == 50 && t.ownLoop);
+    CHECK(Ini_BgTimeValue(t) == "10, 10, 50");
+    t = Ini_BgCtrlTime(f, 5); // the last BGCtrlDef is the one that counts
+    CHECK(t.start == 1 && t.end == 2 && t.loop == 3 && t.ownLoop);
+    t = Ini_BgCtrlTime(f, 6);
+    CHECK(t.start == 0 && t.end == 0 && t.loop == -1);
+}
+
 int main() {
+    TestBgTime();
     TestSpritesFile();
     TestRefs();
     TestParse();

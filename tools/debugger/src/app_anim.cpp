@@ -68,6 +68,30 @@ void EndBlend(const ImDrawList *, const ImDrawCmd *) {
 }
 } // namespace
 
+void DrawStyledSprite(ImDrawList *draw, GLuint tex, const SffSprite &s, const AirStyle &st, float ex, float ey,
+                      const std::function<ImVec2(float, float)> &at) {
+    float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
+    float sx = st.xscale * fx, sy = st.yscale * fy;
+    float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
+    auto corner = [&](float cx, float cy) {
+        float px = cx * sx, py = cy * sy;
+        return at(ex * fx + px * cs + py * sn, ey * fy - px * sn + py * cs);
+    };
+    float x0 = (float)-s.x, y0 = (float)-s.y, x1 = (float)(s.w - s.x), y1 = (float)(s.h - s.y);
+    bool blend = st.blend != kAirOpaque;
+    if (blend) {
+        static AnimBlendFns fns = LoadBlendFns();
+        if (fns.equation && fns.color) draw->AddCallback(SetBlend, (void *)(intptr_t)(st.blend | st.dst << 8));
+        else blend = false;
+    }
+    draw->AddImageQuad(TexRef(tex), corner(x0, y0), corner(x1, y0), corner(x1, y1), corner(x0, y1), ImVec2(0, 0), ImVec2(1, 0),
+                       ImVec2(1, 1), ImVec2(0, 1), blend ? IM_COL32(255, 255, 255, st.src) : IM_COL32_WHITE);
+    if (blend) {
+        draw->AddCallback(EndBlend, nullptr);
+        draw->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, nullptr);
+    }
+}
+
 void OnFiles(const Json &j) {
     for (const auto &p : j["players"].items) {
         int pn = p["pn"].i();
@@ -550,24 +574,9 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     g_animTick = -1;
     if (playing) {
         if (forAct != &act) started = ImGui::GetTime();
-        long tick = (long)((ImGui::GetTime() - started) * 60), at = 0;
-        int loop = act.loopStart >= 0 ? act.loopStart : 0;
-        long total = 0, loopTotal = 0;
-        bool endless = false;
-        for (size_t i = 0; i < act.elems.size(); i++) {
-            if (act.elems[i].time < 0) endless = true;
-            total += std::max(1, act.elems[i].time);
-            if ((int)i >= loop) loopTotal += std::max(1, act.elems[i].time);
-        }
-        if (!endless && tick >= total && loopTotal > 0) tick = total - loopTotal + (tick - total) % loopTotal;
+        long tick = (long)((ImGui::GetTime() - started) * 60);
+        shown = Air_ElemAt(act, tick, &progress);
         g_animTick = (int)tick;
-        for (shown = 0; shown < (int)act.elems.size(); shown++) {
-            const AirElem &e = act.elems[shown];
-            if (e.time < 0 || tick < at + std::max(1, e.time)) break;
-            at += std::max(1, e.time);
-        }
-        shown = std::min(shown, (int)act.elems.size() - 1);
-        if (act.elems[shown].time > 0) progress = (float)(tick - at) / act.elems[shown].time;
     }
     forAct = &act;
     // The box of every element (sprites and boxes, from the axis), to fit them all
@@ -682,27 +691,7 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
                     st.dst += (int)((nx.style.dst - st.dst) * progress);
                 }
             }
-            float fx = st.flipH ? -1.0f : 1.0f, fy = st.flipV ? -1.0f : 1.0f;
-            float sx = st.xscale * fx, sy = st.yscale * fy;
-            float rad = st.angle * 3.14159265f / 180, cs = cosf(rad), sn = sinf(rad);
-            auto corner = [&](float cx, float cy) {
-                float px = cx * sx, py = cy * sy;
-                return at(ex * fx + px * cs + py * sn, ey * fy - px * sn + py * cs);
-            };
-            float x0 = (float)-s.x, y0 = (float)-s.y, x1 = (float)(s.w - s.x), y1 = (float)(s.h - s.y);
-            bool blend = st.blend != kAirOpaque;
-            if (blend) {
-                static AnimBlendFns fns = LoadBlendFns();
-                if (fns.equation && fns.color) draw->AddCallback(SetBlend, (void *)(intptr_t)(st.blend | st.dst << 8));
-                else blend = false;
-            }
-            draw->AddImageQuad(TexRef(tex), corner(x0, y0), corner(x1, y0), corner(x1, y1), corner(x0, y1), ImVec2(0, 0),
-                               ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1),
-                               blend ? IM_COL32(255, 255, 255, st.src) : IM_COL32_WHITE);
-            if (blend) {
-                draw->AddCallback(EndBlend, nullptr);
-                draw->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, nullptr);
-            }
+            DrawStyledSprite(draw, tex, s, st, ex, ey, at);
         }
     } else if (el.group >= 0) {
         char note[64];

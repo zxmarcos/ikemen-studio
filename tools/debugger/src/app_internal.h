@@ -297,6 +297,7 @@ void Launch(bool menus = false); // menus: without -p1 -p2, the game starts in i
 
 // Go to: the game put on a screen and kept there (app_goto.cpp)
 void GoToButton();              // the button and its popup, on the Game window
+void GoToStory(const std::string &def); // the game plays that storyboard, stopped at its start
 void GoToLine();                // on the same line: where it is held, or going
 void GoToFrame();               // each frame of the game: a moment being waited for
 void GoToLaunched(bool menus);  // the game was started, in its menus or in a quick match
@@ -360,6 +361,10 @@ bool AnimFromSprites(int pn, const std::string &file, int no, int time, const st
 // character worked on. action -1: its first one. show: its window comes to the front.
 void AnimOpenFile(const std::string &path, int action = -1, int elem = 1, bool show = true);
 void AnimFollowFile();                                 // and goes on showing what the game shows of it
+// A sprite as the game draws it: flip (which mirrors the offset too), scale and angle around its axis,
+// then the blending. at: a place from the element's origin to the screen
+void DrawStyledSprite(ImDrawList *draw, GLuint tex, const SffSprite &s, const AirStyle &st, float ex, float ey,
+                      const std::function<ImVec2(float, float)> &at);
 std::string AnimFileOfSprites(const std::string &sff); // the file of actions those sprites are for, "" none
 void ActionList(SourceFile &sf);                       // a def's actions as rows, each opening in Animation
 // A file's text followed by undo, shared by the windows editing it: a change is a step when the mouse lets go
@@ -691,6 +696,23 @@ extern int g_screenPicked;     // bumped when any element of a screen is picked
 SpriteFile *SelectedScreenSprites(const char **what = nullptr, int *sprite = nullptr);
 void ScreenSpritesSaved(const std::string &path); // the screens using that SFF read it again
 void ScreenSoundsSaved(const std::string &path);  // the same for an SND
+
+// The Storyboard window's scenes (app_story.cpp): what the window hands them
+struct StoryHost {
+    SourceFile *sf = nullptr;
+    const IniFile *ini = nullptr;  // sf's text parsed
+    SpriteFile *sprites = nullptr;
+    bool playing = false, paused = false; // the game is showing this def, stopped
+    int scene = 0, tick = 0;              // where in it
+    std::string section, prefix;          // the element selected (lower case)
+    std::function<void(const std::string &section, const std::string &prefix)> select;
+};
+bool StoryPanel(StoryHost &h);                // the preview and the timelines; true when the text changed
+void StoryPicker();                           // which storyboard the window shows, from disk
+void StoryOpen(const std::string &def);       // it shows that one; the game not playing another
+const std::string &StoryOpened();             // the one chosen, "" none
+// The storyboards the motif and the characters name: (who names it, its def)
+std::vector<std::pair<std::string, std::string>> StoryboardFiles();
 
 void ReadScreenGeometry(const Json &j); // the frame geometry's "fight" and "motif"
 extern bool g_screenPick; // the Game window picks and drags their elements, not the players

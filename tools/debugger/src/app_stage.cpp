@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <cfloat>
+#include <climits>
 #include <cmath>
 #include <fstream>
 
@@ -26,28 +27,71 @@ std::vector<int> g_stageMarked; // BGs outlined on the game: those of the BGCtrl
 // The first word of a section's name, as Ikemen cuts it.
 std::string FirstWord(const IniSection &s) { return s.lower.substr(0, s.lower.find(' ')); }
 
-// A BGCtrl's time on a bar: when it runs (time = start, end, looptime) and where the stage is.
-void CtrlTimeline(const StageView::Ctrl &c, int time, const char *label) {
+// A BGCtrl's time on a bar: when it runs (time = start, end, looptime) and where the stage is (time,
+// -1 not known), its parts dragged. True when t changed; *clicked: the bar was clicked, not dragged.
+bool CtrlTimeline(IniBgTime &t, bool ran, int time, const char *label, bool *clicked) {
+    enum { kNone, kStart, kEnd, kBoth, kLoop };
+    static int part = kNone, dragSpan; // the scale stays while dragging, or the bar would slide away
+    static IniBgTime from;
+    static bool moved;
     float w = ImGui::GetContentRegionAvail().x, h = ImGui::GetTextLineHeightWithSpacing();
     ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(w, h));
-    bool hovered = ImGui::IsItemHovered();
-    int span = c.loop > 0 ? c.loop : std::max(std::max(c.end + 1, time + 1), 60);
-    int at = time;
-    if (c.loop > 0) at = time >= c.start ? (c.start + (time - c.start) % c.loop) % c.loop : time % c.loop;
-    auto x = [&](int t) { return p.x + w * std::min(std::max(t, 0), span) / span; };
+    ImGui::InvisibleButton("##time", ImVec2(std::max(w, 1.0f), h));
+    bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
+    int span = t.loop > 0 ? t.loop + std::max(t.loop / 5, 1) : std::max(std::max(t.end + 1, time + 1), 60) * 5 / 4;
+    if (active && part != kNone) span = dragSpan;
+    auto x = [&](int v) { return p.x + w * std::min(std::max(v, 0), span) / span; };
+    int end = t.loop > 0 ? std::min(t.end, t.loop - 1) : t.end;
+    float mouse = ImGui::GetIO().MousePos.x, x0 = x(t.start), x1 = std::max(x(end + 1), x0 + 2), grip = ImGui::GetFontSize() * 0.4f;
+    int over = kNone;
+    if (t.loop > 0 && fabsf(mouse - x(t.loop)) < grip) over = kLoop;
+    else if (fabsf(mouse - x1) < grip) over = kEnd;
+    else if (fabsf(mouse - x0) < grip) over = kStart;
+    else if (mouse > x0 && mouse < x1) over = kBoth;
+    if (ImGui::IsItemActivated()) part = over, from = t, dragSpan = span, moved = false;
+    bool changed = false;
+    if (active && part != kNone && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2)) {
+        int d = (int)std::lround(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 2).x * span / w);
+        IniBgTime n = from;
+        int last = from.loop > 0 ? from.loop - 1 : INT_MAX; // the engine runs nothing starting at its looptime
+        if (part == kStart) n.start = std::clamp(from.start + d, 0, from.end);
+        if (part == kEnd) n.end = std::clamp(from.end + d, from.start, last);
+        if (part == kBoth) {
+            int length = from.end - from.start;
+            n.start = std::clamp(from.start + d, 0, last == INT_MAX ? INT_MAX - length : std::max(last - length, 0));
+            n.end = n.start + length;
+        }
+        if (part == kLoop) n.loop = std::max(from.loop + d, std::max(from.end, from.start + 1)), n.ownLoop = true;
+        moved = true;
+        changed = n.start != t.start || n.end != t.end || n.loop != t.loop;
+        t = n;
+    }
+    if (clicked) *clicked = ImGui::IsItemDeactivated() && hovered && !moved;
+    if (hovered || active) {
+        int cursor = active ? part : over;
+        if (cursor == kStart || cursor == kEnd || cursor == kLoop) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (cursor == kBoth) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
     ImDrawList *draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(p, ImVec2(p.x + w, p.y + h - 2), IM_COL32(40, 40, 46, 255));
-    if (c.start >= 0) {
-        int end = c.loop > 0 ? std::min(c.end, c.loop - 1) : c.end;
-        draw->AddRectFilled(ImVec2(x(c.start), p.y), ImVec2(std::max(x(end + 1), x(c.start) + 2), p.y + h - 2),
-                            c.ran ? IM_COL32(60, 170, 80, 255) : IM_COL32(70, 90, 130, 255));
+    if (t.loop > 0) draw->AddRectFilled(ImVec2(x(t.loop), p.y), ImVec2(p.x + w, p.y + h - 2), IM_COL32(26, 26, 30, 255));
+    if (t.start >= 0)
+        draw->AddRectFilled(ImVec2(x0, p.y), ImVec2(x1, p.y + h - 2), ran ? IM_COL32(60, 170, 80, 255) : IM_COL32(70, 90, 130, 255));
+    if (t.loop > 0) draw->AddLine(ImVec2(x(t.loop), p.y - 1), ImVec2(x(t.loop), p.y + h - 1), IM_COL32(200, 200, 220, 255), 2);
+    if (time >= 0) {
+        int at = time;
+        if (t.loop > 0) at = time >= t.start ? (t.start + (time - t.start) % t.loop) % t.loop : time % t.loop;
+        draw->AddLine(ImVec2(x(at), p.y - 1), ImVec2(x(at), p.y + h - 1), IM_COL32(255, 220, 60, 255), 2);
     }
-    draw->AddLine(ImVec2(x(at), p.y - 1), ImVec2(x(at), p.y + h - 1), IM_COL32(255, 220, 60, 255), 2);
     draw->AddText(ImVec2(p.x + 4, p.y), IM_COL32_WHITE, label);
-    if (hovered)
-        ImGui::SetTooltip("time = %d, %d, %d (start, end, looptime)\n%s at stage time %d", c.start, c.end, c.loop,
-                          c.ran ? "Ran" : "Did not run", time);
+    if (hovered || active) {
+        std::string tip = "time = " + Ini_BgTimeValue(t) + (t.loop > 0 && !t.ownLoop ? "  (looptime " + std::to_string(t.loop) + " from its BGCtrlDef)" : "");
+        if (time >= 0) tip += std::string("\n") + (ran ? "Ran" : "Did not run") + " at stage time " + std::to_string(time);
+        tip += "\nDrag it to move it, its edges for its start and end";
+        if (t.loop > 0) tip += ", the light line for its looptime";
+        ImGui::SetTooltip("%s", tip.c_str());
+    }
+    return changed;
 }
 
 // The def parsed, again when its text changes.
@@ -726,7 +770,8 @@ void StageWindow() {
     g_stageMarked.clear();
     std::string word = FirstWord(s);
     if (word == "bgctrl" || word == "bgctrl3d" || word == "bgctrldef") {
-        for (int n = 0; n < (int)ctrls.size() && n < (int)sv.ctrls.size(); n++) {
+        int goTo = -1;
+        for (int n = 0; n < (int)ctrls.size(); n++) {
             bool mine = ctrls[n] == selSection;
             if (word == "bgctrldef" && ctrls[n] > selSection) {
                 mine = true;
@@ -736,13 +781,18 @@ void StageWindow() {
             const IniSection &cs = ini.sections[ctrls[n]];
             const IniField *type = cs.Field("type");
             std::string label = (word == "bgctrldef" ? cs.name + "  " : "") + (type ? type->value : std::string("?"));
+            bool inGame = live && n < (int)sv.ctrls.size(), clicked = false;
+            IniBgTime t = Ini_BgCtrlTime(ini, ctrls[n]);
             ImGui::PushID(n);
-            CtrlTimeline(sv.ctrls[n], sv.ranAt, label.c_str());
-            if (word == "bgctrldef" && ImGui::IsItemClicked()) selSection = ctrls[n];
+            bool moved = CtrlTimeline(t, inGame && sv.ctrls[n].ran, inGame ? sv.ranAt : -1, label.c_str(), &clicked);
             ImGui::PopID();
-            for (int b : sv.ctrls[n].bgs) g_stageMarked.push_back(b);
+            if (moved && sf.text == before && Ini_SetField(sf.text, cs, "time", Ini_BgTimeValue(t))) StageEdited(sf);
+            if (clicked && word == "bgctrldef") goTo = ctrls[n];
+            if (inGame)
+                for (int b : sv.ctrls[n].bgs) g_stageMarked.push_back(b);
         }
-        if (word != "bgctrldef") {
+        if (goTo >= 0) selSection = goTo;
+        if (word != "bgctrldef" && live) {
             std::string on;
             for (int b : g_stageMarked) on += (on.empty() ? "" : ", ") + BgLabel(ini, b);
             ImGui::TextWrapped("acts on %s", on.empty() ? "no BG" : on.c_str());

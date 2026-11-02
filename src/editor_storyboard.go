@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"unicode/utf8"
 
 	lua "github.com/yuin/gopher-lua"
@@ -58,19 +59,35 @@ func editorReloadStoryboard(textFile string, keep bool) (err error) {
 	ns.netReady, ns.loadEnding, ns.inMatch = old.netReady, old.loadEnding, old.inMatch
 	ns.id, ns.ownerID, ns.playerNo, ns.placement = old.id, old.ownerID, old.playerNo, old.placement
 	ns.fadeIn, ns.fadeOut = old.fadeIn, old.fadeOut
+	// A scene deleted under it: the last one, not the storyboard's end
+	if ns.currentSceneIndex >= len(ns.sceneKeys) && len(ns.sceneKeys) > 0 {
+		ns.currentSceneIndex = len(ns.sceneKeys) - 1
+	}
+	current := ""
+	if i := ns.currentSceneIndex; i >= 0 && i < len(ns.sceneKeys) {
+		current = ns.sceneKeys[i]
+	}
 	for key, scene := range ns.Scene {
 		oscene := old.Scene[key]
 		if oscene == nil {
 			continue
 		}
-		// Text already typed stays typed
 		for lk, lp := range scene.Layer {
-			if ol := oscene.Layer[lk]; ol != nil && lp.TextSpriteData != nil && ol.typedLen > 0 {
+			if lp.TextSpriteData == nil || lp.Text == "" {
+				continue
+			}
+			// Text already typed stays typed
+			if ol := oscene.Layer[lk]; ol != nil && ol.typedLen > 0 {
 				lp.typedLen, lp.charDelayCounter, lp.lineFullyRendered = ol.typedLen, ol.charDelayCounter, ol.lineFullyRendered
 				if n := utf8.RuneCountInString(lp.Text); lp.typedLen > n {
 					lp.typedLen = n
 				}
 				lp.TextSpriteData.wrapText(lp.Text, lp.typedLen)
+			} else if key == current {
+				// A new one is typed up to now: a paused storyboard would show none of it
+				for t := Max(lp.StartTime-1, 0); t < ns.counter; t++ {
+					editorTypeLayer(lp)
+				}
 			}
 		}
 	}
@@ -86,7 +103,98 @@ func editorReloadStoryboard(textFile string, keep bool) (err error) {
 	return nil
 }
 
+// editorTypeLayer: a text layer's typewriter one tick on, as Storyboard.step does it.
+func editorTypeLayer(lp *LayerProperties) {
+	if lp.lineFullyRendered {
+		return
+	}
+	StepTypewriter(lp.Text, &lp.typedLen, &lp.charDelayCounter, &lp.lineFullyRendered, lp.TextDelay)
+	if n := utf8.RuneCountInString(lp.Text); lp.typedLen >= n {
+		lp.typedLen, lp.lineFullyRendered = n, true
+	}
+	lp.TextSpriteData.wrapText(lp.Text, lp.typedLen)
+}
+
+// editorStoryboardSeek puts the storyboard playing at a time of a scene: its layers and BG stepped
+// there, without its sounds, music or fades, which belong to playing it.
+func editorStoryboardSeek(index int, tick int32) error {
+	s := &sys.storyboard
+	if !s.active {
+		return fmt.Errorf("no storyboard playing")
+	}
+	if index < 0 || index >= len(s.sceneKeys) {
+		return fmt.Errorf("no scene %d", index)
+	}
+	// The layers as a scene starts them (reset would stop the music)
+	stop := s.SceneDef.StopMusic
+	s.SceneDef.StopMusic = false
+	s.reset()
+	s.SceneDef.StopMusic = stop
+	s.active, s.initialized = true, true
+	s.currentSceneIndex, s.counter, s.endTimer = index, 0, -1
+	scene := s.Scene[s.sceneKeys[index]]
+	s.buildDialogueQueue(scene)
+	fadeIn, fadeOut := s.fades()
+	fadeIn.reset()
+	fadeOut.reset()
+	for t := int32(0); t < tick; t++ {
+		if scene.Bg.Name != "" {
+			scene.Bg.BGDef.step()
+		}
+		for _, lp := range scene.Layer {
+			if t >= lp.StartTime && (t < lp.EndTime || lp.EndTime <= 0) && lp.AnimData != nil {
+				lp.AnimData.Update(true)
+			}
+			if lp.TextSpriteData == nil || lp.Text == "" {
+				continue
+			}
+			if next := t + 1; next >= lp.StartTime && (next < lp.EndTime || lp.EndTime <= 0) {
+				editorTypeLayer(lp)
+			}
+		}
+		s.counter++
+	}
+	s.syncDialoguePosToTime()
+	// Animations get their sprite when they step: a paused storyboard would draw none
+	editorEachAnimation(reflect.ValueOf(s), map[editorSeen]bool{}, (*Animation).UpdateSprite)
+	return nil
+}
+
+// editorStoryboardState: the frame geometry's "storyState": the scene, the time in it, paused.
+func editorStoryboardState(b []byte) []byte {
+	s := &sys.storyboard
+	if !s.active {
+		return b
+	}
+	b = append(b, `,"storyState":[`...)
+	b = strconv.AppendInt(b, int64(s.currentSceneIndex), 10)
+	b = append(b, ',')
+	b = strconv.AppendInt(b, int64(s.counter), 10)
+	b = append(b, ',')
+	b = strconv.AppendBool(b, sys.paused)
+	return append(b, ']')
+}
+
 func editorStoryboardFunctions(l *lua.LState) {
+	luaRegister(l, "debugStoryboardSeek", func(l *lua.LState) int {
+		/*Put the storyboard playing at a time of one of its scenes.
+		@function debugStoryboardSeek
+		@tparam int scene The scene's index, from 0.
+		@tparam int tick The time in that scene.
+		@treturn boolean ok
+		@treturn string error*/
+		err := fmt.Errorf("needs -ikdbg")
+		if debuggerAttached() {
+			err = editorStoryboardSeek(int(numArg(l, 1)), int32(numArg(l, 2)))
+		}
+		if err != nil {
+			l.Push(lua.LFalse)
+			l.Push(lua.LString(err.Error()))
+			return 2
+		}
+		l.Push(lua.LTrue)
+		return 1
+	})
 	luaRegister(l, "debugReloadStoryboard", func(l *lua.LState) int {
 		/*Load the playing storyboard's def file again and use it at once, at the same scene and time.
 		@function debugReloadStoryboard

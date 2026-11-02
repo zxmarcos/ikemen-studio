@@ -61,6 +61,27 @@ static ScreenDef g_motif{"Motif", "motif", "debugReloadMotif", "motif", true, fa
 static ScreenDef g_story{"Storyboard", "storyboard", "debugReloadStoryboard", "storyboard", true, true, 0.1};
 static ScreenDef *const g_screens[] = {&g_fight, &g_story, &g_motif}; // the ones drawn in front first
 static ScreenDef *g_lastScreen; // the one whose element was selected last
+// The storyboard the window shows: the one playing, else this one, read from disk
+static std::string g_storyOpened;
+static bool g_storyPlaying, g_storyPaused;
+static int g_storyScene, g_storyTick;
+
+const std::string &StoryOpened() { return g_storyOpened; }
+
+void StoryOpen(const std::string &def) { g_storyOpened = def; }
+
+// No storyboard playing: the one chosen, with its SFF.
+static void StoryFromDisk() {
+    static std::string spritesFor, sprites;
+    g_storyPlaying = g_storyPlaying && !g_story.def.empty();
+    if (g_storyPlaying) return;
+    g_story.def = g_storyOpened;
+    if (spritesFor != g_storyOpened) {
+        spritesFor = g_storyOpened;
+        sprites = g_storyOpened.empty() ? "" : SpritesFileOf(g_storyOpened);
+    }
+    g_story.sff = sprites;
+}
 
 std::string FightScreenDef() { return g_fight.def; }
 std::string MotifDef() { return g_motif.def; }
@@ -127,6 +148,9 @@ void ReadScreenGeometry(const Json &j) {
             d->items.push_back(std::move(item));
         }
     }
+    const Json &story = j["storyState"];
+    g_storyPlaying = !story.isNull() && !g_story.def.empty();
+    if (g_storyPlaying) g_storyScene = story[size_t(0)].i(), g_storyTick = story[1].i(), g_storyPaused = story[2].truthy();
 }
 
 // The section the engine names (lower case), the first one with that name as the engine reads it.
@@ -187,7 +211,7 @@ static std::string GroupPosKey(const IniSection *s, const std::string &prefix, b
 // keep: the game keeps the SFF, SND and fonts in use (an edit of the text, not of the files);
 // sprites: the SFF all the same (it was saved).
 static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = false, bool sprites = false) {
-    if (!Connected()) {
+    if (!Connected() || (&d == &g_story && !g_storyPlaying)) {
         d.pending = false;
         return;
     }
@@ -455,19 +479,20 @@ void ScreenProblems(std::vector<Problem> &out) {
 static void ScreenWindow(ScreenDef &d) {
     Pump(d);
     if (!BeginTool(d.window)) return;
+    if (&d == &g_story) StoryPicker();
     SourceFile *sfp = d.Source();
     if (!sfp) {
-        if (!g_bridge.Running()) EmptyNote("The storyboard playing is edited here once the game is running.");
-        else ImGui::TextDisabled(d.reloadFn == g_story.reloadFn ? "No storyboard is playing (intro, ending, logo...)."
-                                 : d.motif                      ? "Needs the game's frames (patched Ikemen GO)."
-                                                                : "Needs the game's frames (patched Ikemen GO), in a match.");
+        if (&d == &g_story) EmptyNote("Pick a storyboard above, or open one from Explorer's menu.");
+        else if (!g_bridge.Running()) EmptyNote("Edited here once the game is running.");
+        else ImGui::TextDisabled(d.motif ? "Needs the game's frames (patched Ikemen GO)."
+                                         : "Needs the game's frames (patched Ikemen GO), in a match.");
         ImGui::End();
         return;
     }
     SourceFile &sf = *sfp;
     const IniFile &ini = d.Ini(sf);
     float em = ImGui::GetFontSize();
-    if (!Connected()) {
+    if (!Connected() || (&d == &g_story && !g_storyPlaying)) {
         ImGui::TextColored(Ink(kOrange), "from disk");
         ImGui::SameLine();
     }
@@ -502,7 +527,7 @@ static void ScreenWindow(ScreenDef &d) {
         return;
     }
     ImGui::TextDisabled("%s%s  %zu elements drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", d.items.size());
-    if (d.motif)
+    if (d.motif && &d != &g_story)
         ImGui::TextDisabled("Some values are read once, when a screen or the game starts: they show then.");
     {
         const std::vector<StageFinding> &found = Checks(d, sf);
@@ -627,11 +652,37 @@ static void ScreenWindow(ScreenDef &d) {
     ImGui::End();
 }
 
+// The storyboard's scenes, on a window wide enough for their timeline.
+static void ScenesWindow() {
+    if (!BeginTool("Scenes")) return;
+    ScreenDef &d = g_story;
+    SourceFile *sf = d.Source();
+    if (!sf) {
+        EmptyNote("A storyboard's scenes, in order, its layers on a timeline. Pick one in the Storyboard window, or "
+                  "in Explorer's menu: the game does not have to be running.");
+        ImGui::End();
+        return;
+    }
+    StoryHost host;
+    host.sf = sf, host.ini = &d.Ini(*sf), host.sprites = d.Sprites();
+    host.playing = g_storyPlaying, host.paused = g_storyPaused, host.scene = g_storyScene, host.tick = g_storyTick;
+    host.section = d.section, host.prefix = d.prefix;
+    host.select = [&d](const std::string &section, const std::string &prefix) {
+        if (d.section != section || d.prefix != prefix) d.animAction = -1;
+        SelectElement(d, section, prefix);
+        ShowWindow(d.window);
+    };
+    if (StoryPanel(host)) Edited(d, *sf);
+    ImGui::End();
+}
+
 void ScreenWindows() {
     DefsFromDisk();
+    StoryFromDisk();
     ScreenWindow(g_fight);
     ScreenWindow(g_motif);
     ScreenWindow(g_story);
+    ScenesWindow();
 }
 
 bool SelectedScreenAnim(ScreenAnim &out) {
@@ -707,9 +758,10 @@ void ScreenSoundsSaved(const std::string &path) {
     }
 }
 
+// The screen the game is using that def as: a storyboard only while it plays.
 static ScreenDef *ScreenOfDef(const std::string &def) {
     for (ScreenDef *d : g_screens)
-        if (!d->def.empty() && NormPath(d->def) == NormPath(def)) return d;
+        if (!d->def.empty() && NormPath(d->def) == NormPath(def) && (d != &g_story || g_storyPlaying)) return d;
     return nullptr;
 }
 

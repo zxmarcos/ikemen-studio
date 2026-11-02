@@ -148,6 +148,37 @@ std::vector<int> IniFile::StageBgCtrls() const {
     return out;
 }
 
+IniBgTime Ini_BgCtrlTime(const IniFile &ini, int section) {
+    IniBgTime t;
+    for (int i = section - 1; i >= 0; i--)
+        if (FirstWord(ini.sections[i].lower) == "bgctrldef") {
+            if (const IniField *f = ini.sections[i].Field("looptime")) t.loop = atoi(f->value.c_str());
+            break;
+        }
+    const IniField *f = ini.sections[section].Field("time");
+    if (!f) return t;
+    // Comma by comma: an empty one keeps what it had (readI32ForStage)
+    int part = 0;
+    size_t from = 0;
+    for (;; part++) {
+        size_t comma = f->value.find(',', from);
+        std::string v = Trim(f->value.substr(from, comma == std::string::npos ? std::string::npos : comma - from));
+        if (part == 0) t.start = t.end = atoi(v.c_str());
+        if (part == 1 && !v.empty()) t.end = atoi(v.c_str());
+        if (part == 2 && !v.empty()) t.loop = atoi(v.c_str()), t.ownLoop = true;
+        if (comma == std::string::npos || part == 2) break;
+        from = comma + 1;
+    }
+    return t;
+}
+
+std::string Ini_BgTimeValue(const IniBgTime &t) {
+    std::string s = std::to_string(t.start);
+    if (t.end != t.start || t.ownLoop) s += ", " + std::to_string(t.end);
+    if (t.ownLoop) s += ", " + std::to_string(t.loop);
+    return s;
+}
+
 void Ini_Parse(const std::string &text, IniFile &out) {
     out = IniFile();
     std::vector<std::string> lines = SplitLines(text);

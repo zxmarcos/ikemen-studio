@@ -62,6 +62,8 @@ add_executable(ikemen-debugger WIN32
   src/app_screen.cpp
   src/app_refs.cpp
   src/app_goto.cpp
+  src/app_story.cpp
+  src/story.cpp
   src/pack.cpp
   src/app_roster.cpp
   src/app_fonts.cpp
@@ -151,6 +153,8 @@ add_executable(pixels-test tests/pixels_test.cpp src/pixels.cpp)
 target_include_directories(pixels-test PRIVATE src)
 add_executable(pack-test tests/pack_test.cpp src/pack.cpp)
 target_include_directories(pack-test PRIVATE src)
+add_executable(story-test tests/story_test.cpp src/story.cpp src/ini.cpp)
+target_include_directories(story-test PRIVATE src)
 add_executable(undo-test tests/undo_test.cpp)
 target_include_directories(undo-test PRIVATE src)
 add_executable(gltf-test tests/gltf_test.cpp src/gltf.cpp)

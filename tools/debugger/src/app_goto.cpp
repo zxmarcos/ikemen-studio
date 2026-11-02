@@ -49,6 +49,7 @@ int g_team[2], g_teamNum[2] = {2, 2};
 const GoTarget *g_watch;      // a moment being waited for
 
 const char *LabelOf(const std::string &key) {
+    if (key.compare(0, 5, "file:") == 0) return key.c_str() + 5;
     for (const GoTarget &t : kTargets)
         if (key == t.key) return t.label;
     return key.c_str();
@@ -76,6 +77,12 @@ void GoTo(const GoTarget &t) {
 }
 
 } // namespace
+
+void GoToStory(const std::string &def) {
+    static std::string key;
+    key = "file:" + def;
+    GoTo(GoTarget{"", "", key.c_str(), nullptr, 0});
+}
 
 void GoToLaunched(bool menus) {
     g_menusRun = menus;

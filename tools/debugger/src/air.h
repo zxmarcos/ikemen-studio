@@ -54,6 +54,10 @@ struct AirFile {
 
 void Air_Parse(const std::string &text, AirFile &out);
 
+// The element (0-based) shown that many ticks into an action, the loop taken: tick becomes the time
+// within the action; *progress: how far through that element, for its interpolation.
+int Air_ElemAt(const AirAction &act, long &tick, float *progress = nullptr);
+
 // Edits ('\n' line ends). Each returns false when it could not be done.
 bool Air_SetBox(std::string &text, const AirBox &box, int x1, int y1, int x2, int y2);
 // Gives the element its own group of boxes (written before its line, replacing an own group).

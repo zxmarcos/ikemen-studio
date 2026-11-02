@@ -176,6 +176,29 @@ std::string ElemLine(const std::string &indent, const AirNewElem &e) {
 
 } // namespace
 
+int Air_ElemAt(const AirAction &act, long &tick, float *progress) {
+    if (progress) *progress = 0;
+    if (act.elems.empty()) return 0;
+    int loop = act.loopStart >= 0 ? act.loopStart : 0;
+    long total = 0, loopTotal = 0, at = 0;
+    bool endless = false;
+    for (size_t i = 0; i < act.elems.size(); i++) {
+        if (act.elems[i].time < 0) endless = true;
+        total += std::max(1, act.elems[i].time);
+        if ((int)i >= loop) loopTotal += std::max(1, act.elems[i].time);
+    }
+    if (!endless && tick >= total && loopTotal > 0) tick = total - loopTotal + (tick - total) % loopTotal;
+    int shown = 0;
+    for (; shown < (int)act.elems.size(); shown++) {
+        const AirElem &e = act.elems[shown];
+        if (e.time < 0 || tick < at + std::max(1, e.time)) break;
+        at += std::max(1, e.time);
+    }
+    shown = std::min(shown, (int)act.elems.size() - 1);
+    if (progress && act.elems[shown].time > 0) *progress = (float)(tick - at) / act.elems[shown].time;
+    return shown;
+}
+
 void Air_Parse(const std::string &text, AirFile &out) {
     out.actions.clear();
     std::vector<std::string> lines = SplitLines(text);

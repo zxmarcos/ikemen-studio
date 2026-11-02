@@ -155,8 +155,7 @@ Without the game, the Stage, Fight screen and Motif windows work from disk
 (`StageSource`, `DefsFromDisk`: the stage picked in Explorer, the motif of
 config.ini and its fight def), saying "from disk", what needs the picture
 disabled. Reloads do nothing then, so no `.ikdbg` file is left behind. With the
-game, the Stage window shows the match's stage, whatever Explorer picks. Storyboards
-open in Animation and Code from disk, but their window still needs one playing.
+game, the Stage window shows the match's stage, whatever Explorer picks.
 
 Screens have checks too (`Screen_Check`, in their windows and Problems): files of
 [Files] and [Music], the actions, sprites and sounds fields name, actions' sprites,
@@ -204,6 +203,35 @@ motif, where the engine looks first), and `<old folder>/` replaced in the defs' 
 (credits.def's `spr = ikemen1/system.sff`). Sounds, fonts and music elsewhere stay
 shared. It adds `-r data/<name>/system.def` to the session's arguments and leaves
 config.ini alone. Show > Screen shapes draws 16:9, 4:3 and a 5% margin over the picture.
+
+Timelines. BGCtrls: `CtrlTimeline` (`app_stage.cpp`) takes its times from the def, not
+the game (`Ini_BgCtrlTime`, tested: an empty part keeps what it had, the looptime left
+out is the BGCtrlDef's), so it works from disk and follows a drag; the scale stays while
+dragging, or the bar would slide from under the mouse. The bar's scale goes 20% past
+the looptime, or that line could only be dragged in. Dragging it writes the looptime in
+that BGCtrl's `time`, not in its BGCtrlDef.
+
+Storyboards (`src/story.cpp`, tested; `src/app_story.cpp`, the window Scenes, a tab beside
+Animation: the right column was too narrow for a timeline). `Story_Read` reads a def as
+`loadStoryboard` does: scenes in the def's order are the engine's indices; clearcolor,
+clearlayerno and layerall.pos carry over; layers sorted as text, so layer10 is drawn before
+layer2. `g_story` shows the storyboard playing, else `StoryOpened()` from disk; a def not
+playing is not "in use" (`ScreenOfDef`), so reloads do nothing. The preview (`Preview`)
+draws clearcolor, normal and anim BGs at their `start`, layers by `layerno` (0 to 2, as
+the three `draw` calls) with `Story_Motion` for velocity, accel and friction, the typewriter
+and the fades. Not exact, on purpose: the game's own fonts, BG videos, tiling, windows,
+palfx. Scene order is not remapped: `startscene` and `jump` count scenes, and the menu's
+tooltip says so. A scene's `jump` to itself is ignored, as in the engine. A scene that
+never plays (a jump past it) is dim on the strip.
+In the game: Play in the game is `GoToStory`, a goal `file:<def>`; the mod holds it two
+frames in, then the window seeks to its scene and time and, the def having been read from
+disk, sends the text being edited. `debugStoryboardSeek` resets the layers and steps
+layers and BG to that tick without `Storyboard.step`, whose sounds, music and fades belong to
+playing; so a scene reached by seeking has no music until the next scene. A paused storyboard
+never types: a text layer new to the current scene is typed up to the counter on reload
+(`editorTypeLayer`). The frame geometry's `storyState` gives scene, tick, paused. The game
+draws no text without a font (`font` -1 is the default), so `Story_AddText` picks [SceneDef]'s
+first or adds `f-6x9.def`, and writes black on a light scene: the default white does not show.
 
 Phase 0, the infrastructure, is done: frames and geometry in shared memory,
 keys from the editor, the game's window hidden and sized as the game's
@@ -455,6 +483,7 @@ tools/debugger/
   src/app_screen.cpp     Fight screen, Motif and Storyboard windows, and their elements on the Game window
   src/app_refs.cpp       what a def's fields name: thumbnails, pickers, sounds played, the fields using an action
   src/app_goto.cpp       Go to: the game put on a screen and kept there, the teams of its match
+  src/app_story.cpp      Scenes window: a storyboard's preview, its scenes and timeline, from disk or with the game
   src/app_debug.cpp      the toolbar, Players, Inspector, Frame data, Trace, Breakpoints, Watch, Console
   src/bridge.cpp/.h      starts Ikemen_GO.exe with pipes, reads its stdout/stderr lines, writes stdin
   src/frame.cpp/.h       reads the shared frames, writes input events and commands
@@ -468,6 +497,7 @@ tools/debugger/
   src/palfile.cpp/.h     palettes in other programs' files, tools on colours, PalFX's sums
   src/pixels.cpp/.h      a picture of indices: lines, fill, rectangles, flips
   src/pack.cpp/.h        zip files of a project's files, stored
+  src/story.cpp/.h       storyboards as the engine reads them: scenes, layers, times; edits of its scenes
   src/snd.cpp/.h         SND files: read, write, WAV descriptions
   src/cmd.cpp/.h         CMD files: the [Command] sections with their lines; text edits; a motion's steps
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits

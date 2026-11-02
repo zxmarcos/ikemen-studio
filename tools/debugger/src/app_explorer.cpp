@@ -12,6 +12,7 @@
 #include "imgui_stdlib.h"
 #include "ini.h"
 #include "pack.h"
+#include "story.h"
 
 namespace app {
 
@@ -408,6 +409,15 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
     // Actions of their own: a stage's or a screen's def, an AIR file no character uses
     bool actions = g_rowChar.empty() && (ExtOf(path) == "air" || (ExtOf(path) == "def" && !SpritesFileOf(path).empty()));
     if (actions && ImGui::MenuItem("Open in Animation")) AnimOpenFile(path);
+    if (ExtOf(path) == "def") {
+        IniFile ini;
+        Ini_Parse(LoadSource(path).text, ini);
+        if (Story_Is(ini) && ImGui::MenuItem(ICON_CLAPPER " Open in Storyboard")) {
+            StoryOpen(path);
+            ShowWindow("Storyboard");
+            ShowWindow("Scenes");
+        }
+    }
     if (ExtOf(path) == "def" && ImGui::MenuItem(ICON_DOWNLOAD " Package as zip...")) PackageDef(path);
     ImGui::SetItemTooltip("A zip of this def and every file it names, for sharing it; says what is missing");
     if (NormPath(path) == NormPath(MotifPath()) && ImGui::MenuItem(ICON_COPY " Copy as a new screenpack...")) g_askScreenpack = true;
@@ -585,6 +595,23 @@ std::string SpritesFileOf(const std::string &file) {
     }
     if (std::string spr = DefFile(file, "spr"); !spr.empty()) return spr;
     return DefFile(file, "sff");
+}
+
+std::vector<std::pair<std::string, std::string>> StoryboardFiles() {
+    Scan(false);
+    std::vector<std::pair<std::string, std::string>> out;
+    auto add = [&](const std::string &def, const std::string &who) {
+        for (const DefEntry &f : DefFiles(def)) {
+            size_t n = f.key.size();
+            bool story = f.key == "storyboard" || (n > 11 && f.key.compare(n - 11, 11, ".storyboard") == 0);
+            bool listed = false;
+            for (const auto &o : out) listed = listed || NormPath(o.second) == NormPath(f.path);
+            if (story && f.exists && !listed) out.push_back({who + f.key, f.path});
+        }
+    };
+    add(MotifPath(), "");
+    for (const Project &p : g_chars) add(p.def, p.name + " ");
+    return out;
 }
 
 std::string SelectDef() {

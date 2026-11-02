@@ -882,6 +882,12 @@ function ikdbg.holdAfter(name, ticks)
 	ikdbg.going.screen, ikdbg.going.ticks = name, ticks
 end
 
+-- The game stops here, the way a screen is held: the Storyboard window's pause.
+function ikdbg.holdNow(name)
+	togglePause(true)
+	hold(name)
+end
+
 -- The game goes on from the screen held.
 function ikdbg.letGo()
 	if ikdbg.held == 'vs' and vsTime then
@@ -918,6 +924,7 @@ local kAfter = {
 }
 
 local function storyboardOf(screen)
+	if screen:sub(1, 5) == 'file:' then return screen:sub(6) end -- the one the Storyboard window has
 	if screen == 'logo' then return motif.files.logo.storyboard end
 	if screen == 'intro' then return motif.files.intro.storyboard end
 	if screen == 'gameover' then return motif.game_over_screen.storyboard end
@@ -1154,7 +1161,8 @@ if main and start then
 		local g = ikdbg.goal
 		if g and g.running then
 			storyFrames = storyFrames + 1
-			if storyFrames >= 60 then
+			-- The Storyboard window's says where it wants to be: no fade to wait for
+			if storyFrames >= (g.screen:sub(1, 5) == 'file:' and 2 or 60) then
 				togglePause(true)
 				hold(g.screen)
 			end

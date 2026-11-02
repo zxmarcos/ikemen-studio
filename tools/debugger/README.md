@@ -126,7 +126,7 @@ areas, each with one job:
 | Stage editor | Stage, Model |
 | Screenpack | Fight screen, Motif, Storyboard, Roster, Fonts |
 
-Game, Code, Inspector, Animation and Create stand alone. Each panel remembers
+Game, Code, Inspector, Animation, Scenes and Create stand alone. Each panel remembers
 its tab; without room for every name, the tabs show their icons.
 
 - **Test**: Fighters and Project on the left; Game, with Testing, Output and
@@ -137,8 +137,8 @@ its tab; without room for every name, the tabs show their icons.
   (Code and Output in tabs); Game above Assets and Create on the right.
 - **Stage**: Project on the left; Game, with Animation, Code (the stage's def)
   and Output below it; Stage editor above Assets on the right.
-- **Screenpack**: Project on the left; Game, with Animation, Code (the fight
-  screen's def) and Output below it; Screenpack above Assets on the right.
+- **Screenpack**: Project on the left; Game, with Animation, Scenes, Code (the
+  fight screen's def) and Output below it; Screenpack above Assets on the right.
 
 Animation and Sprites work on stages and screenpacks as on characters: the Stage,
 Fight screen, Motif and Storyboard windows list every `[Begin Action]` of their def,
@@ -164,6 +164,23 @@ A right click on a def in Explorer gives **Package as zip** (the def and every f
 names, saying what is missing), and on the motif **Copy as a new screenpack**
 (`data/<name>/`, which the next launch uses). A match that cannot load shows why on
 the Game window, with Retry for after the file is fixed.
+
+**Storyboards** work with or without the game. Pick one in the Storyboard window (the
+motif's and the characters'), or **Open in Storyboard** in Explorer's menu for any
+other. **Scenes** shows a preview drawn from the def, its scenes in a strip as long as
+they last, and the timeline of the one selected: drag a layer or a sound, a layer's
+edges for its `starttime` and `endtime`, the fades' edges and the red line for
+`end.time`. Click or drag on the ruler to move through the scene, and on the preview
+to pick a layer and move it (Alt: that layer alone). The strip's right click adds,
+duplicates, moves and deletes scenes, and **+ Animation**, **+ Text** and **+ Sound**
+add rows. The preview is close, not exact: texts use this program's font, and BG videos
+and shaders are not drawn. **Play in the game** has the game show the same scene and
+time, stopped, with your unsaved text; from then on the ruler moves the game and every
+edit shows there. A scene reached with the ruler plays neither its sounds nor its music.
+
+In the Stage window, a BGCtrl or BGCtrlDef shows each BGCtrl's time on a bar, with the
+game or without it: drag the bar, its edges (`time`'s start and end) or the light line
+(its looptime). A click on a BGCtrlDef's bar opens that BGCtrl.
 
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code
