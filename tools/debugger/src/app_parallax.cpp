@@ -564,6 +564,16 @@ std::vector<std::string> LayerKeys(const IniFile &ini) {
     return keys;
 }
 
+// A BG's delta, as the next frame starts: what was parsed is in use until then
+BgEdit LayerDeltaEdit(int n, float delta, float deltaY) {
+    return [n, delta, deltaY](SourceFile &file) {
+        float both[2] = {delta, deltaY};
+        std::vector<int> now = StageIni(file).StageBgs();
+        if (n < (int)now.size() && Ini_SetField(file.text, StageIni(file).sections[now[n]], "delta", Ini_Floats(both, 2))) StageEdited(file);
+        return n;
+    };
+}
+
 // A small on or off button: lit when on
 bool LayerToggle(const char *icon, bool on, const char *tip) {
     if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -598,6 +608,56 @@ void SendHiddenBgs(const IniFile *ini) {
     SendRaw("debugStageBgHide('" + list + "')");
 }
 
+// The stage from the side: a layer's bar reaches its delta, the furthest at the top. The line is the
+// fighters, delta 1. A bar dragged changes the delta, and the game follows.
+static void DepthMap(const std::vector<ParallaxBg> &bgs, BgEdit &edit) {
+    std::vector<const ParallaxBg *> rows;
+    float biggest = 1;
+    for (const ParallaxBg &b : bgs)
+        if (!b.linked) rows.push_back(&b), biggest = std::max(biggest, b.delta[0] / b.units);
+    std::stable_sort(rows.begin(), rows.end(), [](const ParallaxBg *a, const ParallaxBg *b) { return a->delta[0] / a->units < b->delta[0] / b->units; });
+    if (rows.empty()) {
+        ImGui::TextDisabled("No layer shows a sprite.");
+        return;
+    }
+    // The scale stays while dragging, or the bar would run from the mouse
+    static float span = 1;
+    static int dragging = -1;
+    if (dragging < 0) span = biggest * 1.15f;
+    float width = std::max(ImGui::GetContentRegionAvail().x, 1.0f), height = ImGui::GetFrameHeight();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    ImVec2 top = ImGui::GetCursorScreenPos();
+    ImU32 bar = ImGui::GetColorU32(ImGuiCol_Button), hot = ImGui::GetColorU32(ImGuiCol_ButtonHovered), selected = ImGui::GetColorU32(ImGuiCol_ButtonActive);
+    for (const ParallaxBg *b : rows) {
+        ImGui::PushID(b->index);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##row", ImVec2(width, height));
+        float delta = b->delta[0] / b->units;
+        bool active = ImGui::IsItemActive();
+        ImVec2 end(p.x + width * delta / span, p.y + height - 2);
+        draw->AddRectFilled(p, end, active || ImGui::IsItemHovered() ? hot : b->index == g_stageBg ? selected : bar);
+        draw->AddText(ImVec2(p.x + 4, p.y + (height - ImGui::GetFontSize()) / 2 - 1), ImGui::GetColorU32(ImGuiCol_Text), b->name.c_str());
+        if (ImGui::IsItemActivated()) {
+            dragging = b->index;
+            g_stageBg = b->index;
+            ShowStageBg(b->index);
+        }
+        if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1)) {
+            float now = std::max(0.0f, (ImGui::GetMousePos().x - p.x) / width * span);
+            now = std::round(now * 100) / 100; // a pixel is about that much
+            if (now != delta) edit = LayerDeltaEdit(b->index, now, b->delta[1] / b->units);
+        }
+        if (ImGui::IsItemDeactivated() && dragging == b->index) dragging = -1;
+        ImGui::SetItemTooltip("[%s]  delta %.3g\nDrag it: 1 scrolls with the fighters, 0 stays still.", b->name.c_str(), delta);
+        ImGui::PopID();
+    }
+    ImVec2 bottom = ImGui::GetCursorScreenPos();
+    float fighters = top.x + width / span;
+    ImU32 ink = IM_COL32(120, 255, 200, 220);
+    draw->AddLine(ImVec2(fighters, top.y), ImVec2(fighters, bottom.y - ImGui::GetStyle().ItemSpacing.y), ink, 2);
+    ImGui::TextDisabled("Far at the top; the line is the fighters.");
+}
+
 void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
     std::vector<int> sections = ini.StageBgs();
     char header[64];
@@ -606,6 +666,13 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
     const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0);
+    static bool depth;
+    ImGui::Checkbox("Depth map", &depth);
+    ImGui::SetItemTooltip("The layers by how far back they are, a bar for each delta, to drag.");
+    if (depth) {
+        DepthMap(bgs, edit);
+        return;
+    }
     std::vector<std::string> keys = LayerKeys(ini);
     float em = ImGui::GetFontSize(), row = ImGui::GetFrameHeightWithSpacing();
     float height = row * std::min<float>((float)sections.size() + 1, 8);
@@ -656,14 +723,7 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
         if (b && !b->linked) {
             float delta = b->delta[0] / b->units, deltaY = b->delta[1] / b->units;
             ImGui::SetNextItemWidth(em * 3);
-            if (ImGui::DragFloat("##delta", &delta, 0.005f, 0, 10, "%.3g")) {
-                edit = [n, delta, deltaY](SourceFile &file) {
-                    float both[2] = {delta, deltaY};
-                    std::vector<int> now = StageIni(file).StageBgs();
-                    if (n < (int)now.size() && Ini_SetField(file.text, StageIni(file).sections[now[n]], "delta", Ini_Floats(both, 2))) StageEdited(file);
-                    return n;
-                };
-            }
+            if (ImGui::DragFloat("##delta", &delta, 0.005f, 0, 10, "%.3g")) edit = LayerDeltaEdit(n, delta, deltaY);
             ImGui::SetItemTooltip("How much of the camera's movement it follows: 1 with the fighters, 0 not at all. Drag it; the game follows.");
         } else if (b) {
             ImGui::AlignTextToFramePadding();

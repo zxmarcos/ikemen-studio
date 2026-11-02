@@ -184,6 +184,11 @@ video's path that is not found is an error in Output and the stage stays as it w
 a video did not show on the game, in the def from the start too; not looked into. A parallax BG without
 `width` is a plain picture, so handles need it (`Make it a floor` gives it one).
 
+Motions (`MotionButton`) only write fields and sections, so they need nothing of the engine. Blink needs
+the BG to have an id, since a BGCtrl finds BGs by id, and names its sections after it, which is how Stop
+finds them. Add layer's Several images goes through `AddSpritesOfImages`, one group, a palette each.
+The depth map keeps its scale while a bar is dragged, as a longer bar would move the mouse's place on it.
+
 Seams (`Parallax_Seam`, tested): a join counts when the picture's opposite edges differ by over 16 of 255
 and by more than 3 times what neighbouring pixels differ by inside it, so that a noisy texture is not
 called out, and by more than twice what an edge differs from the column beside it: the release's walls

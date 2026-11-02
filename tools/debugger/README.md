@@ -135,6 +135,8 @@ velocity and a sprite's transparent parts, which count as drawn on.
 (drag it: the game follows) and whether it is behind or in front of the fighters. The eye
 hides a layer, the target shows it alone, and the lock has a click on the game go through it
 to what is behind. These three last for the session and change nothing in the def.
+**Depth map** shows the layers by how far back they are, each a bar as long as its delta,
+beside a line for the fighters; dragging a bar sets the delta, and the game follows.
 
 A layer's **type** is a list under its start, in a stage and in a screen's BGs: normal, anim,
 parallax, video or dummy. The fields below follow it. What the type can use and the layer
