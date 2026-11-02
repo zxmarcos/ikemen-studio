@@ -357,9 +357,9 @@ const AirFile &AirOf(const SourceFile &sf);
 AnimTarget GetAnimTarget();
 bool AnimShowLine(const std::string &path, int line); // the action and element at that line of an AIR file, in Animation
 void ApplyAnims(SourceFile &sf);
-// A new action of those sprites (group, number), or (append) more elements at its end, in a player's
-// AIR file (pn > 0) or in that file of actions; shown in Animation
-bool AnimFromSprites(int pn, const std::string &file, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append);
+// Animation's New action or (add) Add elements dialog with those sprites (group, number) chosen, for a player's
+// AIR file (pn > 0) or that file of actions, which it shows
+void AnimAskSprites(bool add, int pn, const std::string &file, const std::vector<std::pair<int, int>> &sprites);
 // Animation shows a file of actions by itself: a def's, an AIR file no character uses; "": the
 // project's character. action -1: its first one. show: its window comes to the front.
 void AnimOpenFile(const std::string &path, int action = -1, int elem = 1, bool show = true);
@@ -435,6 +435,15 @@ void SpritesSelect(SpriteFile &sf, int index); // that sprite selected and in vi
 // before the popup holding it, keeps it as wide from the start, so that it opens inside the window
 bool SpriteGrid(SpriteFile *spf, int &group, int curGroup, int curImage, int *pickGroup, int *pickImage);
 void SpriteGridSize();
+// Sprites chosen to make elements of, in their order
+struct SpritePicks {
+    int group = 0;                            // the group shown
+    std::vector<std::pair<int, int>> sprites; // group, number
+    std::pair<int, int> from = {-1, -1};      // where a Shift click starts
+};
+// The groups at the left, the sprites of the one clicked at the right, numbered by their place among those
+// chosen (a click, Ctrl, Shift, all of a group), height tall. True on a double click on a sprite: that one alone.
+bool SpritePicker(SpriteFile *spf, SpritePicks &p, float height);
 GLuint SpriteTexture(SpriteFile &sf, int index, int pal = -1);
 ImTextureRef TexRef(GLuint tex);
 void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);

@@ -379,13 +379,27 @@ static void PickSprite(SpriteFile &sf, int i, const std::vector<int> &shown) {
     if (sf.picks.size() == 1) sf.picks.clear();
 }
 
+// The file of actions these sprites are for: the character's, or that of the def they are a stage's or a screen's.
+static std::string ActionsOfSprites(const SpriteFile &sf, int pn) { return pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path); }
+
+static std::vector<std::pair<int, int>> NumbersOf(const SffDoc &d, const std::vector<int> &sprites) {
+    std::vector<std::pair<int, int>> numbers;
+    for (int i : sprites) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
+    return numbers;
+}
+
+// The action Animation shows when that file has it, -1 none: what sprites can be added to.
+static int ShownAction(const std::string &actions) {
+    return AirOf(LoadSource(actions)).actions.count(g_animAction) ? g_animAction : -1;
+}
+
 // The sprites, filtered by "group" or "group,number": a list (a small picture, the numbers, the
 // size) or a grid of pictures. A click picks one, Ctrl and Shift several, Ctrl+A all those shown;
 // the arrows move from one to the next.
-static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, float height) {
+static void SpriteBrowser(SpriteFile &sf, int pn, const PalChoice &view, bool scroll, float height) {
     static std::string filter;
     static bool grid = false;
-    static int menuGroup;
+    static int menuGroup, menuSprite;
     SffDoc &d = sf.doc;
     float em = ImGui::GetFontSize();
     const ImGuiStyle &style = ImGui::GetStyle();
@@ -463,7 +477,7 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                     if (ImGui::InvisibleButton("s", size)) PickSprite(sf, i, shown);
                     bool hot = ImGui::IsItemHovered(), picked = sf.picks.count(i) != 0;
                     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                        menuGroup = s.group; // the popup opens outside this row's id
+                        menuGroup = s.group, menuSprite = i; // the popup opens outside this row's id
                         openMenu = true;
                     }
                     if (cur || hot || picked)
@@ -506,6 +520,25 @@ static void SpriteBrowser(SpriteFile &sf, const PalChoice &view, bool scroll, fl
                 if (sf.picks.size() == 1) sf.picks.clear();
             }
             if (ImGui::MenuItem("Select all shown") && shown.size() > 1) sf.picks.insert(shown.begin(), shown.end());
+            if (std::string actions = ActionsOfSprites(sf, pn); !actions.empty()) {
+                ImGui::Separator();
+                std::vector<int> ofGroup;
+                for (int i = 0; i < (int)d.sprites.size(); i++)
+                    if (d.sprites[i].group == menuGroup) ofGroup.push_back(i);
+                std::sort(ofGroup.begin(), ofGroup.end(), [&](int a, int b) { return d.sprites[a].number < d.sprites[b].number; });
+                snprintf(label, sizeof(label), ICON_PLUS " New action from group %d...", menuGroup);
+                if (ImGui::MenuItem(label)) AnimAskSprites(false, pn, actions, NumbersOf(d, ofGroup));
+                // Those selected when the click was on one of them, else that sprite
+                std::vector<int> these = sf.picks.count(menuSprite) ? SelectedSprites(sf) : std::vector<int>{menuSprite};
+                if (these.size() > 1) {
+                    snprintf(label, sizeof(label), "New action from these %zu...", these.size());
+                    if (ImGui::MenuItem(label)) AnimAskSprites(false, pn, actions, NumbersOf(d, these));
+                }
+                if (int shownAction = ShownAction(actions); shownAction >= 0) {
+                    snprintf(label, sizeof(label), these.size() > 1 ? "Add these to action %d..." : "Add it to action %d...", shownAction);
+                    if (ImGui::MenuItem(label)) AnimAskSprites(true, pn, actions, NumbersOf(d, these));
+                }
+            }
             ImGui::EndPopup();
         }
     }
@@ -671,7 +704,7 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
 // Crop and Resize, for the sprites selected or the one shown
 // How many elements of actions show these sprites: the character's, or those of the def they are for
 static int SpriteUses(SpriteFile &sf, int pn, const std::set<std::pair<int, int>> &numbers) {
-    std::string air = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    std::string air = ActionsOfSprites(sf, pn);
     if (air.empty()) return 0;
     int n = 0;
     for (const auto &kv : AirOf(LoadSource(air)).actions)
@@ -735,25 +768,19 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     std::vector<int> sel = SelectedSprites(sf);
     ImGui::Text("%zu sprites selected", sel.size());
 
-    // First: what several sprites are selected for. A character's AIR file, or the def these
-    // sprites are a screen's or a stage's
-    std::string actions = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    // First: what several sprites are selected for
+    std::string actions = ActionsOfSprites(sf, pn);
     if (!actions.empty()) {
         ImGui::SeparatorText("Animation");
-        static int action = 0, time = 4, actionOf = -1;
-        // Actions go by their sprites' group: a fixed number would add them to the standing animation
-        if (d.sprites[sel[0]].group != actionOf) actionOf = action = d.sprites[sel[0]].group;
-        ImGui::SetNextItemWidth(em * 5);
-        ImGui::InputInt("Action", &action, 0);
-        ImGui::SetNextItemWidth(em * 5);
-        ImGui::InputInt("Ticks each", &time, 0);
-        const AirFile &air = AirOf(LoadSource(actions));
-        bool exists = air.actions.count(action) != 0;
-        std::vector<std::pair<int, int>> numbers;
-        for (int i : sel) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
-        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, actions, action, time, numbers, exists))
-            Log(LogLine::Error, "Could not write the animation");
+        if (ImGui::Button(ICON_PLUS " New action...")) AnimAskSprites(false, pn, actions, NumbersOf(d, sel));
         ImGui::SetItemTooltip("One element for each sprite, in the order of the file");
+        if (int shownAction = ShownAction(actions); shownAction >= 0) {
+            char label[40];
+            snprintf(label, sizeof(label), "Add to action %d...", shownAction);
+            SameLineFits(ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2);
+            if (ImGui::Button(label)) AnimAskSprites(true, pn, actions, NumbersOf(d, sel));
+            ImGui::SetItemTooltip("After the element Animation shows");
+        }
     }
 
     ImGui::SeparatorText("Axes");
@@ -933,7 +960,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     CropAndResize(sf);
 
     // The actions showing it: the character's, or those of the def these sprites are for
-    std::string air = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    std::string air = ActionsOfSprites(sf, pn);
     if (!air.empty()) {
         ImGui::SeparatorText("Used by");
         const AirFile &af = AirOf(LoadSource(air));
@@ -1181,7 +1208,7 @@ void SpritesWindow() {
     if (wide) ImGui::TableSetupColumn("panel", ImGuiTableColumnFlags_WidthFixed, em * 19);
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
-    SpriteBrowser(sf, view, scroll, h);
+    SpriteBrowser(sf, pn, view, scroll, h);
     addPopup();
     ImGui::TableSetColumnIndex(1);
     if (sf.sel < 0 || sf.sel >= (int)d.sprites.size()) {

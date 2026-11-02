@@ -239,6 +239,17 @@ UndoStack<std::string> &TrackAnims(const SourceFile &sf) { return TrackText(sf.p
 
 static std::set<int> g_elemPicks; // elements (1-based) selected with Ctrl or Shift; empty: the one shown alone
 
+// New action and Add elements: one dialog, opened as the window draws the file. The sprites chosen make the elements.
+enum { kAskNone, kAskAction, kAskElems };
+static int g_asked = kAskNone;
+static int g_askAfter;                                // the new elements go after that index (-1 before the first)
+static std::vector<std::pair<int, int>> g_askSprites; // those chosen already
+
+static void AskElems(int after) {
+    g_asked = kAskElems, g_askAfter = after;
+    g_askSprites.clear();
+}
+
 // The elements an edit of the selection acts on: indices sorted, the one shown when none is selected.
 static std::vector<int> PickedElems(const AnimTarget &t) {
     std::vector<int> out;
@@ -947,7 +958,7 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
                 ImGui::Text("Element %d: sprite %d, %d; offset %d, %d; time %d", n, e.group, e.image, e.x, e.y, e.time);
                 if (act.loopStart == n - 1) ImGui::TextColored(Ink(kYellow), "The loop starts here.");
                 if (n == onGame) ImGui::TextColored(Ink(kGreen), "On the game now.");
-                ImGui::TextDisabled("Ctrl or Shift+click: select several. Right click: duplicate, delete, move, loop from here");
+                ImGui::TextDisabled("Ctrl or Shift+click: select several. Right click: add, duplicate, delete, move, loop from here");
                 ImGui::EndTooltip();
             }
             if (cur && (scrolledTo != n || scrolledAction != g_animAction)) {
@@ -956,6 +967,9 @@ static int ElementStrip(const AnimTarget &t, SpriteFile *spf, int onGame, int *m
             }
             ImGui::PopID();
         }
+        ImGui::SameLine(0, em * 0.35f);
+        if (ImGui::Button(ICON_PLUS "##addelems", cell)) AskElems((int)act.elems.size() - 1);
+        ImGui::SetItemTooltip("Add elements at the end: their sprites, one or several");
     }
     ImGui::EndChild();
     return clicked;
@@ -1032,6 +1046,9 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     if (several) snprintf(title, sizeof(title), "Element %d of %d, %d selected", t.elem, count, (int)group.size());
     else snprintf(title, sizeof(title), "Element %d of %d", t.elem, count);
     ImGui::SeparatorText(title);
+    if (ImGui::SmallButton(ICON_PLUS " Add...")) AskElems(group.back());
+    ImGui::SetItemTooltip("New elements after this one: their sprites, one or several");
+    flow("Duplicate");
     if (ImGui::SmallButton(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, act, group)) goTo = group.back() + 2;
     flow("Delete");
     ImGui::BeginDisabled(count <= (int)group.size());
@@ -1395,32 +1412,108 @@ static bool InNumberList(int no, const std::string &list) {
     return false;
 }
 
-bool AnimFromSprites(int pn, const std::string &file, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append) {
-    std::string path = pn > 0 ? AirPath(pn) : file;
-    if (path.empty() || sprites.empty()) return false;
-    SourceFile &sf = LoadSource(path);
-    std::vector<AirNewElem> elems;
-    for (const auto &s : sprites) {
-        AirNewElem e;
-        e.group = s.first, e.image = s.second, e.time = time;
-        elems.push_back(e);
+void AnimAskSprites(bool add, int pn, const std::string &file, const std::vector<std::pair<int, int>> &sprites) {
+    g_asked = add ? kAskElems : kAskAction, g_askAfter = g_animElem - 1, g_askSprites = sprites;
+    AnimOpenFile(pn > 0 ? "" : file, g_animAction, g_animElem);
+}
+
+// Returns true when the text changed: what was parsed is old.
+static bool ElemsDialog(const AnimTarget &t, SourceFile &sf, SpriteFile *spf, const AirFile &air, const std::function<void(SourceFile &)> &apply) {
+    static int mode, no, ticks = 4, after;
+    static bool numbered, followed; // a number typed; Follow, off while it is open so that the action stays
+    static std::string name;
+    static SpritePicks picks;
+    if (g_asked) {
+        mode = g_asked == kAskElems && t.act ? kAskElems : kAskAction;
+        g_asked = kAskNone;
+        after = t.act ? std::clamp(g_askAfter, -1, (int)t.act->elems.size() - 1) : -1;
+        numbered = false, name.clear();
+        picks = SpritePicks();
+        picks.sprites = g_askSprites;
+        const AirElem *beside = t.act ? &t.act->elems[mode == kAskElems ? std::max(after, 0) : t.elem - 1] : nullptr;
+        picks.group = !picks.sprites.empty() ? picks.sprites[0].first : beside ? beside->group : 0;
+        if (mode == kAskElems && beside->time > 0) ticks = beside->time;
+        followed = g_animFollow, g_animFollow = false;
+        ImGui::OpenPopup("###elems");
     }
-    const AirFile &air = AirOf(sf);
-    auto it = air.actions.find(no);
-    bool ok;
-    if (it != air.actions.end() && append) {
-        ok = Air_InsertElems(sf.text, it->second, (int)it->second.elems.size() - 1, elems);
-        g_animElem = (int)it->second.elems.size() + 1;
+    bool add = mode == kAskElems;
+    float em = ImGui::GetFontSize();
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(em * 44, vp->WorkSize.x - em * 2), std::min(em * 34, vp->WorkSize.y - em * 2)));
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    if (!ImGui::BeginPopupModal(add ? ICON_PLUS " Add elements###elems" : ICON_PLUS " New action###elems", nullptr,
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings))
+        return false;
+    int count = t.act ? (int)t.act->elems.size() : 0;
+    ImGui::AlignTextToFramePadding();
+    if (add && t.act) {
+        if (after < 0) ImGui::Text("Before element 1 of action %d", t.act->no);
+        else ImGui::Text("After element %d of %d, action %d", after + 1, count, t.act->no);
     } else {
-        ok = it == air.actions.end() && Air_NewAction(sf.text, no, "", elems);
-        g_animElem = 1;
+        // By the sprites' group until a number is typed: a fixed one would add to the standing animation
+        if (!numbered)
+            for (no = picks.sprites.empty() ? g_animAction + 1 : picks.sprites[0].first; air.actions.count(no);) no++;
+        ImGui::TextUnformatted("Number");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(em * 5);
+        if (ImGui::InputInt("##no", &no, 0)) numbered = true;
+        ImGui::SameLine(0, em);
+        ImGui::TextUnformatted("Name");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(em * 13);
+        ImGui::InputText("##name", &name);
     }
-    if (!ok) return false;
-    g_animAction = no, g_animFollow = false;
-    ApplyAnims(sf);
-    if (pn > 0) ShowWindow("Animation");
-    else AnimOpenFile(path, no, g_animElem);
-    return true;
+    ImGui::SameLine(0, em);
+    ImGui::TextUnformatted("Ticks each");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 4);
+    ImGui::InputInt("##ticks", &ticks, 0);
+    ticks = std::max(ticks, 1);
+    ImGui::SetItemTooltip("60 ticks are a second. Each element's time can be changed afterwards.");
+
+    bool forever = add && t.act && after >= 0 && t.act->elems[after].time < 0;
+    bool taken = !add && air.actions.count(no) != 0;
+    float below = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y + (forever || taken ? ImGui::GetTextLineHeightWithSpacing() : 0);
+    bool go = SpritePicker(spf, picks, ImGui::GetContentRegionAvail().y - below);
+    if (forever) ImGui::TextColored(Ink(kOrange), "Element %d lasts for ever: what comes after it never plays.", after + 1);
+    if (taken) ImGui::TextColored(Ink(kRed), "Action %d exists already.", no);
+
+    int chosen = (int)picks.sprites.size();
+    char label[48];
+    if (add) snprintf(label, sizeof(label), ICON_CHECK " Add %d element%s", chosen, chosen == 1 ? "" : "s");
+    else if (chosen) snprintf(label, sizeof(label), ICON_CHECK " Create with %d element%s", chosen, chosen == 1 ? "" : "s");
+    else snprintf(label, sizeof(label), ICON_CHECK " Create with sprite 0, 0");
+    bool can = (add ? chosen > 0 : !taken && no >= 0) && (!add || t.act);
+    ImGui::BeginDisabled(!can);
+    go |= ImGui::Button(label);
+    ImGui::EndDisabled();
+    go |= ImGui::IsKeyPressed(ImGuiKey_Enter, false) && !ImGui::IsAnyItemActive();
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_XMARK " Cancel") || (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive())) {
+        g_animFollow = followed;
+        ImGui::CloseCurrentPopup();
+    } else if (go && can) {
+        std::vector<AirNewElem> elems;
+        for (const auto &s : picks.sprites) {
+            AirNewElem e;
+            e.group = s.first, e.image = s.second, e.time = ticks;
+            if (add) e.x = t.act->elems[std::max(after, 0)].x, e.y = t.act->elems[std::max(after, 0)].y; // lined up with where they go
+            elems.push_back(e);
+        }
+        if (elems.empty()) elems.push_back(AirNewElem()), elems[0].time = ticks;
+        if (add ? Air_InsertElems(sf.text, *t.act, after, elems) : Air_NewAction(sf.text, no, name, elems)) {
+            apply(sf);
+            if (add) g_animElem = after + 2;
+            else g_animAction = no, g_animElem = 1;
+            g_elemPicks.clear();
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return true;
+        }
+    }
+    ImGui::EndPopup();
+    return false;
 }
 
 std::string AnimFileOfSprites(const std::string &sff) {
@@ -1610,6 +1703,9 @@ void AnimationWindow() {
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("Every action of the file, by number or name");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_PLUS " New...")) g_asked = kAskAction, g_askSprites.clear();
+    ImGui::SetItemTooltip("A new action of the sprites you choose: several, or a whole group");
     ImGui::SameLine(0, em);
     ImGui::BeginDisabled(disk || (screen && sa.action < 0));
     ImGui::Checkbox("Follow", &g_animFollow);
@@ -1643,7 +1739,7 @@ void AnimationWindow() {
     {
         rightAlign(ImGui::CalcTextSize("Action").x + style.FramePadding.x * 2 + ImGui::GetFrameHeight());
         if (ImGui::BeginCombo("##actmenu", "Action", ImGuiComboFlags_WidthFitPreview | ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLargest)) {
-            if (ImGui::Selectable(ICON_PLUS " New...")) want = "new";
+            if (ImGui::Selectable(ICON_PLUS " New...")) g_asked = kAskAction, g_askSprites.clear();
             if (ImGui::Selectable("From another file...")) want = "import";
             ImGui::SetItemTooltip("Actions of an AIR file or of a def (a stage's, a screen's), with their sprites");
             ImGui::Separator();
@@ -1685,11 +1781,7 @@ void AnimationWindow() {
     static bool importWithSprites = true, importReplace = false;
     if (want) {
         newNo = want[0] == 'c' ? g_animAction + 1 : g_animAction;
-        if (want[0] == 'n' && want[1] == 'e') {
-            for (newNo = g_animAction + 1; air.actions.count(newNo);) newNo++;
-            newName.clear();
-        }
-        if (want[0] == 'n' && want[1] == 'a' && t.act) newName = t.act->name;
+        if (want[0] == 'n' && t.act) newName = t.act->name;
         if (want[0] == 'g') gifSprites = spfFor;
         if (want[0] == 'i') {
             // A file of actions and its SFF: the one a def names, else beside it, the one named alike or any
@@ -1718,28 +1810,9 @@ void AnimationWindow() {
         }
         if (want) ImGui::OpenPopup(want);
     }
-    if (ImGui::BeginPopup("new")) {
-        ImGui::TextUnformatted("A new action, of one element");
-        ImGui::SetNextItemWidth(em * 6);
-        ImGui::InputInt("Number", &newNo, 0);
-        ImGui::SetNextItemWidth(em * 12);
-        ImGui::InputText("Name", &newName);
-        bool taken = air.actions.count(newNo) != 0;
-        if (taken) ImGui::TextColored(Ink(kRed), "Action %d exists already.", newNo);
-        ImGui::BeginDisabled(taken || newNo < 0);
-        if (ImGui::Button(ICON_CHECK " Create")) {
-            Air_NewAction(sf.text, newNo, newName, {AirNewElem()});
-            apply(sf);
-            g_animAction = newNo, g_animElem = 1, g_animFollow = false;
-            ImGui::CloseCurrentPopup();
-            ImGui::EndDisabled();
-            ImGui::EndPopup();
-            ImGui::End(); // what was parsed is old
-            return;
-        }
-        ImGui::EndDisabled();
-        ImGui::TextDisabled("Sprites selected in the Sprites window can start one too.");
-        ImGui::EndPopup();
+    if (ElemsDialog(t, sf, spfFor, air, apply)) {
+        ImGui::End(); // what was parsed is old
+        return;
     }
     if (ImGui::BeginPopup("name")) {
         ImGui::SetNextItemWidth(em * 14);
@@ -1895,7 +1968,7 @@ void AnimationWindow() {
             return;
         }
         if (air.actions.empty())
-            ImGui::TextDisabled("%s has no [Begin Action] yet: the Action menu makes one, sprites selected in Sprites too.", sf.path.c_str());
+            ImGui::TextDisabled("%s has no [Begin Action] yet: New makes one.", sf.path.c_str());
         else
             ImGui::TextDisabled("Action %d is not in %s.", g_animAction, sf.path.c_str());
         ImGui::End();
@@ -1936,6 +2009,9 @@ void AnimationWindow() {
         bool several = group.size() > 1;
         if (several) ImGui::TextDisabled("%d elements", (int)group.size());
         else ImGui::TextDisabled("Element %d", t.elem);
+        if (ImGui::MenuItem(ICON_PLUS " Add elements after...")) AskElems(group.back());
+        if (ImGui::MenuItem("Add elements before...")) AskElems(group[0] - 1);
+        ImGui::Separator();
         if (ImGui::MenuItem(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, *t.act, group)) goTo = group.back() + 2;
         if (ImGui::MenuItem(ICON_TRASH " Delete", nullptr, false, count > (int)group.size()) && Air_DeleteElems(sf.text, *t.act, group))
             goTo = std::max(1, group[0]);

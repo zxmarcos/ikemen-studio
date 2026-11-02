@@ -174,7 +174,7 @@ Fighter Factory's background image behind the sprite.
 Animation: `Interpolate` lines belong to the element after them (`AirElem::interp`;
 `first` includes them, so they move and go with it). Sprites' defaults follow how people
 name them: Add PNG reads the numbers from the file names (others take Group and From), and
-the Animation section offers the sprites' group as the action, not action 0. In New
+New action offers the sprites' group as the action (the next free one), not action 0. In New
 Move the action goes with the state until it is given another number, and it warns
 when the sprites are not saved: creating a move saves its text, not the SFF. The game interpolates on the
 way into that element, over the time of the one before (`UpdateInterpolation`);
@@ -184,11 +184,19 @@ lines parsed good; those that add or take out lines need a new parse
 time, a drag goes through them), boxes drawn with the mouse (`g_boxDraw`), an
 element kept as a ghost, this element's fields given to those selected, offsets
 and boxes moved together, the boxes' menu (copy, paste, as in the element before,
-on every element with this sprite, swap, delete), actions from the sprites
-selected (`AnimFromSprites`), names (the comment before the action), the Action
-menu (new, from another AIR with its sprites, name, scale, optimize, GIF). GIF:
-`src/gif.cpp`, tested by decoding it again in `tests/gif_test.cpp`; blending is
-not in it. `Copy Action` is shown, not edited.
+on every element with this sprite, swap, delete), names (the comment before the
+action), the Action menu (from another AIR with its sprites, name, scale, optimize,
+GIF). GIF: `src/gif.cpp`, tested by decoding it again in `tests/gif_test.cpp`;
+blending is not in it. `Copy Action` is shown, not edited.
+
+New action and Add elements are one dialog (`ElemsDialog`, app_anim.cpp) over
+`SpritePicker` (app_refs.cpp): those chosen are a list in the order they were
+clicked, so a Ctrl click can put a sprite before another, and a Shift range goes in
+the order of the numbers. It lives in the Animation window because `apply` does (a
+screen's element is applied differently): the Sprites window asks with
+`AnimAskSprites`, which shows the file there first. Follow goes off while it is
+open: with the game running the action would change under it. New elements have no
+boxes of their own, on purpose: most frames of a move want other boxes.
 
 Palettes: `src/palfile.cpp` (tested) reads ACT, PAL (JASC, RIFF), ACO, ASE and
 GPL, writes all but ASE, and holds the tools on colours (move with Alt+drag,
