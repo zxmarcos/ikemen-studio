@@ -660,8 +660,27 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     float em = ImGui::GetFontSize();
     std::vector<int> sel = SelectedSprites(sf);
     ImGui::Text("%zu sprites selected", sel.size());
-    ImGui::Spacing();
-    CropAndResize(sf);
+
+    // First: what several sprites are selected for. A character's AIR file, or the def these
+    // sprites are a screen's or a stage's
+    std::string actions = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    if (!actions.empty()) {
+        ImGui::SeparatorText("Animation");
+        static int action = 0, time = 4, actionOf = -1;
+        // Actions go by their sprites' group: a fixed number would add them to the standing animation
+        if (d.sprites[sel[0]].group != actionOf) actionOf = action = d.sprites[sel[0]].group;
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("Action", &action, 0);
+        ImGui::SetNextItemWidth(em * 5);
+        ImGui::InputInt("Ticks each", &time, 0);
+        const AirFile &air = AirOf(LoadSource(actions));
+        bool exists = air.actions.count(action) != 0;
+        std::vector<std::pair<int, int>> numbers;
+        for (int i : sel) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
+        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, actions, action, time, numbers, exists))
+            Log(LogLine::Error, "Could not write the animation");
+        ImGui::SetItemTooltip("One element for each sprite, in the order of the file");
+    }
 
     ImGui::SeparatorText("Axes");
     static int by[2];
@@ -705,27 +724,8 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     if (!free) ImGui::TextColored(Ink(kRed), "Those numbers are in use.");
     ImGui::SetItemTooltip("Animations using the old numbers are not changed");
 
-    // A character's AIR file, or the def these sprites are a screen's or a stage's
-    std::string actions = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
-    if (!actions.empty()) {
-        ImGui::SeparatorText("Animation");
-        static int action = 0, time = 4, actionOf = -1;
-        // Actions go by their sprites' group: a fixed number would add them to the standing animation
-        if (d.sprites[sel[0]].group != actionOf) actionOf = action = d.sprites[sel[0]].group;
-        ImGui::SetNextItemWidth(em * 5);
-        ImGui::InputInt("Action", &action, 0);
-        ImGui::SetNextItemWidth(em * 5);
-        ImGui::InputInt("Ticks each", &time, 0);
-        const AirFile &air = AirOf(LoadSource(actions));
-        bool exists = air.actions.count(action) != 0;
-        std::vector<std::pair<int, int>> numbers;
-        for (int i : sel) numbers.push_back({d.sprites[i].group, d.sprites[i].number});
-        if (ImGui::Button(exists ? ICON_PLUS " Add to the action" : ICON_PLUS " New action") && !AnimFromSprites(pn, actions, action, time, numbers, exists))
-            Log(LogLine::Error, "Could not write the animation");
-        ImGui::SetItemTooltip("One element for each sprite, in the order of the file");
-    }
-
-    ImGui::SeparatorText("Files");
+    ImGui::SeparatorText("Pictures and files");
+    CropAndResize(sf);
     static bool aligned = true;
     ImGui::Checkbox("Same canvas and axis", &aligned);
     ImGui::SetItemTooltip("All the images the same size, so that they stay lined up in a drawing program");

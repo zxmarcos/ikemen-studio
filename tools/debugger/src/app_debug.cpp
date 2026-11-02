@@ -693,7 +693,7 @@ void FrameDataWindow() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Moves")) {
-            ImGui::TextDisabled("Frames: ticks out of hit pause. Startup: the first with a Clsn1 box; recovery: "
+            ImGui::TextDisabled("Frames: ticks out of hit pause. Startup: the first with a hit box; recovery: "
                                 "until control is back.");
             HelpMarker("A move begins entering a state with movetype A, or changing state in one after its Clsn1 "
                        "frames (a cancel, or a follow-up state). Advantage: the tick its last hit's target has "
@@ -743,7 +743,7 @@ static void TicksTable(std::deque<FrameRow> &rows) {
             ImGui::TableNextColumn();
             if (r->clsn1) {
                 ImGui::TextColored(Ink(kRed), "%d", r->elem);
-                ImGui::SetItemTooltip("Has a Clsn1 box");
+                ImGui::SetItemTooltip("Has a hit box");
             } else
                 ImGui::Text("%d", r->elem);
             ImGui::TableNextColumn();

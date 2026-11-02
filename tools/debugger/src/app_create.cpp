@@ -64,6 +64,12 @@ void SpriteThumb(int pn, int group, int image, float size) {
     }
 }
 
+// A form's fields, which scroll, its button staying in view below them: a line for it, extra for what it says.
+void BeginForm(float extra) {
+    const ImGuiStyle &style = ImGui::GetStyle();
+    ImGui::BeginChild("form", ImVec2(0, -(ImGui::GetFrameHeightWithSpacing() + style.ItemSpacing.y * 2 + 1 + extra)));
+}
+
 void MoveTab() {
     // The character worked on: a player picked in the match, or one picked in Explorer (from disk)
     int pn = WorkPn();
@@ -101,6 +107,7 @@ void MoveTab() {
         ImGui::TextDisabled("For P%d's %s, at the end of %s", pn, def.c_str(), (*st)[0].c_str());
     }
 
+    BeginForm(0);
     ImGui::SetNextItemWidth(em * 14);
     ImGui::InputText("name", &m.name);
     ImGui::SetNextItemWidth(em * 6);
@@ -111,12 +118,6 @@ void MoveTab() {
     if (!taken.empty()) {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kRed), "exists already (%s)", taken.c_str());
-        // A move made before: this form is where it is tried
-        if (Connected() && pn != kDiskPn && RootId(pn)) {
-            SameLineFits(ImGui::CalcTextSize(ICON_PLAY " Try it").x + ImGui::GetStyle().FramePadding.x * 2);
-            if (ImGui::SmallButton(ICON_PLAY " Try it")) ExecOn(RootId(pn), "selfState(" + std::to_string(m.state) + ")");
-            ImGui::SetItemTooltip("P%d goes to state %d now", pn, m.state);
-        }
     } else if (m.state < 200 || m.state >= 5000) {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kYellow), "a common state's number: it would take its place");
@@ -129,27 +130,14 @@ void MoveTab() {
     ImGui::SetNextItemWidth(em * 8);
     if (ImGui::Combo("strength", &f.strength, "light\0medium\0hard\0")) m.hit = kMakeHits[f.strength];
     ImGui::SetItemTooltip("Sets the hit's values (after KFM's punches); each stays editable below.");
-    if (ImGui::CollapsingHeader("The hit (HitDef)")) {
-        MakeHit &h = m.hit;
-        ImGui::PushItemWidth(em * 8);
-        ImGui::InputInt2("damage, guard damage", &h.damage);
-        ImGui::InputInt2("pausetime (attacker, target)", &h.pause1);
-        ImGui::InputInt("sparkno", &h.spark, 0);
-        ImGui::InputInt("ground.slidetime", &h.slideTime, 0);
-        ImGui::InputInt("ground.hittime", &h.hitTime, 0);
-        ImGui::InputFloat("ground.velocity", &h.velocity, 0, 0, "%g");
-        ImGui::InputFloat2("air.velocity", &h.airVx, "%g");
-        ImGui::InputInt("air.hittime", &h.airHitTime, 0);
-        ImGui::Combo("animtype", &h.animType, "Light\0Medium\0Hard\0");
-        ImGui::PopItemWidth();
-    }
-
-    // The action: its first element with a Clsn1 box arms the HitDef
+    // The action: its first element with a hit box (Clsn1) arms the HitDef
     ImGui::SeparatorText("Animation");
     ImGui::SetNextItemWidth(em * 6);
     ImGui::InputInt("action", &m.action, 0);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("the state's number")) m.action = m.state;
+    if (m.action != m.state) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("the state's number")) m.action = m.state;
+    }
     std::string airPath = CharFile(pn, "anim");
     SourceFile *air = airPath.empty() ? nullptr : &LoadSource(airPath);
     const AirFile *af = air ? &AirOf(*air) : nullptr;
@@ -182,8 +170,8 @@ void MoveTab() {
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::Text("%zu elements, %d ticks%s", a.elems.size(), ticks, endless ? " and one that lasts" : "");
-        if (m.hitElem) ImGui::Text("hits from element %d (its first Clsn1 box)", m.hitElem);
-        else ImGui::TextColored(Ink(kYellow), "no Clsn1 box: it hits nothing until one is drawn");
+        if (m.hitElem) ImGui::Text("hits from element %d (its first hit box)", m.hitElem);
+        else ImGui::TextColored(Ink(kYellow), "no hit box (Clsn1): it hits nothing until one is drawn");
         if (ImGui::SmallButton("Animation window")) {
             g_animAction = m.action, g_animElem = m.hitElem ? m.hitElem : 1, g_animFollow = false;
             ShowWindow("Animation");
@@ -230,6 +218,28 @@ void MoveTab() {
                                            : "Without one, try it with the button below or SelfState.",
                         m.klass == 2 ? ", with power >= 1000" : "");
 
+    if (ImGui::CollapsingHeader("The hit (HitDef)")) {
+        MakeHit &h = m.hit;
+        ImGui::PushItemWidth(em * 8);
+        ImGui::InputInt2("damage, guard damage", &h.damage);
+        ImGui::InputInt2("pausetime (attacker, target)", &h.pause1);
+        ImGui::InputInt("sparkno", &h.spark, 0);
+        ImGui::InputInt("ground.slidetime", &h.slideTime, 0);
+        ImGui::InputInt("ground.hittime", &h.hitTime, 0);
+        ImGui::InputFloat("ground.velocity", &h.velocity, 0, 0, "%g");
+        ImGui::InputFloat2("air.velocity", &h.airVx, "%g");
+        ImGui::InputInt("air.hittime", &h.airHitTime, 0);
+        ImGui::Combo("animtype", &h.animType, "Light\0Medium\0Hard\0");
+        ImGui::PopItemWidth();
+    }
+    if (ImGui::CollapsingHeader("The text it writes")) {
+        std::string text = Make_MoveState(m, Cns_IsZss((*st)[0]));
+        ImGui::PushFont(dbg::Editor_Font(), 0.0f);
+        ImGui::InputTextMultiline("##text", &text, ImVec2(-FLT_MIN, em * 18), ImGuiInputTextFlags_ReadOnly);
+        ImGui::PopFont();
+    }
+    ImGui::EndChild();
+
     ImGui::Separator();
     ImGui::BeginDisabled(!taken.empty() || m.state < 0 || g_applying);
     if (ImGui::Button(ICON_WAND " Create the move")) {
@@ -257,42 +267,38 @@ void MoveTab() {
         g_codeHold = true;
     }
     ImGui::EndDisabled();
-    if (f.made >= 0) {
+    // A state that is there can be tried, made now or before
+    if (pn == kDiskPn && f.made >= 0) {
+        // Not in the match: it can be put there
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!Connected() || g_applying);
+        if (ImGui::Button("Put it in P1's place")) {
+            std::string name = def;
+            if (name.compare(0, 6, "chars/") == 0) name = name.substr(6);
+            size_t slash = name.find('/');
+            // "kfm" for chars/kfm/kfm.def, as ListDefs names it
+            if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
+                name = name.substr(0, slash);
+            SwapChar(1, name);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1, to try the move."
+                                          : "Launch the game first (F5) to try the move.");
+    } else if (pn != kDiskPn && !taken.empty()) {
         ImGui::SameLine();
         char label[64];
-        if (pn == kDiskPn) {
-            // Not in the match: it can be put there
-            ImGui::BeginDisabled(!Connected() || g_applying);
-            if (ImGui::Button("Put it in P1's place")) {
-                std::string name = def;
-                if (name.compare(0, 6, "chars/") == 0) name = name.substr(6);
-                size_t slash = name.find('/');
-                // "kfm" for chars/kfm/kfm.def, as ListDefs names it
-                if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
-                    name = name.substr(0, slash);
-                SwapChar(1, name);
-            }
-            ImGui::EndDisabled();
-            ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1, to try the move."
-                                              : "Launch the game first (F5) to try the move.");
-        } else {
-            snprintf(label, sizeof(label), "Try state %d on P%d", f.made, pn);
-            ImGui::BeginDisabled(!Connected() || g_applying || !RootId(pn));
-            if (ImGui::Button(label)) ExecOn(RootId(pn), "selfState(" + std::to_string(f.made) + ")");
-            ImGui::EndDisabled();
-        }
+        snprintf(label, sizeof(label), ICON_PLAY " Try state %d on P%d", m.state, pn);
+        ImGui::BeginDisabled(!Connected() || g_applying || !RootId(pn));
+        if (ImGui::Button(label)) ExecOn(RootId(pn), "selfState(" + std::to_string(m.state) + ")");
+        ImGui::EndDisabled();
+    }
+    if (f.made >= 0) {
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
             g_codeFile = f.madeIn;
             g_codeLine = g_codeScrollTo = f.madeLine;
             g_codeHold = true;
         }
-    }
-    if (ImGui::CollapsingHeader("The text it writes")) {
-        std::string text = Make_MoveState(m, Cns_IsZss((*st)[0]));
-        ImGui::PushFont(dbg::Editor_Font(), 0.0f);
-        ImGui::InputTextMultiline("##text", &text, ImVec2(-FLT_MIN, em * 18), ImGuiInputTextFlags_ReadOnly);
-        ImGui::PopFont();
     }
 }
 
@@ -778,6 +784,8 @@ void StagePreview(StageForm &f) {
 void StageTab() {
     StageForm &f = g_stage;
     float em = ImGui::GetFontSize();
+    float wrap = ImGui::GetContentRegionAvail().x;
+    BeginForm(f.status.empty() ? 0 : ImGui::CalcTextSize(f.status.c_str(), nullptr, false, wrap).y + ImGui::GetStyle().ItemSpacing.y);
     ImGui::SetNextItemWidth(em * 10);
     ImGui::InputTextWithHint("file", "stages/...", &f.file);
     ImGui::SetItemTooltip("stages/<file>.def and stages/<file>.sff: letters, digits, '_' and '-'.");
@@ -870,9 +878,11 @@ void StageTab() {
     ImGui::Checkbox("add it to select.def", &f.select);
     ImGui::SameLine();
     ImGui::Checkbox("use it in the match", &f.use);
+    ImGui::EndChild();
+
+    ImGui::Separator();
     if (ImGui::Button(ICON_WAND " Create the stage")) CreateStage(f);
     if (!f.status.empty()) {
-        ImGui::SameLine();
         ImGui::PushTextWrapPos(0);
         if (f.failed) ImGui::TextColored(Ink(kRed), "%s", f.status.c_str());
         else ImGui::TextUnformatted(f.status.c_str());

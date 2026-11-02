@@ -47,8 +47,16 @@ found it functional but intimidating). It is organized by task, not by tool:
   right side of each workspace already is the editor of what is selected, so no
   separate Properties window was made.
 
-Still heavy, for a next pass: Animation's and Lab's many controls and terms
-(Clsn, onion...), and Code's state panel beside the editor.
+Second pass (2026-11-02), from what going through the tools from nothing showed: nothing
+removed, less shown. Create's forms keep their button below the fields (`BeginForm`), the
+move's details last; a state that exists is tried from there, so nothing moves the form.
+Sprites with several selected starts with Animation, what they are selected for. Animation's
+onion skin is a menu, Flip, Blend, Scale, Angle and the smooth change are under Effects, whose
+header says which the element uses; the preview takes what its toolbar leaves (`top`), on
+however many lines. The boxes are "hit boxes" and "hurt boxes" in the interface, with Clsn1 and
+Clsn2 beside them where people meet the file's names. Lab shows a dummy's settings only
+with a dummy, and its reversal only with a take. Still heavy, for a next pass: Code's state
+panel beside the editor.
 
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character

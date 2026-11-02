@@ -121,8 +121,14 @@ void DummySection() {
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5);
     changed |= ImGui::Combo("##dummy", &g_dummy.pn, "None\0P1\0P2\0P3\0P4\0");
     ImGui::SameLine();
+    // Without a dummy there is nothing to set up
+    if (g_dummy.pn == 0) {
+        ImGui::TextDisabled("is the dummy: pick a player, and it stands, guards and reverses as you say");
+        if (changed && live) SendDummy();
+        if (!live) ImGui::TextDisabled(Connected() ? "Needs an Ikemen GO with the debugger patch." : "Launch the game.");
+        return;
+    }
     ImGui::TextDisabled("is the dummy:");
-    ImGui::BeginDisabled(g_dummy.pn == 0);
     ImGui::SameLine();
     for (int i = 0; i < 3; i++) {
         const char *names[] = {"Stands", "Crouches", "Jumps"};
@@ -151,6 +157,13 @@ void DummySection() {
     changed |= ImGui::Checkbox("its power", &g_dummy.power);
     ImGui::SameLine();
     ImGui::TextDisabled("(once each combo is over)");
+    // A reversal is a take played back: nothing to choose until there is one
+    if (g_takes.empty()) {
+        ImGui::TextDisabled("Record a take below and it can play it as a reversal.");
+        if (changed && live) SendDummy();
+        if (!live) ImGui::TextDisabled(Connected() ? "Needs an Ikemen GO with the debugger patch." : "Launch the game.");
+        return;
+    }
     ImGui::TextDisabled("Once it can act again after");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
@@ -179,7 +192,6 @@ void DummySection() {
     HelpMarker("A reversal: the take starts so that its last tick is the first one the dummy can act on "
                "(the engine tells how long a hit or guard stun lasts, and getting up's animation). Record "
                "the move's keys ending on the button, e.g. F, D, DF+x for KFM's Kung Fu Upper.");
-    ImGui::EndDisabled();
     if (changed && live) SendDummy();
     if (!live) ImGui::TextDisabled(Connected() ? "Needs an Ikemen GO with the debugger patch." : "Launch the game.");
 }

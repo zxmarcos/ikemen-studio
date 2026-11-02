@@ -503,8 +503,8 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     static bool refit;
     static float k;
     static ImVec2 origin; // the axis, from the canvas's corner
-    float em = ImGui::GetFontSize();
-    // Its toolbar: play, the previous element, the zoom
+    float em = ImGui::GetFontSize(), top = ImGui::GetCursorPosY();
+    // Its toolbar: play, the onion skin, the zoom; then what the mouse does on the boxes
     if (ImGui::Button(playing ? ICON_STOP " Stop" : ICON_PLAY " Play", ImVec2(em * 4.5f, 0))) {
         playing = !playing;
         started = ImGui::GetTime();
@@ -512,39 +512,17 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
     ImGui::SetItemTooltip("Plays the action at the game's speed (60 ticks a second), from its loop start after the end");
     // The onion skin: which elements, what of them
     ImGui::SameLine();
-    ImGui::TextDisabled("Onion:");
-    ImGui::SameLine();
-    ImGui::Checkbox("before", &g_onionBefore);
-    ImGui::SetItemTooltip("The element before drawn faint (its sprite orange), here and on the game");
-    SameLineFits(CheckboxWidth("after"));
-    ImGui::Checkbox("after", &g_onionAfter);
-    ImGui::SetItemTooltip("The element after drawn faint (its sprite green), here and on the game");
-    SameLineFits(CheckboxWidth("sprites"));
-    ImGui::Checkbox("sprites##onion", &g_onionSprite);
-    if (boxes) {
-        SameLineFits(CheckboxWidth("boxes"));
-        ImGui::Checkbox("boxes##onion", &g_onion);
-        // What a drag changes, here and on the game
-        const ImGuiStyle &style = ImGui::GetStyle();
-        float radio = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x;
-        SameLineFits(ImGui::CalcTextSize("Drag: boxes sprite").x + radio * 2 + style.ItemSpacing.x * 2);
-        ImGui::TextDisabled("Drag:");
-        ImGui::SameLine();
-        ImGui::RadioButton("boxes##drag", &g_animDrag, 0);
-        ImGui::SetItemTooltip("A drag changes the element's boxes (its edges, corners or the whole box)");
-        ImGui::SameLine();
-        ImGui::RadioButton("sprite##drag", &g_animDrag, 1);
-        ImGui::SetItemTooltip("A drag moves the element's sprite (its offset from the axis)");
-        SameLineFits(ImGui::CalcTextSize("Draw: Clsn1 Clsn2").x + style.FramePadding.x * 4 + style.ItemSpacing.x * 2);
-        ImGui::TextDisabled("Draw:");
-        for (int g = 1; g <= 2; g++) {
-            ImGui::SameLine();
-            bool on = g_boxDraw == g;
-            if (on) ImGui::PushStyleColor(ImGuiCol_Button, g == 1 ? IM_COL32(200, 50, 50, 255) : IM_COL32(50, 100, 220, 255));
-            if (ImGui::SmallButton(g == 1 ? "Clsn1" : "Clsn2")) g_boxDraw = on ? 0 : g;
-            if (on) ImGui::PopStyleColor();
-            ImGui::SetItemTooltip(g == 1 ? "A drag on the preview draws a box that hits; a right click stops" : "A drag on the preview draws a box that can be hit; a right click stops");
-        }
+    if (ImGui::Button("Onion skin " ICON_CARET)) ImGui::OpenPopup("onion");
+    ImGui::SetItemTooltip("The elements before and after the one shown, faint, here and on the game");
+    if (ImGui::BeginPopup("onion")) {
+        ImGui::Checkbox("The element before", &g_onionBefore);
+        ImGui::SetItemTooltip("Drawn faint, its sprite orange");
+        ImGui::Checkbox("The element after", &g_onionAfter);
+        ImGui::SetItemTooltip("Drawn faint, its sprite green");
+        ImGui::Separator();
+        ImGui::Checkbox("Their sprites", &g_onionSprite);
+        if (boxes) ImGui::Checkbox("Their boxes", &g_onion);
+        ImGui::EndPopup();
     }
     {
         char zoom[16];
@@ -562,10 +540,33 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         ImGui::SetItemTooltip("The whole action in view (double click on the preview does it too)");
         HelpMarker(boxes ? "Drag boxes: drag an edge, a corner or the inside of a box to change it; the arrow keys move "
                            "the box under the mouse (Shift: by 10). Drag sprite: drag anywhere to move the sprite; the "
-                           "arrow keys move it too. Right click: add a Clsn2 or Clsn1 box there, or delete the box "
+                           "arrow keys move it too. Right click: add a hurt or hit box there, or delete the box "
                            "under the mouse (Delete does it too). Changes go to the game at once when the character "
                            "is in the match; Save writes the file. Wheel: zoom; middle drag: pan; double click: fit."
                          : "Wheel: zoom; middle drag: pan; double click: fit.");
+    }
+    if (boxes) {
+        // What a drag changes, here and on the game
+        const ImGuiStyle &style = ImGui::GetStyle();
+        float radio = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x;
+        SameLineFits(ImGui::CalcTextSize("Drag: boxes sprite").x + radio * 2 + style.ItemSpacing.x * 2);
+        ImGui::TextDisabled("Drag:");
+        ImGui::SameLine();
+        ImGui::RadioButton("boxes##drag", &g_animDrag, 0);
+        ImGui::SetItemTooltip("A drag changes the element's boxes (its edges, corners or the whole box)");
+        ImGui::SameLine();
+        ImGui::RadioButton("sprite##drag", &g_animDrag, 1);
+        ImGui::SetItemTooltip("A drag moves the element's sprite (its offset from the axis)");
+        SameLineFits(ImGui::CalcTextSize("Draw: Hit box Hurt box").x + style.FramePadding.x * 4 + style.ItemSpacing.x * 2);
+        ImGui::TextDisabled("Draw:");
+        for (int g = 1; g <= 2; g++) {
+            ImGui::SameLine();
+            bool on = g_boxDraw == g;
+            if (on) ImGui::PushStyleColor(ImGuiCol_Button, g == 1 ? IM_COL32(200, 50, 50, 255) : IM_COL32(50, 100, 220, 255));
+            if (ImGui::SmallButton(g == 1 ? "Hit box" : "Hurt box")) g_boxDraw = on ? 0 : g;
+            if (on) ImGui::PopStyleColor();
+            ImGui::SetItemTooltip(g == 1 ? "A drag on the preview draws a box that hits (Clsn1); a right click stops" : "A drag on the preview draws a box that can be hit (Clsn2); a right click stops");
+        }
     }
     const AirAction &act = *t.act;
     // The element shown: the one selected, or the one playing
@@ -596,7 +597,8 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
                 for (const AirBox &b : g) grow((float)b.x1, (float)b.y1, (float)b.x2, (float)b.y2);
     }
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    bool open = ImGui::BeginChild("preview", ImVec2(0, height > 0 ? height : em * 14),
+    float left = height - (ImGui::GetCursorPosY() - top); // what its toolbar, on one or more lines, leaves
+    bool open = ImGui::BeginChild("preview", ImVec2(0, height > 0 ? left : em * 14),
                                   ImGuiChildFlags_Borders | (height > 0 ? 0 : ImGuiChildFlags_ResizeY),
                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNavInputs);
     ImGui::PopStyleVar();
@@ -796,14 +798,14 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         auto exists = [&](int h) { return h >= 0 && h % 1000 < (int)el.clsn[h / 1000].size(); };
         if (ImGui::BeginPopup("boxes")) {
             if (exists(menuHit)) {
-                if (ImGui::MenuItem(menuHit / 1000 ? "Delete this Clsn2 box" : "Delete this Clsn1 box", "Delete")) {
+                if (ImGui::MenuItem(menuHit / 1000 ? "Delete this hurt box" : "Delete this hit box", "Delete")) {
                     DeleteBox(t, menuHit / 1000, menuHit % 1000);
                     changed = true;
                 }
                 ImGui::Separator();
             }
             for (int g = 1; g >= 0; g--)
-                if (ImGui::MenuItem(g ? "Add a Clsn2 box here" : "Add a Clsn1 box here")) {
+                if (ImGui::MenuItem(g ? "Add a hurt box here" : "Add a hit box here")) {
                     int x = (int)lroundf(menuAt.x), y = (int)lroundf(menuAt.y);
                     AirBox b;
                     b.x1 = x - 10, b.y1 = y - 10, b.x2 = x + 10, b.y2 = y + 10;
@@ -1070,42 +1072,58 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     ImGui::SameLine();
     ImGui::TextDisabled(v[4] < 0 ? "forever" : "ticks");
 
-    // Flip, blending, scale and angle: the fields after the time
+    // Flip, blending, scale and angle: the fields after the time, and how it comes from the element
+    // before. Most elements use none of them, so they stay closed, the header saying which this one uses
     AirStyle st = el.style;
+    std::string used;
+    auto uses = [&](bool on, const char *what) {
+        if (on) used += (used.empty() ? "" : ", ") + std::string(what);
+    };
+    uses(st.flipH || st.flipV, "flip");
+    uses(st.blend == kAirAdd, "add");
+    uses(st.blend == kAirSub || st.blend == kAirSubAdd, "subtract");
+    uses(st.xscale != 1 || st.yscale != 1, "scale");
+    uses(st.angle != 0, "angle");
+    uses(el.interp != 0, "smooth");
+    std::string header = "Effects" + (used.empty() ? "" : "  (" + used + ")") + "###effects";
+    bool effects = ImGui::CollapsingHeader(header.c_str());
+    ImGui::SetItemTooltip("Flip, blending, scale, angle, and changing smoothly from the element before");
     bool styled = false;
-    FieldLabel("Flip");
-    styled |= ImGui::Checkbox("H", &st.flipH);
-    ImGui::SetItemTooltip("Mirrors the sprite around its axis (the x offset is mirrored too, as the game does)");
-    ImGui::SameLine();
-    styled |= ImGui::Checkbox("V", &st.flipV);
-    ImGui::SetItemTooltip("Turns the sprite upside down (the y offset is mirrored too)");
-    FieldLabel("Blend");
-    const char *blends[] = {"Opaque", "Add", "Subtract", "Sub-add"};
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    if (ImGui::Combo("##blend", &st.blend, blends, 4)) {
-        if (st.blend == kAirAdd && !el.style.blend) st.src = 255, st.dst = 255;
-        styled = true;
-    }
-    ImGui::SetItemTooltip("A, S or SA in the AIR; with alphas, AS, SS or SAS");
-    if (st.blend != kAirOpaque) {
-        FieldLabel("Alpha");
+    if (effects) {
+        FieldLabel("Flip");
+        styled |= ImGui::Checkbox("H", &st.flipH);
+        ImGui::SetItemTooltip("Mirrors the sprite around its axis (the x offset is mirrored too, as the game does)");
+        ImGui::SameLine();
+        styled |= ImGui::Checkbox("V", &st.flipV);
+        ImGui::SetItemTooltip("Turns the sprite upside down (the y offset is mirrored too)");
+        FieldLabel("Blend");
+        const char *blends[] = {"Opaque", "Add", "Subtract", "Sub-add"};
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        int al[2] = {st.src, st.dst};
-        if (ImGui::DragInt2("##alpha", al, 0.5f, 0, 255)) st.src = al[0], st.dst = al[1], styled = true;
+        if (ImGui::Combo("##blend", &st.blend, blends, 4)) {
+            if (st.blend == kAirAdd && !el.style.blend) st.src = 255, st.dst = 255;
+            styled = true;
+        }
+        ImGui::SetItemTooltip("A, S or SA in the AIR; with alphas, AS, SS or SAS");
+        if (st.blend != kAirOpaque) {
+            FieldLabel("Alpha");
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            int al[2] = {st.src, st.dst};
+            if (ImGui::DragInt2("##alpha", al, 0.5f, 0, 255)) st.src = al[0], st.dst = al[1], styled = true;
+            done |= ImGui::IsItemDeactivatedAfterEdit();
+            ImGui::SetItemTooltip("Source, destination (0 to 255): the sprite times the first plus (or minus) the background times the second.\n"
+                                  "255, 255 is a plain A or S; 255, 128 is A1.");
+        }
+        FieldLabel("Scale");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        float sc[2] = {st.xscale, st.yscale};
+        if (ImGui::DragFloat2("##scale", sc, 0.01f, -16.0f, 16.0f, "%.2f")) st.xscale = sc[0], st.yscale = sc[1], styled = true;
         done |= ImGui::IsItemDeactivatedAfterEdit();
-        ImGui::SetItemTooltip("Source, destination (0 to 255): the sprite times the first plus (or minus) the background times the second.\n"
-                              "255, 255 is a plain A or S; 255, 128 is A1.");
+        ImGui::SetItemTooltip("x, y; 1 is the sprite's size. Scaled around the sprite's axis.");
+        FieldLabel("Angle");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        if (ImGui::DragFloat("##angle", &st.angle, 0.5f, -360.0f, 360.0f, "%.1f deg")) styled = true;
+        done |= ImGui::IsItemDeactivatedAfterEdit();
     }
-    FieldLabel("Scale");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    float sc[2] = {st.xscale, st.yscale};
-    if (ImGui::DragFloat2("##scale", sc, 0.01f, -16.0f, 16.0f, "%.2f")) st.xscale = sc[0], st.yscale = sc[1], styled = true;
-    done |= ImGui::IsItemDeactivatedAfterEdit();
-    ImGui::SetItemTooltip("x, y; 1 is the sprite's size. Scaled around the sprite's axis.");
-    FieldLabel("Angle");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    if (ImGui::DragFloat("##angle", &st.angle, 0.5f, -360.0f, 360.0f, "%.1f deg")) styled = true;
-    done |= ImGui::IsItemDeactivatedAfterEdit();
     if (styled) {
         Air_SetStyle(sf.text, el, st);
         if (!ImGui::IsAnyItemActive()) done = true; // a click on a box or the combo is one edit
@@ -1113,17 +1131,19 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     if (done) apply(sf);
 
     // Interpolation: what changes smoothly on the way from the element before to this one
-    ImGui::TextDisabled("Blend from the element before:");
-    static const struct {
-        const char *label;
-        int flag;
-    } kInterp[] = {{"offset", kAirInterpOffset}, {"scale", kAirInterpScale}, {"angle", kAirInterpAngle}, {"alpha", kAirInterpBlend}};
-    for (int k = 0; k < 4; k++) {
-        if (k) SameLineFits(CheckboxWidth(kInterp[k].label));
-        bool on = (el.interp & kInterp[k].flag) != 0;
-        if (ImGui::Checkbox(kInterp[k].label, &on) && Air_SetInterpolate(sf.text, el, el.interp ^ kInterp[k].flag)) {
-            goTo = t.elem;
-            return true;
+    if (effects) {
+        ImGui::TextDisabled("Smooth from the element before:");
+        static const struct {
+            const char *label;
+            int flag;
+        } kInterp[] = {{"offset", kAirInterpOffset}, {"scale", kAirInterpScale}, {"angle", kAirInterpAngle}, {"alpha", kAirInterpBlend}};
+        for (int k = 0; k < 4; k++) {
+            if (k) SameLineFits(CheckboxWidth(kInterp[k].label));
+            bool on = (el.interp & kInterp[k].flag) != 0;
+            if (ImGui::Checkbox(kInterp[k].label, &on) && Air_SetInterpolate(sf.text, el, el.interp ^ kInterp[k].flag)) {
+                goTo = t.elem;
+                return true;
+            }
         }
     }
 
@@ -1193,7 +1213,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     for (int g = 1; g >= 0 && !screen; g--) {
         ImGui::PushID(g);
         ImGui::Spacing();
-        ImGui::SeparatorText(g == 1 ? "Clsn2: can be hit" : "Clsn1: hits");
+        ImGui::SeparatorText(g == 1 ? "Hurt boxes: can be hit (Clsn2)" : "Hit boxes: hit (Clsn1)");
         // A swatch of the colour the preview draws them in, where they come from
         ImVec2 p = ImGui::GetCursorScreenPos();
         float s = ImGui::GetTextLineHeight() * 0.7f, y = p.y + (ImGui::GetTextLineHeight() - s) * 0.5f;
@@ -1253,7 +1273,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
             ImGui::Separator();
             if (ImGui::MenuItem("On every element with this sprite")) tool = SameSprite;
             ImGui::SetItemTooltip("These boxes on all the elements showing this sprite, in every action");
-            if (ImGui::MenuItem(g ? "Swap with Clsn1" : "Swap with Clsn2")) tool = Swap;
+            if (ImGui::MenuItem(g ? "Swap with the hit boxes" : "Swap with the hurt boxes")) tool = Swap;
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_TRASH " Delete them")) tool = DeleteHere;
             if (ImGui::MenuItem("Delete them in the whole action")) tool = DeleteAction;
@@ -1922,7 +1942,7 @@ void AnimationWindow() {
             ImGui::TableSetupColumn("element", ImGuiTableColumnFlags_WidthFixed, em * 18);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            changed = AnimPreview(t, spf, !screen, h - ImGui::GetFrameHeightWithSpacing());
+            changed = AnimPreview(t, spf, !screen, h);
             ImGui::TableSetColumnIndex(1);
             if (!changed) {
                 if (ImGui::BeginChild("element", ImVec2(0, h))) changed = ElementPanel(t, screen, spf, apply, goTo);
