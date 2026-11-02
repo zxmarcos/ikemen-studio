@@ -609,7 +609,7 @@ void StageNode(const Project &p) {
     bool playing = NormPath(p.def) == NormPath(g_stageDef);
     if (playing) RowNote("playing", ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Use as the stage")) g_settings.stage = p.def.compare(0, 7, "stages/") == 0 ? p.def.substr(7) : p.def;
+        if (ImGui::MenuItem("Use as the stage")) g_settings.stage = StageNameOf(p.def);
         ImGui::SetItemTooltip("In the match the game starts with (Launch, Restart).");
         ImGui::BeginDisabled(Connected());
         if (ImGui::MenuItem("Open in the Stage window")) {
@@ -723,7 +723,7 @@ void PackageDialog() {
     if (!r.leftOut.empty()) ImGui::TextDisabled("%s", r.leftOut.c_str());
     int problems[3];
     ProblemCounts(problems);
-    if (problems[0]) ImGui::TextColored(Ink(kYellow), "Problems lists %d %s.", problems[0], problems[0] == 1 ? "error" : "errors");
+    if (r.written && problems[0]) ImGui::TextColored(Ink(kYellow), "Problems lists %d %s.", problems[0], problems[0] == 1 ? "error" : "errors");
     ImGui::PopTextWrapPos();
     ImGui::Separator();
     if (r.written && ImGui::Button(ICON_FOLDER " Show in folder")) ShowFullPathInFolder(r.zip);

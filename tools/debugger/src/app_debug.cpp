@@ -134,8 +134,7 @@ void Toolbar() {
         if (ImGui::IsWindowAppearing()) {
             chars = ListDefs(false);
             stages = ListDefs(true);
-            for (std::string &n : stages)
-                if (n.compare(0, 7, "stages/") == 0) n = n.substr(7);
+            for (std::string &n : stages) n = StageNameOf(n);
         }
         auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
             ImGui::AlignTextToFramePadding();

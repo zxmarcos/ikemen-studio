@@ -123,9 +123,15 @@ void StageOpen(const std::string &def) {
     g_stageBg = -1;
 }
 
+std::string StageNameOf(const std::string &def) {
+    std::string n = def.compare(0, 7, "stages/") == 0 ? def.substr(7) : def;
+    if (n.size() > 4 && NormPath(n).compare(n.size() - 4, 4, ".def") == 0) n.resize(n.size() - 4);
+    return n;
+}
+
 void PlayStage(const std::string &def) {
     StageOpen(def);
-    g_settings.stage = def.compare(0, 7, "stages/") == 0 ? def.substr(7) : def;
+    g_settings.stage = StageNameOf(def);
     if (Connected() && g_canTrace && NormPath(def) != NormPath(g_stageDef))
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
 }

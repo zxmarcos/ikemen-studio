@@ -694,6 +694,7 @@ void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
 void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
 void StageOpen(const std::string &def);          // the Stage window shows that def while the game is not running
 void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
+std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
 void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the

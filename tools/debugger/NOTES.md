@@ -102,6 +102,14 @@ but not Problems: it would stay there as an error for good. A tab of a panel can
 tests. Not done: Sounds' delete says nothing of the states using a sound; the layer images Add layer
 saves stay outside undo; Package does not run the checks first, it only counts Problems' errors.
 
+Trying a package before tagging (2026-11-02): copy the exes, `ikdbg.lua`, `lib`, `data`, `font`,
+`external`, `chars/kfm` and the stages to a folder of their own, take MSYS2 out of `PATH`, and run
+`test_ui.ps1 -Folder <it> -Exe <it>\Ikemen_GO.exe`: its settings, `save` and edits stay there, so a
+test can save for real. To see a first run, set `FirstRun = 1` in `save/config.ini` (the title's box
+clears it; `ikdbg.lua` keeps the box from a game going somewhere). A model's nodes can be changed with
+`lua:debugModelNodeTRS(...)`; hiding one is a view, not a change. That folder is not a clean PC: this
+machine's GPU drivers and runtime stay, and Windows Home has no Sandbox to try one.
+
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
 makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;
