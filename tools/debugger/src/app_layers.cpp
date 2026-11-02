@@ -160,9 +160,11 @@ bool BgFieldsTable(SourceFile &sf, const IniSection &s) {
         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImGuiCol_Header));
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
-        // Across the row: the first column can be narrower than a title
-        ImVec2 p = ImGui::GetCursorScreenPos();
-        ImGui::PushClipRect(p, ImVec2(p.x + ImGui::GetWindowWidth(), p.y + ImGui::GetFrameHeight()), false);
+        // Across the row, as the first column can be narrower than a title, and no further than what
+        // the table shows: it scrolls
+        ImVec2 p = ImGui::GetCursorScreenPos(), at = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        ImVec2 lo(p.x, std::max(p.y, at.y)), hi(at.x + size.x, std::min(p.y + ImGui::GetFrameHeight(), at.y + size.y));
+        ImGui::PushClipRect(lo, ImVec2(hi.x, std::max(lo.y, hi.y)), false);
         ImGui::TextUnformatted(text);
         ImGui::PopClipRect();
     };
