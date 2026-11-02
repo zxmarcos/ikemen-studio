@@ -1457,11 +1457,12 @@ void AnimationWindow() {
     };
     bool disk = !screen && t.pn == kDiskPn; // a character not in the match, from disk: no game to show it
     if (!screen && !t.e && !disk) {
-        EmptyNote(g_stagePick    ? "Click an animated background on the game, or pick it in the Stage editor: its animation shows here. "
-                                   "Add layer makes one. A right click in Explorer opens any def's animations."
-                  : g_screenPick ? "Click an animated element on the game, or pick it in the Screenpack panel: its animation shows here. "
-                                   "A right click in Explorer opens any def's animations."
-                                 : "Pick a fighter on the game or a character in Explorer. A right click in Explorer opens any def's animations.");
+        ProjectKind kind = CurrentProject();
+        EmptyNote(kind == kProjectStage        ? "Click an animated background on the game, or pick it in the Stage editor: its animation shows here. "
+                                                 "Add layer makes one. A right click in Explorer opens any def's animations."
+                  : kind == kProjectScreenpack ? "Click an animated element on the game, or pick it in the Screenpack panel: its animation shows here. "
+                                                 "A right click in Explorer opens any def's animations."
+                                               : "Open a character (at the left of the toolbar, or in Explorer). A right click in Explorer opens any def's animations.");
         ImGui::End();
         return;
     }

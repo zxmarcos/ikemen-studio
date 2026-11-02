@@ -317,7 +317,7 @@ bool g_codeAsked = true;
 void PickFor(const Workspace &w) { SetPickMode(w.code == kStageDef ? kPickStage : w.code == kFightDef ? kPickScreen : kPickFighters); }
 
 void CodeFor(const Workspace &w) {
-    std::string file = w.code == kStageDef ? g_stageDef : w.code == kFightDef ? FightScreenDef() : "";
+    std::string file = w.code == kStageDef ? ProjectDef(kProjectStage) : w.code == kFightDef ? FightScreenDef() : "";
     if (w.code != kFollow && file.empty()) return;
     CodeShow(file);
     g_codeAsked = false;
@@ -405,6 +405,7 @@ ProjectKind CurrentProject() {
 }
 
 void AskProjectWorkspace(ProjectKind kind) {
+    if (kind != kProjectCharacter) g_codeAsked = true; // Code shows its def
     if (CurrentProject() == kind) return;
     for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
         const Workspace &w = g_spaces[n];

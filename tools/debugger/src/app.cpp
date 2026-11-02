@@ -692,6 +692,7 @@ void App_Frame() {
     NewDialog();
     UnsavedDialog();
     PackageDialog();
+    ProjectDialog();
     HelpDialog();
     StatusBar();
     if (g_autoLaunch) {

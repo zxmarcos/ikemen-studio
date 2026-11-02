@@ -417,7 +417,9 @@ static void SelectionLine(bool focused) {
         ImGui::SameLine();
         if (ImGui::SmallButton(label)) ShowWindow(window);
     };
-    if (g_stagePick) {
+    if (g_stagePick && !StageInMatch()) {
+        ImGui::TextDisabled("The stage open is not in the match: its backgrounds are not on the game.");
+    } else if (g_stagePick) {
         std::string bg = StageSelection();
         if (bg.empty()) {
             ImGui::TextDisabled("Click a background to select it, drag to move it.");

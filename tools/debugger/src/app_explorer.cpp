@@ -594,7 +594,7 @@ void StageNode(const Project &p) {
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
     SourceFile *shown = StageSource(); // the Stage window's
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
-    if (shown && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
+    if (shown && CurrentProject() == kProjectStage && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.def.c_str(), flags, "%s", p.name.c_str());
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ProjectOpen(kProjectStage, p.def);
     ImGui::SetItemTooltip(Connected() ? "%s\nA click opens it as the project: it takes the match's place, and the match goes on."
@@ -604,13 +604,8 @@ void StageNode(const Project &p) {
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Use as the stage")) g_settings.stage = StageNameOf(p.def);
         ImGui::SetItemTooltip("In the match the game starts with (Launch, Restart).");
-        ImGui::BeginDisabled(Connected());
-        if (ImGui::MenuItem("Open in the Stage window")) {
-            StageOpen(p.def);
-            ShowWindow("Stage");
-        }
-        ImGui::EndDisabled();
-        ImGui::SetItemTooltip(Connected() ? "With the game running, the window shows the match's stage." : "Its sections and fields, edited from disk.");
+        if (ImGui::MenuItem("Open, leaving the match as it is")) ProjectOpen(kProjectStage, p.def, false);
+        ImGui::SetItemTooltip("The project becomes this stage, edited from disk; the game goes on with the one it has.");
         ImGui::Separator();
         FileMenuItems(p.def, "");
         ImGui::EndPopup();
@@ -672,13 +667,18 @@ std::vector<std::pair<std::string, std::string>> StoryboardFiles() {
     return out;
 }
 
-// What File > Package takes: what the workspace is working on
+// What File > Package takes: the project
 std::string PackageTarget() {
-    if (g_stagePick) {
-        SourceFile *sf = StageSource();
-        return sf ? sf->path : "";
-    }
-    return g_screenPick ? MotifPath() : WorkDef();
+    std::string def = ProjectDef(CurrentProject());
+    return GameFileExists(def) ? def : "";
+}
+
+void SetScreenpack(const std::string &def) {
+    std::string &extra = g_settings.extra;
+    size_t r = extra.find("-r ");
+    if (r != std::string::npos) extra.erase(r, extra.find(' ', r + 3) == std::string::npos ? std::string::npos : extra.find(' ', r + 3) + 1 - r);
+    extra += (extra.empty() || extra.back() == ' ' ? "" : " ") + ("-r " + def);
+    ImGui::MarkIniSettingsDirty();
 }
 
 void PackageWorkedOn() {
@@ -850,10 +850,8 @@ void ExplorerWindow() {
         if (ok) {
             if (CopyScreenpack(name, &status)) {
                 // The motif of the next launch, without touching config.ini
-                std::string &extra = g_settings.extra;
-                size_t r = extra.find("-r ");
-                if (r != std::string::npos) extra.erase(r, extra.find(' ', r + 3) == std::string::npos ? std::string::npos : extra.find(' ', r + 3) + 1 - r);
-                extra += (extra.empty() || extra.back() == ' ' ? "" : " ") + ("-r data/" + name + "/system.def");
+                SetScreenpack("data/" + name + "/system.def");
+                ProjectOpen(kProjectScreenpack, "data/" + name + "/system.def", false);
                 Log(LogLine::Info, "New screenpack: " + status + ". The game starts with it from the next launch (-r in the session's arguments).");
                 Scan(true);
                 g_defs.clear();

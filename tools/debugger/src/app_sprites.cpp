@@ -959,18 +959,13 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
 
 // On a stage or a screen with no character chosen: what they are made of
 static SpriteFile *WorkspaceSprites(const char **what) {
-    if (g_screenPick)
+    bool stage = CurrentProject() == kProjectStage;
+    if (!stage)
         if (SpriteFile *spf = SelectedScreenSprites(what)) return spf;
-    std::string def;
-    if (g_stagePick) {
-        SourceFile *sf = StageSource();
-        def = sf ? sf->path : SettingsStageDef();
-    } else if (g_screenPick) {
-        def = FightScreenDef();
-    }
+    std::string def = stage ? ProjectDef(kProjectStage) : FightScreenDef();
     std::string sff = def.empty() ? "" : SpritesFileOf(def);
     if (sff.empty()) return nullptr;
-    *what = g_stagePick ? "stage" : "fight screen";
+    *what = stage ? "stage" : "fight screen";
     return &SpriteFileAt(sff);
 }
 

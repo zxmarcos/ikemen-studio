@@ -2604,9 +2604,8 @@ void ModelWindow() {
         ImGui::End();
         return;
     }
-    // Which model: the one opened from Explorer, else the stage's (the match's, else the toolbar's);
-    // live when it is the match's
-    bool liveHas = Connected() && g_live.known && g_live.has;
+    // Which model: the one opened from Explorer, else the stage project's; live when it is the match's
+    bool liveHas = StageInMatch() && g_live.known && g_live.has;
     std::string path, def;
     bool live = false;
     if (!g_wanted.empty()) {
@@ -2615,7 +2614,7 @@ void ModelWindow() {
     } else if (liveHas) {
         live = true;
     } else {
-        def = !g_stageDef.empty() ? g_stageDef : SettingsStageDef();
+        def = ProjectDef(kProjectStage);
         path = ModelOfDef(def);
     }
     if (live != g_isLive) g_selKind = kNone, g_sel = -1, g_keysAnim = -1, g_key = KeySel();

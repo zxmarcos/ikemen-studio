@@ -578,6 +578,7 @@ bool SelectedOfProject();                               // the fighter selected 
 int ProjectFighter(int pn);                             // its fighter: the one selected, else the player's root; -1 none
 const std::vector<ProjectRecent> &ProjectRecents();     // the last ones, for going back to them
 void ProjectBar();                                      // on the toolbar: its name, where it is, others to open
+void ProjectDialog();                                   // another screenpack: the game has to start again
 void ProjectSettingsLine(const std::string &key, const std::string &value);
 void ProjectSettingsWrite(ImGuiTextBuffer *buf);
 // The character the windows work on (Analysis, Sounds, Commands, Sprites): the project, when the
@@ -591,6 +592,7 @@ int PlayerOf(const std::string &def); // the player a character's def is in the 
 std::string CharDefOf(const std::string &name); // a character as ListDefs names it ("kfm", "kfm/kfm720.def"): its def
 std::string CharNameOf(const std::string &def); // and the other way
 std::string PackageTarget();                    // the def File > Package takes, "" none
+void SetScreenpack(const std::string &def);     // the game starts with it, from the session's -r
 void PackageWorkedOn();
 void PackageDialog();                           // how the last package went
 void HelpAsk(int what);                         // the keys (0) or the words (1)
@@ -709,12 +711,13 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
 // window's own zoom and pan stay put). pictureAt: a screen point to the game picture's pixels.
 bool StageCameraInput(bool hovered, ImVec2 picturePerScreen, const std::function<ImVec2(ImVec2)> &pictureAt);
 void StageWindow();
-SourceFile *StageSource();                   // the stage's def, nullptr when not known
+SourceFile *StageSource();                   // the stage project's def, nullptr when not known
+bool StageInMatch();                         // it is the match's: only then does anything go to the game
 const IniFile &StageIni(const SourceFile &sf); // parsed, again when its text changes
 void StageEdited(SourceFile &sf);             // after an edit of its text: the game shows it
 void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
 void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
-void StageOpen(const std::string &def);          // the Stage window shows that def while the game is not running
+void StageOpen();                                // another stage is open: nothing of the last one stays selected
 void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked

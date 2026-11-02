@@ -4,6 +4,8 @@
 #include "app_internal.h"
 
 #include <algorithm>
+#include <cfloat>
+#include <filesystem>
 #include <map>
 
 #include "imgui_internal.h"
@@ -12,7 +14,9 @@ namespace app {
 
 namespace {
 
-std::string g_project[kProjectKinds]; // opened; "": what the match uses
+std::string g_project[kProjectKinds]; // opened; "": what the match uses. A screenpack's is the session's -r
+std::string g_restartFor;             // the screenpack the game would start again with
+bool g_restartAsked;                  // shown from the next frame
 std::vector<ProjectRecent> g_recent;
 const size_t kRecents = 4;
 const char kLetters[] = "csm"; // a kind in the settings
@@ -34,6 +38,26 @@ void AddRecent(ProjectKind kind, const std::string &def) {
     if (g_recent.size() > kRecents) g_recent.pop_back();
 }
 
+void Keep(ProjectKind kind, const std::string &def) {
+    if (kind != kProjectScreenpack) g_project[kind] = def;
+    AddRecent(kind, def);
+    ImGui::MarkIniSettingsDirty();
+    AskProjectWorkspace(kind);
+    if (kind == kProjectStage) StageOpen();
+}
+
+// The screenpacks of the game's data folder
+std::vector<std::string> Screenpacks() {
+    std::vector<std::string> out;
+    if (GameFileExists("data/system.def")) out.push_back("data/system.def");
+    std::error_code ec;
+    for (const auto &de : std::filesystem::directory_iterator(GamePath("data"), ec)) {
+        std::string def = "data/" + de.path().filename().string() + "/system.def";
+        if (GameFileExists(def)) out.push_back(def);
+    }
+    return out;
+}
+
 // Already on its way into P1's place: a double click would start the match again twice
 bool GoingIn(const std::string &name) {
     auto want = g_swapWanted.find(1);
@@ -44,7 +68,7 @@ bool GoingIn(const std::string &name) {
 std::string ProjectWhere(ProjectKind kind, const std::string &def) {
     if (!Connected()) return "";
     if (kind == kProjectStage) return NormPath(def) == NormPath(g_stageDef) ? "in the match" : "not in the match";
-    if (kind == kProjectScreenpack) return NormPath(def) == NormPath(MotifDef()) ? "in the game" : "not in the game";
+    if (kind == kProjectScreenpack) return "in the game";
     if (!g_swapWanted.empty()) return "";
     int pn = PlayerOf(def);
     return pn ? "P" + std::to_string(pn) : "not in the match";
@@ -55,10 +79,10 @@ std::string ProjectWhere(ProjectKind kind, const std::string &def) {
 const std::vector<ProjectRecent> &ProjectRecents() { return g_recent; }
 
 std::string ProjectDef(ProjectKind kind) {
+    if (kind == kProjectScreenpack) return ScreenpackDef();
     const std::string &opened = g_project[kind];
     if (!opened.empty() && GameFileExists(opened)) return opened;
     if (kind == kProjectStage) return Connected() && !g_stageDef.empty() ? g_stageDef : SettingsStageDef();
-    if (kind == kProjectScreenpack) return ScreenpackDef();
     std::string p1 = Connected() ? CharFile(1, "def") : "";
     return p1.empty() ? CharDefOf(g_settings.p1) : p1;
 }
@@ -74,16 +98,21 @@ std::string ProjectName(ProjectKind kind, const std::string &def) {
 
 void ProjectOpen(ProjectKind kind, const std::string &def, bool enter) {
     if (def.empty()) return;
-    g_project[kind] = def;
-    AddRecent(kind, def);
-    ImGui::MarkIniSettingsDirty();
-    AskProjectWorkspace(kind);
+    // A motif is loaded as the game starts: another one takes starting it again
+    if (kind == kProjectScreenpack && enter && Connected() && NormPath(def) != NormPath(ProjectDef(kind))) {
+        g_restartFor = def;
+        g_restartAsked = true;
+        return;
+    }
+    Keep(kind, def);
     if (!enter) return;
     if (kind == kProjectStage) {
         PlayStage(def);
-    } else if (kind == kProjectCharacter && !Connected()) {
+    } else if (kind == kProjectScreenpack) {
+        SetScreenpack(def);
+    } else if (!Connected()) {
         g_settings.p1 = CharNameOf(def);
-    } else if (kind == kProjectCharacter && !PlayerOf(def) && !GoingIn(CharNameOf(def))) {
+    } else if (!PlayerOf(def) && !GoingIn(CharNameOf(def))) {
         g_settings.p1 = CharNameOf(def);
         SwapChar(1, g_settings.p1);
     }
@@ -126,12 +155,12 @@ void ProjectBar() {
     static std::map<std::string, std::string> defs; // name -> def
     if (ImGui::IsWindowAppearing()) {
         names.clear(), defs.clear();
-        if (kind != kProjectScreenpack)
-            for (const std::string &n : ListDefs(kind == kProjectStage)) {
-                std::string shown = kind == kProjectStage ? StageNameOf(n) : n;
-                names.push_back(shown);
-                defs[shown] = kind == kProjectStage ? n : CharDefOf(n);
-            }
+        bool character = kind == kProjectCharacter;
+        for (const std::string &n : kind == kProjectScreenpack ? Screenpacks() : ListDefs(kind == kProjectStage)) {
+            std::string shown = character ? n : ProjectName(kind, n);
+            names.push_back(shown);
+            defs[shown] = character ? CharDefOf(n) : n;
+        }
     }
     bool any = false;
     for (const ProjectRecent &r : g_recent) {
@@ -157,6 +186,31 @@ void ProjectBar() {
             ImGui::CloseCurrentPopup();
         }
     }
+    ImGui::EndPopup();
+}
+
+void ProjectDialog() {
+    const char *title = ICON_DISPLAY " Another screenpack";
+    if (g_restartAsked) {
+        g_restartAsked = false;
+        ImGui::OpenPopup(title);
+    }
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 30, 0));
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) return;
+    ImGui::TextWrapped("The game has to start again to use %s, so this match ends.", ProjectName(kProjectScreenpack, g_restartFor).c_str());
+    ImGui::Separator();
+    if (ImGui::Button(ICON_RESTART " Start the game again")) {
+        Keep(kProjectScreenpack, g_restartFor);
+        SetScreenpack(g_restartFor);
+        Launch();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_XMARK " Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
 }
 

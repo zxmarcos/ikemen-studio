@@ -757,6 +757,7 @@ void CreateStage(StageForm &f) {
         g_settings.stage = f.file;
         f.status += ", the stage of the next match";
     }
+    ProjectOpen(kProjectStage, def, false);
     Log(LogLine::Info, f.status);
     for (StageLayer &l : f.layers) FreeLayer(l);
     f.layers.clear();

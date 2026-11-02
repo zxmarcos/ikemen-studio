@@ -108,20 +108,15 @@ const IniFile &StageIni(const SourceFile &sf) {
     return ini;
 }
 
-static std::string g_stageOpened; // the stage picked in Explorer
-
-// The match's stage; the game not running, the one picked in Explorer, else the last match's or the toolbar's.
+// The stage project; from disk when the match is on another, so what goes to the game asks StageInMatch
 SourceFile *StageSource() {
-    std::string def = g_stageDef;
-    if (!Connected() && !g_stageOpened.empty()) def = g_stageOpened;
-    if (def.empty()) def = SettingsStageDef();
+    std::string def = ProjectDef(kProjectStage);
     return def.empty() ? nullptr : &LoadSource(def);
 }
 
-void StageOpen(const std::string &def) {
-    g_stageOpened = def;
-    g_stageBg = -1;
-}
+bool StageInMatch() { return Connected() && !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(ProjectDef(kProjectStage)); }
+
+void StageOpen() { g_stageBg = -1; }
 
 std::string StageNameOf(const std::string &def) {
     std::string n = def.compare(0, 7, "stages/") == 0 ? def.substr(7) : def;
@@ -130,7 +125,6 @@ std::string StageNameOf(const std::string &def) {
 }
 
 void PlayStage(const std::string &def) {
-    StageOpen(def);
     g_settings.stage = StageNameOf(def);
     if (Connected() && g_canTrace && NormPath(def) != NormPath(g_stageDef))
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
@@ -158,7 +152,7 @@ void MoveBg(int index, int dx, int dy) {
     start[0] += dx, start[1] += dy;
     if (!Ini_SetField(sf->text, *s, "start", Ini_Floats(start, 2))) return;
     sf->version++;
-    if (!Connected()) return;
+    if (!StageInMatch()) return;
     char lua[96];
     snprintf(lua, sizeof(lua), "debugStageBgMove(%d, %d, %d)", index, dx, dy);
     SendRaw(lua);
@@ -167,7 +161,7 @@ void MoveBg(int index, int dx, int dy) {
 // The game loads the stage again from the text being edited (a file next to the def, which the
 // game deletes once read), or from the def on disk; sprites: its SFF too (it was saved).
 void ReloadStage(SourceFile &sf, bool fromText, bool sprites) {
-    if (!Connected()) return;
+    if (!Connected() || NormPath(g_stageDef) != NormPath(sf.path)) return; // another stage's text is not the match's
     // Which BG is which, when that changes: each goes on where it was. shown: the text the game has
     static std::map<std::string, std::string> shown;
     std::string &was = shown.emplace(NormPath(sf.path), sf.disk).first->second;
@@ -199,7 +193,7 @@ void ReloadStage(SourceFile &sf, bool fromText, bool sprites) {
 
 void StageSpritesSaved(const std::string &path) {
     if (g_stageSff.empty() || NormPath(g_stageSff) != NormPath(path)) return;
-    if (SourceFile *sf = StageSource()) ReloadStage(*sf, true, true);
+    if (!g_stageDef.empty()) ReloadStage(LoadSource(g_stageDef), true, true);
 }
 
 // After an edit of the text: the game shows it at once.
@@ -455,6 +449,8 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
                   ImVec2 scale) {
     static int dragBg = -1;
     static ImVec2 rest;
+    // What the game draws is the match's stage: another's def has other BGs under the same numbers
+    if (!StageInMatch()) return false;
     // The limits' handles first
     if (LimitsOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, toScreen)) {
         hovered = clicked = false;
@@ -590,10 +586,9 @@ std::string SettingsStageDef() {
     return GameFileExists(def) ? def : "";
 }
 
-// The stage in the match, else the toolbar's
+// The stage project
 void StageProblems(std::vector<Problem> &out) {
-    std::string def = g_stageDef;
-    if (def.empty()) def = SettingsStageDef();
+    std::string def = ProjectDef(kProjectStage);
     if (def.empty()) return;
     SourceFile &sf = LoadSource(def);
     static IniFile ini;
@@ -660,7 +655,7 @@ void StageWindow() {
         ImGui::End();
         return;
     }
-    bool live = Connected() && !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(sfp->path);
+    bool live = StageInMatch();
     SourceFile &sf = *sfp;
     // The selected section: a BG picked on the game, or one clicked in the list
     static int selSection = -1;
