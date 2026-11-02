@@ -209,6 +209,19 @@ Fighter Factory's two-column editor is the palette combo plus Copy and Paste, wh
 survive a change of palette; its remap table is that combo too. Not done: PalFX
 sent to the game (only the preview and a controller to paste).
 
+Sprite sheets (src/sheet.cpp, tested; the tool in src/app_sheet.cpp, the dialog drawn
+by the Sprites window, whose `sf` it adds to): a mask of what is not background, each
+pixel spread `gap` cells right and down (so that two parts with gap empty pixels between
+them meet and with one more do not; both ways would be right only for even gaps),
+components with corners touching, each one's box from its own pixels, boxes inside
+another joined to it. A piece's picture has only its pixels (`labels`), since boxes can
+cross. Rows are by any vertical overlap: a jump higher than its neighbours stays in the
+row. Sprites come through `Sff_SpritesOfPictures`, the second half of
+`Sff_SpritesOfPngs`; `SFF_PAL_ONE` is the default because a sheet rarely has the
+colours of palette 1,1, and mapping to it changes them (red turned brown on kfm). WIC
+converts images to RGBA, so an indexed PNG's indices are not kept. It stays open after
+a group: sheets are rows of animations, one group each.
+
 Paint (src/app_paint.cpp, on src/pixels.cpp, tested): the Sprites window's third
 tab; the left button on the preview is the tool's. The picture is kept as indices
 and its own texture while the mouse is down, and goes back to the sprite with
@@ -630,6 +643,8 @@ tools/debugger/
   src/app_game.cpp       Game window: frames, boxes over them, dragging, keys to the game
   src/app_anim.cpp       Animation window (AIR)
   src/app_sprites.cpp    Sprites window (SFF), file dialogs
+  src/app_sheet.cpp      the sprite sheet tool of Sprites' Add PNG
+  src/sheet.cpp/.h       a sheet cut into pieces (no window; tests/sheet_test.cpp)
   src/app_sffpal.cpp     palettes: a character's (ACT files, SFF 1,N), the Palette tab, sent to the game live
   src/app_paint.cpp      the Sprites window's Paint tab
   src/app_sounds.cpp     Sounds window (SND)

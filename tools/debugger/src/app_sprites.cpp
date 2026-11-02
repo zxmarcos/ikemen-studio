@@ -306,17 +306,22 @@ static void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, co
     SpritesChanged(sf);
 }
 
-bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, std::vector<std::pair<int, int>> &numbers) {
-    Sff_SetImageReader(DecodeImage);
-    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, SFF_PAL_OWN, SpriteLog);
-    if (made.empty()) return false;
+int FreeGroup(const SffDoc &d) {
     std::set<int> groups;
     int g = 0;
-    for (const SffSprite &s : sf.doc.sprites) {
+    for (const SffSprite &s : d.sprites) {
         groups.insert(s.group);
         if (s.group < 9000) g = std::max(g, s.group + 1); // 9000 and up are portraits
     }
     while (groups.count(g)) g++;
+    return g;
+}
+
+bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, std::vector<std::pair<int, int>> &numbers) {
+    Sff_SetImageReader(DecodeImage);
+    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, SFF_PAL_OWN, SpriteLog);
+    if (made.empty()) return false;
+    int g = FreeGroup(sf.doc);
     for (size_t k = 0; k < made.size(); k++) {
         SffSprite &s = made[k];
         s.group = g, s.number = (int)k;
@@ -416,7 +421,7 @@ static void SpriteBrowser(SpriteFile &sf, int pn, const PalChoice &view, bool sc
     float addW = ImGui::CalcTextSize(ICON_PLUS " Add PNG...").x + style.FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - addW));
     if (ImGui::Button(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
-    ImGui::SetItemTooltip("Add sprites made of image files, an export or another SFF");
+    ImGui::SetItemTooltip("Add sprites made of image files, a sprite sheet, an export or another SFF");
 
     int fg = -1, fn = -1;
     if (!filter.empty()) sscanf(filter.c_str(), "%d , %d", &fg, &fn);
@@ -1146,6 +1151,8 @@ void SpritesWindow() {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::Separator();
+            if (ImGui::Selectable(ICON_IMAGE " A sprite sheet...")) SheetAsk(sf);
+            ImGui::SetItemTooltip("One image with many sprites: drag an area and each sprite in it is cut into a new group");
             if (ImGui::Selectable("An export (sprites.txt)...")) {
                 std::vector<std::string> list = PickFiles("List of sprites\0sprites.txt\0All files (*.*)\0*.*\0", false);
                 std::vector<SffListRow> rows;
@@ -1194,6 +1201,7 @@ void SpritesWindow() {
             ImGui::EndDisabled();
             ImGui::EndPopup();
         }
+        SheetDialog(sf, pn > 0);
     };
 
     // The sprites | the preview | the sprite's and the palette's tabs (under the preview when narrow)

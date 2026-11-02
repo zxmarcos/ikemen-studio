@@ -236,11 +236,65 @@ static void BatchTests() {
     printf("batch edits checked\n");
 }
 
+static void PictureTests() {
+    // Two pictures: red and green on one, red and blue on the other
+    SffPicture a, b;
+    a.w = b.w = 2, a.h = b.h = 1;
+    a.rgba = {255, 0, 0, 255, 0, 255, 0, 255};
+    b.rgba = {255, 0, 0, 255, 0, 0, 255, 0}; // the blue one transparent
+    auto quiet = [](const std::string &) {};
+    SffDoc d;
+    std::vector<SffSprite> made = Sff_SpritesOfPictures(d, {a, b}, SFF_PAL_ONE, quiet);
+    CHECK(made.size() == 2);
+    CHECK(d.pals.size() == 1 && d.pals[0].group == 0 && d.pals[0].number == 0);
+    CHECK(made[0].pal == 0 && made[1].pal == 0);
+    std::vector<unsigned char> px, rgba;
+    int bpp = 0;
+    CHECK(Sff_Decode(made[0], px, &bpp) && bpp == 1);
+    Sff_ToRgba(d, made[0], px, bpp, rgba);
+    CHECK(rgba == a.rgba);
+    CHECK(Sff_Decode(made[1], px, &bpp));
+    CHECK(px[1] == 0 && px[0] != 0);
+    Sff_ToRgba(d, made[1], px, bpp, rgba);
+    CHECK(rgba[0] == 255 && rgba[7] == 0);
+    // Through the file: the palette stays one, the colours the same
+    for (size_t i = 0; i < made.size(); i++) {
+        made[i].group = 77, made[i].number = (int)i;
+        d.sprites.push_back(made[i]);
+    }
+    std::string tmp = std::string(getenv("TEMP") ? getenv("TEMP") : ".") + "\\sff_test_pictures.sff";
+    std::ofstream(tmp, std::ios::binary) << Sff_Build(d);
+    SffDoc back;
+    CHECK(Sff_Load(back, tmp));
+    CHECK(back.sprites.size() == 2 && back.pals.size() == 1 && back.sprites[0].pal == back.sprites[1].pal);
+    int found = Sff_FindSprite(back, 77, 0);
+    CHECK(found >= 0 && Sff_Decode(back.sprites[found], px, &bpp));
+    Sff_ToRgba(back, back.sprites[found], px, bpp, rgba);
+    CHECK(rgba == a.rgba);
+    remove(tmp.c_str());
+    d.sprites.clear();
+    // A second group has a palette of its own, the first stays
+    made = Sff_SpritesOfPictures(d, {a}, SFF_PAL_ONE, quiet);
+    CHECK(d.pals.size() == 2 && d.pals[1].number == 1 && made[0].pal == 1);
+    // On palette 1,1: made from them when there is none
+    SffDoc shared;
+    made = Sff_SpritesOfPictures(shared, {a, b}, SFF_PAL_SHARED, quiet);
+    CHECK(made.size() == 2 && shared.pals.size() == 1 && shared.pals[0].group == 1 && made[1].pal == 0);
+    // Each with its own
+    SffDoc own;
+    made = Sff_SpritesOfPictures(own, {a, b}, SFF_PAL_OWN, quiet);
+    CHECK(made.size() == 2 && own.pals.size() == 2 && made[0].pal == 0 && made[1].pal == 1);
+    // Nothing: no palette
+    SffDoc none;
+    CHECK(Sff_SpritesOfPictures(none, {}, SFF_PAL_ONE, quiet).empty() && none.pals.empty());
+}
+
 int main() {
     RoundTrip("chars/kfm/kfm.sff", "chars/kfm/kfm.act");
     RoundTrip("chars/ryu_pots/ryusprite.sff", "");
     ActRoundTrip("chars/ryu_pots/ryupalettes/default.act");
     BatchTests();
+    PictureTests();
     printf(g_failed ? "sff-test: %d failed\n" : "sff-test: all passed\n", g_failed);
     return g_failed ? 1 : 0;
 }

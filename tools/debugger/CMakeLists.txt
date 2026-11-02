@@ -54,6 +54,8 @@ add_executable(ikemen-debugger WIN32
   src/app_game.cpp
   src/app_anim.cpp
   src/app_sprites.cpp
+  src/app_sheet.cpp
+  src/sheet.cpp
   src/app_sounds.cpp
   src/app_code.cpp
   src/app_debug.cpp
@@ -154,6 +156,8 @@ target_include_directories(palfile-test PRIVATE src)
 target_link_libraries(palfile-test PRIVATE lodepng)
 add_executable(pixels-test tests/pixels_test.cpp src/pixels.cpp)
 target_include_directories(pixels-test PRIVATE src)
+add_executable(sheet-test tests/sheet_test.cpp src/sheet.cpp)
+target_include_directories(sheet-test PRIVATE src)
 add_executable(pack-test tests/pack_test.cpp src/pack.cpp)
 target_include_directories(pack-test PRIVATE src)
 add_executable(story-test tests/story_test.cpp src/story.cpp src/ini.cpp)

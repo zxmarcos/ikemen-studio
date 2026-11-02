@@ -456,6 +456,11 @@ void SaveSprites(SpriteFile &sf);
 // layers have it: false when none could be read. numbers: the group and number of each one made
 bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, std::vector<std::pair<int, int>> &numbers);
 extern const char kImageFilter[];
+int FreeGroup(const SffDoc &d); // a group no sprite has, after those in use (9000 and up, portraits, do not count)
+// The sprite sheet tool (app_sheet.cpp): an image picked, then its dialog, which the Sprites window draws
+void SheetAsk(SpriteFile &sf);
+void SheetDialog(SpriteFile &sf, bool character);
+void SpriteLog(const std::string &s); // a line of the log
 std::vector<int> SelectedSprites(const SpriteFile &sf); // those selected, else the one shown
 // Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the
 // keyboard: -1 undo, 1 redo, 0 neither. fromGame: also while Game has it, for what is dragged there.

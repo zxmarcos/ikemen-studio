@@ -727,20 +727,23 @@ bool Sff_SavePng(const SffDoc &d, const SffSprite &s, const std::string &path, s
     return true;
 }
 
-std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::string> &files, int palMode,
-                                         const std::function<void(const std::string &)> &log) {
-    std::vector<Image> images;
-    for (const std::string &f : files) {
-        Image img;
-        std::string error;
-        if (LoadPng(f, img, &error))
-            images.push_back(img);
-        else
-            log(error);
-    }
+static std::vector<SffSprite> SpritesOfImages(SffDoc &d, const std::vector<Image> &images, int palMode,
+                                              const std::function<void(const std::string &)> &log) {
     std::vector<SffSprite> out;
+    bool shared = palMode == SFF_PAL_SHARED || palMode == SFF_PAL_SAME;
     int p11 = Sff_FindPal(d, 1, 1);
-    if (palMode != SFF_PAL_OWN && p11 < 0 && !images.empty()) {
+    int one = -1; // the palette all of them share, of their own
+    if (palMode == SFF_PAL_ONE && !images.empty()) {
+        std::map<unsigned, int> colors;
+        for (const Image &img : images) CountColors(img, colors);
+        SffPal p;
+        while (Sff_FindPal(d, 0, p.number) >= 0) p.number++;
+        p.rgba = MakePalette(colors);
+        if (colors.size() > 255) log(std::to_string(colors.size()) + " colours in the images: their palette has the 255 that stand for them best");
+        d.pals.push_back(p);
+        one = (int)d.pals.size() - 1;
+    }
+    if (shared && p11 < 0 && !images.empty()) {
         bool same = true;
         for (const Image &img : images) same = same && img.indexed && SamePalette(img.pal, images[0].pal);
         SffPal p;
@@ -762,7 +765,11 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
         SffSprite s;
         s.w = img.w, s.h = img.h;
         std::vector<unsigned char> px;
-        if (palMode != SFF_PAL_OWN) {
+        if (one >= 0) {
+            int inexact = 0;
+            px = MapToPalette(img, d.pals[one].rgba, 256, &inexact);
+            s.pal = one;
+        } else if (shared) {
             const std::vector<unsigned char> &pal = d.pals[p11].rgba;
             if (img.indexed && (palMode == SFF_PAL_SAME || SamePalette(img.pal, pal))) {
                 px = img.px;
@@ -813,6 +820,33 @@ std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::strin
         out.push_back(s);
     }
     return out;
+}
+
+std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &d, const std::vector<std::string> &files, int palMode,
+                                         const std::function<void(const std::string &)> &log) {
+    std::vector<Image> images;
+    for (const std::string &f : files) {
+        Image img;
+        std::string error;
+        if (LoadPng(f, img, &error))
+            images.push_back(img);
+        else
+            log(error);
+    }
+    return SpritesOfImages(d, images, palMode, log);
+}
+
+std::vector<SffSprite> Sff_SpritesOfPictures(SffDoc &d, const std::vector<SffPicture> &pictures, int palMode,
+                                             const std::function<void(const std::string &)> &log) {
+    std::vector<Image> images;
+    for (const SffPicture &p : pictures) {
+        Image img;
+        img.path = "A picture";
+        img.w = p.w, img.h = p.h;
+        img.px = p.rgba;
+        images.push_back(std::move(img));
+    }
+    return SpritesOfImages(d, images, palMode, log);
 }
 
 void Sff_SetImageReader(SffImageReader read) { g_imageReader = read; }

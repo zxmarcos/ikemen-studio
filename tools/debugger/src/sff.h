@@ -58,11 +58,19 @@ bool Sff_SavePng(const SffDoc &doc, const SffSprite &s, const std::string &path,
 // (made from the images when there is none). Own: a palette (0, n) each, or true colour past
 // 255 colours. log tells what was done.
 // Same: palette 1,1 for an indexed image's indices as they are (a colour's place is what counts).
+// One: a new palette (0, n) made from all the images, which they share.
 // Images: PNG, PCX, and whatever Sff_SetImageReader's function reads (BMP, GIF).
-enum { SFF_PAL_SHARED, SFF_PAL_OWN, SFF_PAL_SAME };
+enum { SFF_PAL_SHARED, SFF_PAL_OWN, SFF_PAL_SAME, SFF_PAL_ONE };
 enum { SFF_AXIS_FEET, SFF_AXIS_CENTRE, SFF_AXIS_TOP_LEFT };
 std::vector<SffSprite> Sff_SpritesOfPngs(SffDoc &doc, const std::vector<std::string> &files, int palMode,
                                          const std::function<void(const std::string &)> &log);
+// The same with pictures in memory
+struct SffPicture {
+    int w = 0, h = 0;
+    std::vector<unsigned char> rgba;
+};
+std::vector<SffSprite> Sff_SpritesOfPictures(SffDoc &doc, const std::vector<SffPicture> &pictures, int palMode,
+                                             const std::function<void(const std::string &)> &log);
 void Sff_SetAxis(SffSprite &s, int mode);
 // A palette of up to 255 colours (colour 0 transparent) for colours counted by use (0xRRGGBB): all of them, or a median cut.
 std::vector<unsigned char> Sff_MakePalette(const std::map<unsigned, int> &colors);
