@@ -508,8 +508,24 @@ extern std::string g_applyError; // of the last Apply that failed
 std::string GamePath(const std::string &file);
 SourceFile &LoadSource(const std::string &file);
 void ReadSource(SourceFile &sf);
-bool SaveSource(SourceFile &sf);
-void SaveAndApply(); // saves the files changed, the game compiles its characters again
+bool SaveSource(SourceFile &sf); // the first time, the old file is kept as .bak
+void SaveAndApply(); // saves everything changed (SaveAll), the game compiles its characters again
+void ApplyToGame();  // only the last part
+
+// What has changes not saved, of every kind of file (app_unsaved.cpp)
+struct Unsaved {
+    std::string path;
+    std::function<bool()> save; // false when it could not be written
+};
+std::vector<Unsaved> UnsavedList();
+void PalUnsaved(std::vector<Unsaved> &out);
+void SpritesUnsaved(std::vector<Unsaved> &out);
+void SoundsUnsaved(std::vector<Unsaved> &out);
+void FontsUnsaved(std::vector<Unsaved> &out);
+void ModelUnsaved(std::vector<Unsaved> &out);
+bool SaveAll(); // false when one could not be written
+void UnsavedAsk(bool closing); // the dialog listing them; closing: the window closes after it
+void UnsavedDialog();
 void OnReload(const Json &j);
 FILETIME FileTime(const std::string &path);
 // The file shown and the cursor's line and column (1-based); false when none is shown

@@ -86,6 +86,17 @@ void SaveSounds(SoundFile &sf) {
     }
 }
 
+void SoundsUnsaved(std::vector<Unsaved> &out) {
+    for (auto &kv : g_soundFiles)
+        if (kv.second.dirty) {
+            SoundFile *sf = &kv.second;
+            out.push_back({sf->path, [sf] {
+                               SaveSounds(*sf);
+                               return !sf->dirty;
+                           }});
+        }
+}
+
 bool ReadWavFile(const std::string &path, std::string &wav) {
     WavInfo info;
     std::string error;

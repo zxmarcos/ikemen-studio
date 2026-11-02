@@ -227,6 +227,17 @@ void SaveSprites(SpriteFile &sf) {
     }
 }
 
+void SpritesUnsaved(std::vector<Unsaved> &out) {
+    for (auto &kv : g_spriteFiles)
+        if (kv.second.dirty) {
+            SpriteFile *sf = &kv.second;
+            out.push_back({sf->path, [sf] {
+                               SaveSprites(*sf);
+                               return !sf->dirty;
+                           }});
+        }
+}
+
 // How files become sprites
 struct AddOptions {
     int group = 0, number = 0, step = 1;

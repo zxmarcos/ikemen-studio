@@ -6,5 +6,7 @@
 void App_Init(bool launch);
 void App_Poll();     // reads what the game sent
 void App_Frame();    // App_Poll + every window, between NewFrame and Render
+bool App_MayClose(); // the window being closed: false when what is not saved must be asked about first
+bool App_Quit();     // that was answered: the window closes
 void App_Shutdown(); // ends the game it started
 void App_Console(const char *lua); // scripted tests: run Lua as if typed in the Console

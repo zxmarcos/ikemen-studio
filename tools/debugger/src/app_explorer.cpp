@@ -297,6 +297,7 @@ int PlayerOf(const std::string &def) {
 }
 
 std::string g_rowChar; // the character whose files the tree is drawing
+std::set<std::string> g_rowUnsaved; // the files with changes not saved, by NormPath
 
 // ---------------------------------------------------------------------------
 // A project as a whole: a zip of it, a copy of the screenpack
@@ -471,8 +472,7 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow;
     if (!nested) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (NormPath(path) == NormPath(g_codeFile)) flags |= ImGuiTreeNodeFlags_Selected;
-    auto open = g_files.find(NormPath(path));
-    bool dirty = open != g_files.end() && open->second.Dirty();
+    bool dirty = g_rowUnsaved.count(NormPath(path)) != 0;
     std::string label = BaseName(path) + (dirty ? " *" : "") + "##" + path;
     if (!exists) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kRed));
     if (nested && g_filter.IsActive()) ImGui::SetNextItemOpen(true);
@@ -724,6 +724,8 @@ void ProjectFiles(std::vector<std::string> &out) {
 void ExplorerWindow() {
     if (!BeginTool("Explorer")) return;
     Scan(false);
+    g_rowUnsaved.clear();
+    for (const Unsaved &u : UnsavedList()) g_rowUnsaved.insert(NormPath(u.path));
     // The players' files, to mark their characters (asked again after a swap)
     for (const Entity &e : g_ents)
         if (!e.helper) AirPath(e.pn);

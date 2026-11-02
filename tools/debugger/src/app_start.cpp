@@ -79,9 +79,7 @@ static void TourFrame() {
         g_tourPick = picks;
     }
     if (g_tour == 1 && picks != g_tourPick) g_tour = 2;
-    if (g_tour == 2)
-        for (const auto &kv : g_files)
-            if (kv.second.Dirty()) g_tour = 3;
+    if (g_tour == 2 && !UnsavedList().empty()) g_tour = 3;
 
     const ImGuiStyle &st = ImGui::GetStyle();
     ImGuiViewport *vp = ImGui::GetMainViewport();

@@ -2578,6 +2578,19 @@ void ModelSection(bool stageHasModel) {
     }
 }
 
+static void SaveLiveModel() { Exec("local ok, err = debugModelSave() if not ok then error(err, 0) end"); }
+
+static bool SaveDiskModel() {
+    std::string error;
+    if (!Gltf_Save(g_disk.doc, &error)) {
+        Log(LogLine::Error, g_disk.path + ": " + error);
+        return false;
+    }
+    g_disk.mtime = FileTime(GamePath(g_disk.path));
+    Log(LogLine::Info, "Saved " + g_disk.path);
+    return true;
+}
+
 void ModelWindow() {
     if (!BeginTool("Model")) return;
     float em = ImGui::GetFontSize(), lw = em * 6.5f;
@@ -2650,16 +2663,8 @@ void ModelWindow() {
     ImGui::SetItemTooltip("Writes the model's changes into its file (a .bak of it the first time),\n"
                           "and the stage's def when its placement changed.");
     if (save) {
-        if (dirty && live) Exec("local ok, err = debugModelSave() if not ok then error(err, 0) end");
-        if (dirty && !live) {
-            std::string error;
-            if (Gltf_Save(g_disk.doc, &error)) {
-                g_disk.mtime = FileTime(GamePath(g_disk.path));
-                Log(LogLine::Info, "Saved " + g_disk.path);
-            } else {
-                Log(LogLine::Error, g_disk.path + ": " + error);
-            }
-        }
+        if (dirty && live) SaveLiveModel();
+        if (dirty && !live) SaveDiskModel();
         if (defDirty) SaveSource(*sf);
     }
     SameLineFits(buttonWidth("Revert"));
@@ -2720,6 +2725,15 @@ void ModelWindow() {
     }
     ListsAndInspector(lw);
     ImGui::End();
+}
+
+void ModelUnsaved(std::vector<Unsaved> &out) {
+    if (Connected() && g_live.known && g_live.has && (g_mframe.ok ? g_mframe.dirty : g_live.dirty))
+        out.push_back({g_live.file, [] {
+                           SaveLiveModel();
+                           return true;
+                       }});
+    if (g_disk.doc.Dirty()) out.push_back({g_disk.path, SaveDiskModel});
 }
 
 } // namespace app

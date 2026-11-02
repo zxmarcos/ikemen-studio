@@ -71,6 +71,14 @@ looks at the frame before; `CreateDialog` is a Win32 macro. `WorkPn` now asks fo
 player being swapped: nothing else did, so a character made and put in the match stayed "from
 disk" and New move offered no Try.
 
+What is not saved (2026-11-02, `src/app_unsaved.cpp`): one list of every kind of file,
+`UnsavedList`, each row with how to save it, for the status bar, Explorer's `*`, the first steps,
+File > Save and apply (`SaveAll`, then `ApplyToGame`) and the question on closing the window. A new
+kind of document adds a `...Unsaved` to it. A model in the match is written by the game, so Save
+all waits up to 3 s for the row to go. `SaveSource` keeps a `.bak` as the others do: tests that
+save text must remove it too. In `test_ui.ps1`, `ps:$dbg.CloseMainWindow()` closes as a person does;
+most number fields are dragged (`drag:`), not typed into.
+
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
 makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;
@@ -542,6 +550,7 @@ tools/debugger/
   src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool, the status bar
   src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
   src/app_start.cpp      the start page, the first steps, EmptyNote
+  src/app_unsaved.cpp    what has changes not saved, of every kind; the dialog about them
   src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
   src/app_navigate.cpp   Search (find in files, a state's references) and Outline windows
   src/app_problems.cpp   Problems window: Lint, stage checks, Apply, the engine's warnings

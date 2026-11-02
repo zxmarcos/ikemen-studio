@@ -71,8 +71,12 @@ Below the windows, the **status bar**: what the game is doing (not running,
 running, paused, stepping; tick and round) and the player selected, its
 colour green while the game runs, yellow paused, red stopped at a breakpoint;
 at the right, the problems (errors and warnings; a click shows Problems), the
-file shown in Code with the cursor's line and column, the files not saved (a
-click saves and applies), the workspace.
+file shown in Code with the cursor's line and column, the files not saved, of
+every kind (text, sprites, palettes, sounds, fonts, 3D models; a click lists them
+and saves them all), the workspace. **Closing the window** with files not saved
+asks first: Save all, Don't save or Cancel. **File > Save and apply** saves them
+all too. Text files keep a `.bak` of what they were before their first save, as
+the others do.
 
 The editor works without the game too: **Explorer** lists the game's
 characters (`chars/`), stages (`stages/`), the screenpack (the motif

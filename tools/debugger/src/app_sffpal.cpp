@@ -281,6 +281,14 @@ void PalSave() {
     }
 }
 
+void PalUnsaved(std::vector<Unsaved> &out) {
+    for (const auto &kv : g_acts)
+        if (kv.second.dirty) out.push_back({kv.second.path, [] {
+                                                PalSave();
+                                                return !PalDirty();
+                                            }});
+}
+
 void PalRevert(SpriteFile &sf, int pn) {
     std::vector<PalChoice> choices;
     PalChoices(sf, pn, choices);

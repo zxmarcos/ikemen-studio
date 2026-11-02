@@ -457,12 +457,10 @@ void StatusBar() {
             right.push_back({std::to_string((int)(zoom * 100 + 0.5f)) + "%", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),
                              [] { dbg::Editor_SetZoom(1.0f); },
                              "The code editor's text size (Ctrl+Wheel over it); a click, or Ctrl+0 in it: 100%"});
-        int dirty = 0;
-        for (const auto &kv : g_files) dirty += kv.second.Dirty();
+        size_t dirty = UnsavedList().size();
         if (g_applying) right.push_back({"applying...", ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), nullptr, nullptr});
         else if (dirty)
-            right.push_back({std::to_string(dirty) + " unsaved", Ink(kYellow), SaveAndApply,
-                             "Saves them; the game loads the characters again (Ctrl+S in Code)"});
+            right.push_back({std::to_string(dirty) + " unsaved", Ink(kYellow), [] { UnsavedAsk(false); }, "Which files, to save them all"});
         right.push_back({g_spaces[g_space].name, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), nullptr,
                          "The workspace (Ctrl+1..5)"});
         float total = 0;

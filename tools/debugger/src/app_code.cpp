@@ -63,6 +63,8 @@ bool SaveSource(SourceFile &sf) {
         if (ch == '\n' && sf.crlf) out += '\r';
         out += ch;
     }
+    std::string path = GamePath(sf.path), bak = path + ".bak";
+    if (GetFileAttributesA(bak.c_str()) == INVALID_FILE_ATTRIBUTES) CopyFileA(path.c_str(), bak.c_str(), TRUE);
     std::ofstream f(GamePath(sf.path), std::ios::binary);
     f << out;
     f.close();
@@ -87,28 +89,26 @@ void WatchSources() {
     }
 }
 
-// Saves every changed file and has the game load and compile the characters again.
+// Saves everything changed and has the game load and compile the characters again.
 bool g_applying;
 std::string g_applyError;
 
-void SaveAndApply() {
-    int saved = 0;
-    for (auto &kv : g_files)
-        if (kv.second.Dirty()) {
-            if (!SaveSource(kv.second)) return;
-            saved++;
-        }
+void ApplyToGame() {
     for (auto &kv : g_files) {
         kv.second.errorLine = 0;
         dbg::Editor_SetErrorLine(kv.second.ed, 0, nullptr);
     }
     g_applyError.clear();
-    if (!Connected()) {
-        Log(LogLine::Info, saved ? "Saved; the game is not running." : "Nothing to save.");
-        return;
-    }
+    if (!Connected()) return;
     g_applying = true;
     SendRaw("ikdbg.reload()");
+}
+
+void SaveAndApply() {
+    bool any = !UnsavedList().empty();
+    if (!SaveAll()) return;
+    ApplyToGame();
+    if (!Connected()) Log(LogLine::Info, any ? "Saved; the game is not running." : "Nothing to save.");
 }
 
 // The game's answer to ikdbg.reload(): {items: [{pn, ok, err}]}.
@@ -608,8 +608,7 @@ void CodeWindow() {
     shown = g_codeFile.empty() ? nullptr : &LoadSource(g_codeFile);
 
     // Toolbar: Save and apply, Revert, the files with changes
-    int dirty = 0;
-    for (const auto &kv : g_files) dirty += kv.second.Dirty();
+    int dirty = (int)UnsavedList().size();
     bool save = ImGui::Button(dirty ? ICON_SAVE " Save and apply (Ctrl+S)" : ICON_CHECK " Apply (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);

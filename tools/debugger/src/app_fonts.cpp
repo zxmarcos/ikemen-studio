@@ -83,6 +83,31 @@ static FntEdit &FntOf(const std::string &path) {
     return e;
 }
 
+// The first time, the old file is kept as .bak
+static bool SaveFnt(const std::string &sel, FntEdit &e) {
+    std::string path = GamePath(sel), bak = path + ".bak";
+    if (GetFileAttributesA(bak.c_str()) == INVALID_FILE_ATTRIBUTES) CopyFileA(path.c_str(), bak.c_str(), TRUE);
+    std::ofstream out(path, std::ios::binary);
+    out << FntV1_Build(e.file, e.text);
+    out.close();
+    if (!out) {
+        Log(LogLine::Error, "Could not write " + path);
+        return false;
+    }
+    FntRead(sel, e);
+    Log(LogLine::Info, "Saved " + path);
+    return true;
+}
+
+void FontsUnsaved(std::vector<Unsaved> &out) {
+    for (auto &kv : g_fnts)
+        if (kv.second.Dirty()) {
+            std::string path = kv.first;
+            FntEdit *e = &kv.second;
+            out.push_back({path, [path, e] { return SaveFnt(path, *e); }});
+        }
+}
+
 // Reloading: the font being edited goes to a file next to it (a .fnt's name still ends in .fnt,
 // which tells the engine its kind), which the game reads then deletes
 static std::string g_fontPending; // the font with an edit not sent yet
@@ -245,22 +270,8 @@ void FontsWindow() {
 
     ImGui::BeginDisabled(!dirty);
     if (ImGui::Button(ICON_SAVE " Save")) {
-        if (fnt) {
-            // The first time, the old file is kept as .bak
-            std::string path = GamePath(sel), bak = path + ".bak";
-            if (GetFileAttributesA(bak.c_str()) == INVALID_FILE_ATTRIBUTES) CopyFileA(path.c_str(), bak.c_str(), TRUE);
-            std::ofstream out(path, std::ios::binary);
-            out << FntV1_Build(fe->file, fe->text);
-            out.close();
-            if (out) {
-                FntRead(sel, *fe);
-                Log(LogLine::Info, "Saved " + path);
-            } else {
-                Log(LogLine::Error, "Could not write " + path);
-            }
-        } else {
-            SaveSource(*sf);
-        }
+        if (fnt) SaveFnt(sel, *fe);
+        else SaveSource(*sf);
     }
     ImGui::SetItemTooltip(fnt ? "Writes the .fnt file (the old one is kept as .bak the first time). The game already shows every change."
                               : "Writes the font's def. The game already shows every change.");

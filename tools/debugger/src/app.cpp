@@ -675,6 +675,7 @@ void App_Frame() {
     PaletteFrame();
     StartPageFrame();
     NewDialog();
+    UnsavedDialog();
     StatusBar();
     if (g_autoLaunch) {
         g_autoLaunch = false;

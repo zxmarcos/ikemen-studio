@@ -203,7 +203,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return TRUE;
     }
     case WM_CLOSE:
-        DestroyWindow(hwnd);
+        if (App_MayClose()) DestroyWindow(hwnd);
+        else if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE); // the question has to be seen
         return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -318,6 +319,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR cmdLine, int show) {
             g_shotRequest = -1;
         }
         SwapBuffers(g_hdc);
+        if (App_Quit()) DestroyWindow(g_hwnd);
     }
 
     App_Shutdown();
