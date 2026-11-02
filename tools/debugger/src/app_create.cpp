@@ -109,6 +109,12 @@ void MoveTab() {
     if (!taken.empty()) {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kRed), "exists already (%s)", taken.c_str());
+        // A move made before: this form is where it is tried
+        if (Connected() && pn != kDiskPn && RootId(pn)) {
+            SameLineFits(ImGui::CalcTextSize(ICON_PLAY " Try it").x + ImGui::GetStyle().FramePadding.x * 2);
+            if (ImGui::SmallButton(ICON_PLAY " Try it")) ExecOn(RootId(pn), "selfState(" + std::to_string(m.state) + ")");
+            ImGui::SetItemTooltip("P%d goes to state %d now", pn, m.state);
+        }
     } else if (m.state < 200 || m.state >= 5000) {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kYellow), "a common state's number: it would take its place");

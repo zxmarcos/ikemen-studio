@@ -631,7 +631,7 @@ int WorkPn() {
     std::string def = g_workDef;
     if (def.empty()) {
         if (const Entity *e = FindEntity(g_selId)) return e->pn;
-        if (Connected()) return 0;
+        if (Connected() || g_stagePick || g_screenPick) return 0; // on a stage or a screen: nobody chose one
         def = CharDefOf(g_settings.p1); // the game not running: the character its match starts with
     }
     if (int pn = PlayerOf(def)) return pn;

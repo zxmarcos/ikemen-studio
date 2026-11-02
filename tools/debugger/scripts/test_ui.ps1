@@ -1,6 +1,7 @@
-param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [string]$Exe = (Resolve-Path "$PSScriptRoot\..\..\..\Ikemen_GO.exe").Path, [string]$P1 = "kfm", [string]$P2 = "kfm", [string]$IniExtra = "", [string]$Shots = "$PSScriptRoot\..\build\shots")
+param([string]$Actions = "", [int]$Wait = 14, [switch]$Fresh, [switch]$Keep, [switch]$NoLaunch, [string]$Exe = (Resolve-Path "$PSScriptRoot\..\..\..\Ikemen_GO.exe").Path, [string]$P1 = "kfm", [string]$P2 = "kfm", [string]$IniExtra = "", [string]$Shots = "$PSScriptRoot\..\build\shots")
 # UI test: starts build\ikemen-debugger.exe --launch, lays out both windows, runs actions and saves
-# the debugger's frames as PNGs in $Shots. -Fresh writes a new ini (AI on both sides).
+# the debugger's frames as PNGs in $Shots. -Fresh writes a new ini (AI on both sides). -NoLaunch
+# starts it as a person would: the start page, no game.
 # Clicks are WM_APP+0x4D47 messages (wParam 0 move, 1/2 left down/up; lParam x|y<<16) and frames
 # are saved by the app itself on WM_APP+0x4D48, so the real mouse and screen are never used.
 # Coordinates are client pixels of the debugger window (sized to 1600x1000).
@@ -39,14 +40,14 @@ $shots = $Shots
 New-Item -ItemType Directory -Force $shots | Out-Null
 if ($Fresh) { "[IkemenDebugger][Settings]`nExe=$Exe`nP1=$P1`nP2=$P2`nStage=stage0`nExtra=-windowed -nosound`nAI1=1`nAI2=1`n$IniExtra" | Set-Content "$dir\ikemen-debugger.ini" -Encoding ascii }
 Get-Process Ikemen_GO, ikemen-debugger -ErrorAction SilentlyContinue | Stop-Process -Force
-$dbg = Start-Process "$dir\ikemen-debugger.exe" -ArgumentList "--launch" -PassThru
+$dbg = if ($NoLaunch) { Start-Process "$dir\ikemen-debugger.exe" -PassThru } else { Start-Process "$dir\ikemen-debugger.exe" -ArgumentList "--launch" -PassThru }
 $t0 = Get-Date
 while (((Get-Date) - $t0).TotalSeconds -lt 20) { $dbg.Refresh(); if ($dbg.MainWindowHandle -ne 0) { break }; Start-Sleep -Milliseconds 200 }
 $hd = $dbg.MainWindowHandle
 [W]::SetWindowPos($hd, [IntPtr]::Zero, 0, 0, 1600, 1000, 0x0040) | Out-Null
 $game = $null
-while (((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($game) { break }; Start-Sleep -Milliseconds 300 }
-if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } else { "game window not found" }
+while (-not $NoLaunch -and ((Get-Date) - $t0).TotalSeconds -lt 30) { $game = Get-Process Ikemen_GO -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($game) { break }; Start-Sleep -Milliseconds 300 }
+if ($game) { $sw = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [W]::SetWindowPos($game.MainWindowHandle, [IntPtr]::Zero, 1920 - 640, 1040 - 480, 640, 480, 0x0040) | Out-Null } elseif (-not $NoLaunch) { "game window not found" }
 Start-Sleep -Seconds $Wait
 
 $shotN = 0; $vk = @{ END = 0x23; BACK = 0x08; HOME = 0x24; F3 = 0x72; F5 = 0x74; F10 = 0x79; F11 = 0x7A; F12 = 0x7B; ESCAPE = 0x1B; RETURN = 0x0D; DELETE = 0x2E; LEFT = 0x25; UP = 0x26; RIGHT = 0x27; DOWN = 0x28; ALT = 0x12; SHIFT = 0x10; CTRL = 0x11; TAB = 0x09; SPACE = 0x20 }

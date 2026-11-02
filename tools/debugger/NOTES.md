@@ -33,6 +33,10 @@ found it functional but intimidating). It is organized by task, not by tool:
   begins the same ImGui window again, appending to it. So the windows did not
   change, and `ShowWindow("Sprites")` brings the panel and the tab. Layouts name
   panels only, and at most four areas each.
+- The first steps are about seeing a change live: not for who pressed New character, New
+  stage or Write code (they covered the form's button). Their pick step follows the
+  workspace (fighter, background, lifebar or text), which is what a click there selects.
+  Offline, a stage or a screen shows no character nobody chose (`WorkPn`).
 - Advanced tools (`ToolWindow::advanced`): tabs hidden until View > Advanced
   tools is on or `ShowWindow` asks for one. Lab and Frame data are not advanced:
   testing a move is a character maker's work.
@@ -648,6 +652,10 @@ rewrite all of this history at every sync.
   reach the game only while Game has focus: click the picture first. P1's
   keyboard (`save/config.ini`): arrows, a b c = Z X C, x y z = A S D.
   Click coordinates depend on the layout: take a shot first.
+- `test_ui.ps1 -NoLaunch` starts it as a person would: the start page, no game. A
+  path from nothing to a zip, tested so (2026-11-01): New stage, images, Create, Launch, a BG
+  picked and dragged, Save, Package; New character, Launch, a move with its action
+  copied and a Clsn1 box, Try it, Package.
 - File dialogs: with the environment variable `IKDBG_TEST_PICK` set (paths
   separated by `|`) before `test_ui.ps1`, every "Open" dialog (`PickFiles`)
   returns those files instead of opening. Create tests write new folders and

@@ -66,16 +66,19 @@ static void TourFrame() {
         const char *title, *text;
     } steps[] = {
         {"Start a match", "Press Launch at the top left, or F5. The game runs inside this window."},
-        {"Pick a fighter", "Click one on the game. The line above the picture says what is selected and where to edit it."},
-        {"Change something", "Press Animation on that line and change a value: the game shows it at once."},
-        {"That's all", "Ctrl+S saves. The Select choices on the game pick stages and screens the same way, and the bar at the "
-                       "left changes what you are working on."},
+        {"", ""}, // what the workspace picks
+        {"Change something", "Drag it on the game, or use the button on that line and change a value: the game shows it at once."},
+        {"That's all", "Ctrl+S saves. The Select choices on the game pick fighters, stages and screens the same way, and the bar at "
+                       "the left changes what you are working on."},
     };
+    // What the Select choice on the game picks, and the count that moves when it does
+    const char *pickTitle = g_stagePick ? "Pick a background" : g_screenPick ? "Pick a lifebar or a text" : "Pick a fighter";
+    int picks = g_selPicked + g_screenPicked + g_stageBg;
     if (g_tour == 0 && Connected()) {
         g_tour = 1;
-        g_tourPick = g_selPicked;
+        g_tourPick = picks;
     }
-    if (g_tour == 1 && g_selPicked != g_tourPick) g_tour = 2;
+    if (g_tour == 1 && picks != g_tourPick) g_tour = 2;
     if (g_tour == 2)
         for (const auto &kv : g_files)
             if (kv.second.Dirty()) g_tour = 3;
@@ -93,9 +96,10 @@ static void TourFrame() {
     bool last = g_tour == IM_ARRAYSIZE(steps) - 1;
     if (!last) ImGui::TextDisabled("Step %d of %d", g_tour + 1, IM_ARRAYSIZE(steps) - 1);
     ImGui::PushFont(nullptr, st.FontSizeBase * 1.2f);
-    ImGui::TextUnformatted(steps[g_tour].title);
+    ImGui::TextUnformatted(g_tour == 1 ? pickTitle : steps[g_tour].title);
     ImGui::PopFont();
-    ImGui::TextWrapped("%s", steps[g_tour].text);
+    ImGui::TextWrapped("%s", g_tour == 1 ? "Click it on the game. The line above the picture says what is selected and where to edit it."
+                                         : steps[g_tour].text);
     if (ImGui::SmallButton(last ? ICON_CHECK " Done" : "Skip")) {
         g_tour = -1;
         g_tourDone = true;
@@ -144,6 +148,7 @@ void StartPageFrame() {
     ImGui::Dummy(ImVec2(0, em * 0.3f));
 
     bool close = ImGui::IsKeyPressed(ImGuiKey_Escape);
+    bool tour = true; // the first steps are about seeing a change live, not for who came to start something
     float w = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x) * 0.5f;
     for (int i = 0; i < IM_ARRAYSIZE(kTasks); i++) {
         if (i % 2) ImGui::SameLine();
@@ -157,18 +162,18 @@ void StartPageFrame() {
     if (ImGui::Button(ICON_PERSON " New character")) {
         GoTo("Character");
         g_createAsked = 1;
-        close = true;
+        close = true, tour = false;
     }
     ImGui::SameLine();
     if (ImGui::Button(ICON_STAGE " New stage")) {
         GoTo("Stage");
         g_createAsked = 2;
-        close = true;
+        close = true, tour = false;
     }
     ImGui::SameLine();
     if (ImGui::Button(ICON_CODE " Write code")) {
         GoTo("Code");
-        close = true;
+        close = true, tour = false;
     }
     const char *label = "Show at startup";
     ImGui::SameLine(ImGui::GetWindowWidth() - st.WindowPadding.x - ImGui::GetFrameHeight() - st.ItemInnerSpacing.x -
@@ -177,7 +182,7 @@ void StartPageFrame() {
     ImGui::SetItemTooltip("It stays in File, as Start page.");
     if (close) {
         ImGui::CloseCurrentPopup();
-        if (!g_tourDone) g_tour = 0;
+        if (!g_tourDone && tour) g_tour = 0;
     }
     ImGui::EndPopup();
 }
