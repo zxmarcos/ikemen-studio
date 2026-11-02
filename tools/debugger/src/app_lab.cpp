@@ -273,7 +273,9 @@ void TakesSection() {
         }
         ImGui::EndDisabled();
         ImGui::TableNextColumn();
-        if (ImGui::SmallButton(ICON_XMARK)) {
+        bool del = ImGui::SmallButton(ICON_XMARK);
+        ImGui::SetItemTooltip("Delete this take");
+        if (del) {
             g_takes.erase(g_takes.begin() + n);
             if (g_playing == (int)n) g_playing = -1;
             if (g_dummy.react == (int)n) {

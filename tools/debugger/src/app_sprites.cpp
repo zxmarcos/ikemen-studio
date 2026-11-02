@@ -661,6 +661,36 @@ static int SpritePreview(SpriteFile &sf, const PalChoice &view, const std::vecto
 }
 
 // Crop and Resize, for the sprites selected or the one shown
+// How many elements of actions show these sprites: the character's, or those of the def they are for
+static int SpriteUses(SpriteFile &sf, int pn, const std::set<std::pair<int, int>> &numbers) {
+    std::string air = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
+    if (air.empty()) return 0;
+    int n = 0;
+    for (const auto &kv : AirOf(LoadSource(air)).actions)
+        for (const AirElem &el : kv.second.elems) n += numbers.count({el.group, el.image}) != 0;
+    return n;
+}
+
+// Delete: true when it is to happen. Sprites in use ask first: those elements go on naming what is gone.
+static bool DeleteButton(int uses) {
+    bool go = false;
+    if (ImGui::Button(ICON_TRASH " Delete")) {
+        if (uses) ImGui::OpenPopup("delete");
+        else go = true;
+    }
+    if (ImGui::BeginPopup("delete")) {
+        ImGui::Text("%d %s of actions show%s it: they would show nothing.", uses, uses == 1 ? "element" : "elements", uses == 1 ? "s" : "");
+        if (ImGui::Button(ICON_TRASH " Delete anyway")) {
+            go = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_XMARK " Cancel")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    return go;
+}
+
 static void CropAndResize(SpriteFile &sf) {
     float em = ImGui::GetFontSize();
     if (ImGui::Button(ICON_XMARK " Crop")) {
@@ -775,7 +805,9 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     }
     ImGui::SetItemTooltip("One PNG for each sprite and a list of their numbers and axes (Add PNG reads them back)");
     ImGui::SameLine();
-    if (ImGui::Button(ICON_TRASH " Delete")) {
+    std::set<std::pair<int, int>> numbers;
+    for (int i : sf.picks) numbers.insert({d.sprites[i].group, d.sprites[i].number});
+    if (DeleteButton(SpriteUses(sf, pn, numbers))) {
         std::vector<SffSprite> kept;
         for (int i = 0; i < (int)d.sprites.size(); i++)
             if (!sf.picks.count(i)) kept.push_back(d.sprites[i]);
@@ -883,7 +915,7 @@ static bool SpritePanel(SpriteFile &sf, int pn) {
     }
     ImGui::SetItemTooltip("A copy with the next free number in its group");
     flow("Delete");
-    if (ImGui::Button(ICON_TRASH " Delete")) {
+    if (DeleteButton(SpriteUses(sf, pn, {{s.group, s.number}}))) {
         d.sprites.erase(d.sprites.begin() + sf.sel);
         sf.sel = std::min(sf.sel, (int)d.sprites.size() - 1);
         SpritesChanged(sf);

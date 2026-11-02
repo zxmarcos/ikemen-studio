@@ -372,6 +372,7 @@ std::string AnimFileOfSprites(const std::string &sff); // the file of actions th
 void ActionList(SourceFile &sf);                       // a def's actions as rows, each opening in Animation
 // A file's text followed by undo, shared by the windows editing it: a change is a step when the mouse lets go
 UndoStack<std::string> &TrackAnims(const SourceFile &sf);
+UndoStack<std::string> &TrackText(const std::string &path, const std::string &text, bool saved); // the same for any text
 void AnimationWindow();
 // What a def's fields name (app_refs.cpp). The column beside a field's value: its sprite or action as a
 // thumbnail, which picks another (true: *value is the field's new value), or its sound played
@@ -567,6 +568,12 @@ std::string WorkLabel(int pn);  // "P1", "from disk"
 void WorkOn(const std::string &def);
 std::string CharDefOf(const std::string &name); // a character as ListDefs names it ("kfm", "kfm/kfm720.def"): its def
 std::string CharNameOf(const std::string &def); // and the other way
+std::string PackageTarget();                    // the def File > Package takes, "" none
+void PackageWorkedOn();
+void PackageDialog();                           // how the last package went
+void HelpAsk(int what);                         // the keys (0) or the words (1)
+void HelpMenu();
+void HelpDialog();
 void PlayCharacter(const std::string &def);     // it becomes P1: of the match, or of a game started now
 // A name from a list, with a filter: true when one is picked. none: an entry for no name.
 bool NameCombo(const char *id, const std::string &shown, const std::vector<std::string> &names, std::string &picked,

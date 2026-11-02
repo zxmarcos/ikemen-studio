@@ -702,6 +702,7 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::TableNextColumn();
         ImGui::TableNextColumn();
         add = ImGui::SmallButton(ICON_PLUS) || add;
+        ImGui::SetItemTooltip("Add this field");
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;
             for (char &ch : key) ch = (char)tolower((unsigned char)ch);

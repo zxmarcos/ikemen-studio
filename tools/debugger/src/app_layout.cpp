@@ -422,7 +422,8 @@ void StatusBar() {
             ImGui::SameLine(0, em);
             ImGui::Text("tick %d", g_tick);
             ImGui::SameLine(0, em);
-            ImGui::TextDisabled("round %d (%d)", g_roundNo, g_roundState);
+            ImGui::TextDisabled("round %d", g_roundNo);
+            ImGui::SetItemTooltip("RoundState %d", g_roundState);
             if (const Entity *e = FindEntity(g_selId)) {
                 ImGui::SameLine(0, em * 2);
                 ImGui::Text("%s  state %d", Who(e->pn, e->helper, e->id).c_str(), e->st);
@@ -619,6 +620,10 @@ void LayoutFrame() {
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_BUG " Advanced tools", nullptr, g_advanced)) SetAdvancedTools(!g_advanced);
             ImGui::SetItemTooltip("Breakpoints, Watch, Trace, Console, Performance, Analysis and the 3D Model window.\nOff, they stay out of the way until something asks for them.");
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu(ICON_INFO " Help")) {
+            HelpMenu();
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

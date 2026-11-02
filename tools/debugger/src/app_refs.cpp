@@ -167,8 +167,10 @@ static void SoundCell(int group, int number, const std::string &path, const std:
     int index = snd ? Snd_Find(*snd, group, number) : -1;
     ImGui::BeginDisabled(index < 0);
     if (ImGui::SmallButton(ICON_PLAY)) PlayWav(snd->sounds[index].wav);
+    ImGui::SetItemTooltip("Play it");
     ImGui::SameLine(0, 2);
     if (ImGui::SmallButton(ICON_SOUND)) ShowInSounds(path, index, what);
+    ImGui::SetItemTooltip("Show it in Sounds");
     ImGui::EndDisabled();
     if (snd && index < 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Sound %d, %d is not in %s", group, number, path.c_str());

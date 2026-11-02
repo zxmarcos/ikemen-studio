@@ -626,6 +626,7 @@ void CodeWindow() {
     ImGui::Checkbox("Follow the state", &follow);
     ImGui::SameLine();
     if (ImGui::SmallButton("Statedef")) JumpTo(stateSrc);
+    ImGui::SetItemTooltip("Go to the state the selected player is in");
     // An AIR file, or a def with actions: the action and element under the cursor, drawn in Animation
     // (which has "Show in Code" back)
     bool hasActions = shown && shown->path.size() > 4 &&

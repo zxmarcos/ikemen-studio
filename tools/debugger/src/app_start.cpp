@@ -2,6 +2,8 @@
 // only the windows of that task.
 #include "app_internal.h"
 
+#include <cfloat>
+
 #include "imgui_internal.h"
 
 namespace app {
@@ -177,11 +179,111 @@ void StartPageFrame() {
     ImGui::SameLine(ImGui::GetWindowWidth() - st.WindowPadding.x - ImGui::GetFrameHeight() - st.ItemInnerSpacing.x -
                     ImGui::CalcTextSize(label).x);
     if (ImGui::Checkbox(label, &g_showAtStart)) ImGui::MarkIniSettingsDirty();
-    ImGui::SetItemTooltip("It stays in File, as Start page.");
+    ImGui::SetItemTooltip("It stays in Help, as Start page.");
     if (close) {
         ImGui::CloseCurrentPopup();
         if (!g_tourDone && tour) g_tour = 0;
     }
+    ImGui::EndPopup();
+}
+
+// ---------------------------------------------------------------------------
+// Help: the keys, and the words the files and the interface use
+// ---------------------------------------------------------------------------
+
+static int g_helpAsked = -1, g_help;
+
+void HelpAsk(int what) { g_helpAsked = what; }
+
+void HelpMenu() {
+    if (ImGui::MenuItem(ICON_PLAY " Start page")) AskStartPage();
+    if (ImGui::MenuItem(ICON_INFO " Getting started")) AskTour();
+    ImGui::Separator();
+    if (ImGui::MenuItem(ICON_KEYBOARD " Keyboard shortcuts...")) HelpAsk(0);
+    if (ImGui::MenuItem(ICON_LIST " Words used here...")) HelpAsk(1);
+}
+
+void HelpDialog() {
+    static const char *titles[] = {ICON_KEYBOARD " Keyboard shortcuts", ICON_LIST " Words used here"};
+    if (g_helpAsked >= 0) {
+        g_help = g_helpAsked;
+        g_helpAsked = -1;
+        ImGui::OpenPopup(titles[g_help]);
+    }
+    static const struct {
+        const char *a, *b;
+    } keys[] = {
+        {"", "Everywhere"},
+        {"F5", "Launch the game; then pause and continue it"},
+        {"Shift+F5", "Stop the game"},
+        {"Ctrl+Shift+F5", "Start the game again"},
+        {"F10 / F11", "One tick, ten ticks"},
+        {"Ctrl+S", "Save everything changed"},
+        {"Ctrl+Z / Ctrl+Y", "Undo, do again, in the editor being used; on the Game window, in the editor of what is dragged there"},
+        {"Ctrl+1 to Ctrl+5", "Change workspace"},
+        {"Ctrl+P", "Go to a file"},
+        {"Ctrl+Shift+P", "Any command"},
+        {"Ctrl+Shift+F", "Find in files"},
+        {"Esc", "Leave a dialog or a field"},
+        {"", "In Code"},
+        {"Ctrl+G / Ctrl+Shift+O", "Go to a line, to a section"},
+        {"Ctrl+F / Ctrl+H", "Find, replace"},
+        {"F3 / Shift+F3", "The next match, the one before"},
+        {"F12 or Ctrl+click", "Go to what a number or a name stands for"},
+        {"Shift+F12", "The places changing to that state"},
+        {"Ctrl+Space", "Completion"},
+        {"Ctrl+Wheel / Ctrl+0", "Bigger or smaller text, back to 100%"},
+        {"Ctrl+W", "Close the tab"},
+    }, words[] = {
+        {"Character / fighter", "The files of chars/<name>/. P1 and P2 are the two sides of the match"},
+        {"Action", "An animation, numbered, in the AIR file: [Begin Action n]"},
+        {"Element", "One picture of an action, shown for some ticks"},
+        {"Tick", "1/60 of a second: the game's unit of time"},
+        {"Sprite", "A picture in the SFF file, named by a group and a number"},
+        {"Axis", "The point of a sprite placed on the character's position"},
+        {"Hit box (Clsn1)", "Where an element hits"},
+        {"Hurt box (Clsn2)", "Where an element can be hit"},
+        {"State / statedef", "What a character is doing, numbered, in its CNS or ZSS file"},
+        {"Controller", "One thing a state does, under its triggers"},
+        {"Trigger", "A condition of a controller"},
+        {"Stage layer / BG", "One background of a stage, a [BG ...] section of its def"},
+        {"BGCtrl", "A timed change to backgrounds"},
+        {"Screenpack / motif", "The game's menus, select screen and screens: its system.def"},
+        {"Fight screen", "The lifebars and all that a match shows: fight.def"},
+        {"Storyboard", "A def of scenes: intros, endings, credits"},
+        {"def", "A text file saying which files make something up, and how"},
+        {"SFF, SND, AIR, CMD, CNS", "Sprites, sounds, animations, commands, constants and states"},
+    };
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    float em = ImGui::GetFontSize();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(em * 40, 0));
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    bool open = true;
+    if (!ImGui::BeginPopupModal(titles[g_help], &open, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) return;
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, std::max(vp->WorkSize.y - em * 7, 0.0f)));
+    ImGui::BeginChild("rows", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+    if (ImGui::BeginTable("help", 2, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, em * 11);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+        const auto *rows = g_help ? words : keys;
+        int n = g_help ? IM_ARRAYSIZE(words) : IM_ARRAYSIZE(keys);
+        for (int i = 0; i < n; i++) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (!*rows[i].a) {
+                ImGui::TextDisabled("%s", rows[i].b);
+                continue;
+            }
+            ImGui::TextUnformatted(rows[i].a);
+            ImGui::TableNextColumn();
+            ImGui::TextWrapped("%s", rows[i].b);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
     ImGui::EndPopup();
 }
 

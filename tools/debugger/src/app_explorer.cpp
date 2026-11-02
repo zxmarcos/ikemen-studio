@@ -345,6 +345,16 @@ void DefClosure(const std::string &def, std::map<std::string, DefEntry> &out) {
     }
 }
 
+// How the last package went, for its dialog
+struct PackageResult {
+    std::string zip, leftOut;
+    std::vector<std::string> missing;
+    int files = 0, unsaved = 0;
+    size_t bytes = 0;
+    bool written = false, asked = false;
+};
+PackageResult g_package;
+
 void PackageDef(const std::string &def) {
     std::map<std::string, DefEntry> found;
     found[NormPath(def)] = {"def", def, true};
@@ -352,41 +362,45 @@ void PackageDef(const std::string &def) {
     std::string stem = BaseName(def);
     std::string path = PickSaveFile("Zip archives (*.zip)\0*.zip\0", "zip", stem.substr(0, stem.find_last_of('.')) + ".zip");
     if (path.empty()) return;
+    PackageResult r;
+    r.zip = path;
+    r.asked = true;
+    r.unsaved = (int)UnsavedList().size();
     std::vector<PackFile> files;
-    std::string missing;
-    size_t bytes = 0;
-    int absent = 0;
     for (const auto &[key, f] : found) {
         if (!f.exists) {
-            absent++;
-            missing += (missing.empty() ? "" : ", ") + f.path;
+            r.missing.push_back(f.path);
             continue;
         }
         // Named as on disk: NormPath's lower case would not be found on Linux
         std::string name = f.path;
         std::replace(name.begin(), name.end(), '\\', '/');
         files.push_back({name, ReadWholeFile(GamePath(f.path))});
-        bytes += files.back().data.size();
+        r.bytes += files.back().data.size();
     }
+    r.files = (int)files.size();
     std::ofstream out(path, std::ios::binary);
     out << Zip_Build(files);
     out.close();
-    Log(out ? LogLine::Info : LogLine::Error, (out ? "Packaged " : "Could not write ") + std::to_string(files.size()) + " files, " +
-        std::to_string(bytes / 1024) + " KB, in " + path);
-    if (absent) Log(LogLine::Error, std::to_string(absent) + " files the def names are not found: " + missing);
+    r.written = !out.fail();
+    Log(r.written ? LogLine::Info : LogLine::Error, (r.written ? "Packaged " : "Could not write ") + std::to_string(files.size()) + " files, " +
+        std::to_string(r.bytes / 1024) + " KB, in " + path);
     // In the def's own folder, unless that is shared by others
     std::string dir = DirOf(def);
-    if (dir.empty() || NormPath(dir) == "data/" || NormPath(dir) == "stages/") return;
-    std::error_code ec;
-    int extra = 0;
-    std::string names;
-    for (const auto &e : std::filesystem::recursive_directory_iterator(GamePath(dir), ec)) {
-        if (!e.is_regular_file(ec)) continue;
-        std::string rel = dir + std::filesystem::relative(e.path(), GamePath(dir), ec).generic_string();
-        if (found.count(NormPath(rel))) continue;
-        if (extra++ < 8) names += (names.empty() ? "" : ", ") + BaseName(rel);
+    if (!dir.empty() && NormPath(dir) != "data/" && NormPath(dir) != "stages/") {
+        std::error_code ec;
+        int extra = 0;
+        std::string names;
+        for (const auto &e : std::filesystem::recursive_directory_iterator(GamePath(dir), ec)) {
+            if (!e.is_regular_file(ec)) continue;
+            std::string rel = dir + std::filesystem::relative(e.path(), GamePath(dir), ec).generic_string();
+            if (found.count(NormPath(rel))) continue;
+            if (extra++ < 8) names += (names.empty() ? "" : ", ") + BaseName(rel);
+        }
+        if (extra) r.leftOut = std::to_string(extra) + (extra == 1 ? " file of " : " files of ") + dir + " left out, nothing names " +
+                               (extra == 1 ? "it: " : "them: ") + names + (extra > 8 ? "..." : "");
     }
-    if (extra) Log(LogLine::Info, std::to_string(extra) + " files of " + dir + " left out, nothing names them: " + names + (extra > 8 ? "..." : ""));
+    g_package = r;
 }
 
 // A copy of the screenpack in data/<name>/, its own from then on: the motif's folder as it is, and the
@@ -438,12 +452,13 @@ bool g_askScreenpack;
 
 ImGuiTextFilter g_filter;
 
-void ShowInFolder(const std::string &path) {
-    std::string full = GamePath(path);
+void ShowFullPathInFolder(std::string full) {
     for (char &ch : full)
         if (ch == '/') ch = '\\';
     ShellExecuteA(nullptr, "open", "explorer.exe", ("/select,\"" + full + "\"").c_str(), nullptr, SW_SHOWNORMAL);
 }
+
+void ShowInFolder(const std::string &path) { ShowFullPathInFolder(GamePath(path)); }
 
 void FileMenuItems(const std::string &path, const std::string &pal) {
     if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open")) OpenPath(path, true, pal);
@@ -465,7 +480,7 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
         }
     }
     if (ExtOf(path) == "def" && ImGui::MenuItem(ICON_DOWNLOAD " Package as zip...")) PackageDef(path);
-    ImGui::SetItemTooltip("A zip of this def and every file it names, for sharing it; says what is missing");
+    ImGui::SetItemTooltip("A zip of this def and every file it names, for sharing it; says what is missing (also File > Package)");
     if (NormPath(path) == NormPath(MotifPath()) && ImGui::MenuItem(ICON_COPY " Copy as a new screenpack...")) g_askScreenpack = true;
     if (ImGui::MenuItem(ICON_FOLDER " Show in folder")) ShowInFolder(path);
     if (ImGui::MenuItem(ICON_COPY " Copy path")) ImGui::SetClipboardText(path.c_str());
@@ -664,6 +679,59 @@ std::vector<std::pair<std::string, std::string>> StoryboardFiles() {
     return out;
 }
 
+// What File > Package takes: what the workspace is working on
+std::string PackageTarget() {
+    if (g_stagePick) {
+        SourceFile *sf = StageSource();
+        return sf ? sf->path : "";
+    }
+    return g_screenPick ? MotifPath() : WorkDef();
+}
+
+void PackageWorkedOn() {
+    std::string def = PackageTarget();
+    if (!def.empty()) PackageDef(def);
+}
+
+void PackageDialog() {
+    PackageResult &r = g_package;
+    const char *title = ICON_DOWNLOAD " Package";
+    if (r.asked) {
+        r.asked = false;
+        ImGui::OpenPopup(title);
+    }
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    float em = ImGui::GetFontSize();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(em * 36, 0));
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) return;
+    ImGui::PushTextWrapPos(0);
+    if (r.written) ImGui::Text("%d files, %zu KB, in %s", r.files, r.bytes / 1024, r.zip.c_str());
+    else ImGui::TextColored(Ink(kRed), "Could not write %s", r.zip.c_str());
+    if (r.unsaved)
+        ImGui::TextColored(Ink(kYellow), "%d %s not saved: the zip has what is on disk.", r.unsaved, r.unsaved == 1 ? "file has changes" : "files have changes");
+    if (!r.missing.empty()) {
+        ImGui::TextColored(Ink(kRed), "%zu %s the def names %s not found: whoever gets the zip will miss them.", r.missing.size(),
+                           r.missing.size() == 1 ? "file" : "files", r.missing.size() == 1 ? "is" : "are");
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, ImGui::GetTextLineHeightWithSpacing() * 8));
+        ImGui::BeginChild("missing", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+        for (const std::string &m : r.missing) ImGui::TextUnformatted(m.c_str());
+        ImGui::EndChild();
+    }
+    if (!r.leftOut.empty()) ImGui::TextDisabled("%s", r.leftOut.c_str());
+    int problems[3];
+    ProblemCounts(problems);
+    if (problems[0]) ImGui::TextColored(Ink(kYellow), "Problems lists %d %s.", problems[0], problems[0] == 1 ? "error" : "errors");
+    ImGui::PopTextWrapPos();
+    ImGui::Separator();
+    if (r.written && ImGui::Button(ICON_FOLDER " Show in folder")) ShowFullPathInFolder(r.zip);
+    if (r.written) ImGui::SameLine();
+    if (ImGui::Button(ICON_CHECK " Close") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
 std::string SelectDef() {
     if (!g_selectDef.empty()) return g_selectDef;
     for (const DefEntry &f : DefFiles(MotifPath()))
@@ -770,13 +838,13 @@ void ExplorerWindow() {
     for (const Entity &e : g_ents)
         if (!e.helper) AirPath(e.pn);
     const ImGuiStyle &st = ImGui::GetStyle();
-    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(ICON_RESTART " Reload").x + st.FramePadding.x * 2 + st.ItemSpacing.x));
+    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(ICON_RESTART " Refresh").x + st.FramePadding.x * 2 + st.ItemSpacing.x));
     if (ImGui::InputTextWithHint("##filter", "Filter", g_filter.InputBuf,
                                  IM_ARRAYSIZE(g_filter.InputBuf)))
         g_filter.Build();
     ImGui::SetItemTooltip("Shows the files whose path has one of the words (comma separated); -word hides them.");
     ImGui::SameLine();
-    if (ImGui::Button(ICON_RESTART " Reload")) {
+    if (ImGui::Button(ICON_RESTART " Refresh")) {
         Scan(true);
         g_defs.clear();
     }

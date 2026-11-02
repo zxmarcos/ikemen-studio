@@ -335,7 +335,9 @@ end
 function ikdbg.reloadRoster(textFile)
 	local ok, err = false, 'the roster changes in menus or on a select screen, not in a game mode under way'
 	if not ikdbg.inMode or (ikdbg.inSelect and not ikdbg.inChallenger) then
-		ok, err = debugSelectReset()
+		local why
+		ok, why = debugSelectReset()
+		if why ~= 'not during a match' then err = why end
 	end
 	if ok then
 		main.t_stageDef = {['random'] = 0}

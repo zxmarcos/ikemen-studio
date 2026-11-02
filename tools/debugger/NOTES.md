@@ -40,7 +40,7 @@ found it functional but intimidating). It is organized by task, not by tool:
 - Advanced tools (`ToolWindow::advanced`): tabs hidden until View > Advanced
   tools is on or `ShowWindow` asks for one. Lab and Frame data are not advanced:
   testing a move is a character maker's work.
-- The workspaces are a rail at the left; the menu bar is File and View; the
+- The workspaces are a rail at the left; the menu bar is File, View and Help; the
   toolbar shows the match as one button (its fields in a popup).
 - `SetPickMode` (Fighters, Stage, Screen): one choice on the Game window, set by
   the workspace, with a line saying what is selected and opening its editor. The
@@ -93,6 +93,14 @@ after it. `ForwardKeys` keeps Ctrl+S, Z, Y and 1..5 from the game, whose debug h
 and toggleAI; `UndoButtons`' `fromGame` says which editor answers Ctrl+Z from the Game window. A
 click in Explorer decides what Launch starts (`g_settings`), so the toolbar shows it at once. Clicks on
 a tree row also open it: rows below move, take a shot after each click in tests.
+
+Undo reaches every editor: `TrackText` is `TrackAnims` for text that is not a `SourceFile` (a .fnt's);
+Sounds keeps states sharing their WAVs (`SoundState`), `edits` counting changes as Sprites does. Follow
+lets go on a click or an edit while the game runs (paused, the element shown is the game's, so it can
+stay on), and never moves under a drag. What a Lua call answers ("error: ...") reaches the status bar
+but not Problems: it would stay there as an error for good. A tab of a panel can take two clicks in
+tests. Not done: Sounds' delete says nothing of the states using a sound; the layer images Add layer
+saves stay outside undo; Package does not run the checks first, it only counts Problems' errors.
 
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character

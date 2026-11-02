@@ -214,6 +214,7 @@ void Toolbar() {
         ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_XMARK "##break")) g_breakText.clear();
+        ImGui::SetItemTooltip("Dismiss");
     }
 
     // The rest of the session

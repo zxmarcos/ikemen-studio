@@ -248,6 +248,7 @@ static bool EntryFields(RosterEntry &e, bool stage) {
     }
     ImGui::SameLine();
     if (ImGui::SmallButton(ICON_PLUS)) ImGui::OpenPopup("addstage");
+    ImGui::SetItemTooltip("Add a stage");
     if (ImGui::BeginPopup("addstage")) {
         static std::vector<std::string> list;
         if (ImGui::IsWindowAppearing()) list = ListDefs(true);
@@ -326,6 +327,14 @@ void RosterWindow() {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
+    UndoStack<std::string> &history = TrackAnims(sf);
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        sf.text = step < 0 ? history.Undo() : history.Redo();
+        RosterEdited(sf);
+        ImGui::End(); // what was parsed is old
+        return;
+    }
+    ImGui::SameLine();
     if (ImGui::Button(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = r.charsLine;
@@ -333,7 +342,7 @@ void RosterWindow() {
     }
     ImGui::SameLine();
     ImGui::TextDisabled("%s", sf.path.c_str());
-    SaveState(sf.Dirty(), true);
+    SaveState(sf.Dirty(), g_ents.empty()); // a match under way does not take it
 
     // The grid as the motif lays it out: [Select Info] rows, columns, cells skipped
     const IniSection *si = MotifSection("select info");

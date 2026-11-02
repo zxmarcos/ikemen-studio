@@ -165,7 +165,8 @@ AnimTarget GetAnimTarget() {
     if (path.empty()) return t;
     t.sf = &LoadSource(path);
     const AirFile &air = AirOf(*t.sf);
-    if (g_animFollow && t.fe && t.fe->action >= 0) {
+    // Not under a drag: the edit stays on the element it began on
+    if (g_animFollow && t.fe && t.fe->action >= 0 && !ImGui::IsAnyItemActive()) {
         g_animAction = t.fe->action;
         g_animElem = t.fe->elem;
     }
@@ -222,14 +223,16 @@ bool AnimShowLine(const std::string &path, int line) {
 // Undo and redo of an AIR file's text: a change is one step when the mouse lets go of it.
 static std::map<std::string, UndoStack<std::string>> g_animHistory; // by file
 
-UndoStack<std::string> &TrackAnims(const SourceFile &sf) {
-    UndoStack<std::string> &h = g_animHistory[NormPath(sf.path)];
+UndoStack<std::string> &TrackText(const std::string &path, const std::string &text, bool saved) {
+    UndoStack<std::string> &h = g_animHistory[NormPath(path)];
     if (!h.Started())
-        h.Start(sf.text, !sf.Dirty());
-    else if (sf.text != h.Current() && !ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
-        h.Record(sf.text);
+        h.Start(text, saved);
+    else if (text != h.Current() && !ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        h.Record(text);
     return h;
 }
+
+UndoStack<std::string> &TrackAnims(const SourceFile &sf) { return TrackText(sf.path, sf.text, !sf.Dirty()); }
 
 static std::set<int> g_elemPicks; // elements (1-based) selected with Ctrl or Shift; empty: the one shown alone
 
@@ -1443,6 +1446,7 @@ void AnimationWindow() {
             sa.apply();
         } else {
             ApplyAnims(s);
+            if (!g_paused) g_animFollow = false; // what was edited stays shown, not what the game goes on to
         }
     };
     bool disk = !screen && t.pn == kDiskPn; // a character not in the match, from disk: no game to show it
@@ -1908,7 +1912,7 @@ void AnimationWindow() {
     if (int tick = TickBar(t)) clicked = tick, g_elemPicks.clear();
     if (clicked || menuElem) {
         showElem(clicked ? clicked : menuElem);
-        if (!live) g_animFollow = false;
+        if (!live || !g_paused) g_animFollow = false;
     }
     if (menuElem) ImGui::OpenPopup("element");
     int goTo = 0; // element to show after an edit of the elements

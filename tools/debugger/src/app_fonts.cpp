@@ -284,6 +284,14 @@ void FontsWindow() {
         FontReload(sel, nullptr);
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::GetContentRegionAvail().x < UndoButtonsWidth()) ImGui::NewLine();
+    UndoStack<std::string> &history = TrackText(sel, text, !dirty);
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        text = step < 0 ? history.Undo() : history.Redo();
+        g_fontPending = sel;
+        return done(); // what was parsed is old
+    }
     SaveState(dirty, true);
     if (!fnt) {
         ImGui::SameLine();

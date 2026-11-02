@@ -144,6 +144,9 @@ void Commands(std::vector<Entry> &out) {
     add("File: Open...", "", OpenDialog);
     add("File: Save and apply", "Ctrl+S", SaveAndApply);
     add("File: Close the tab", "Ctrl+W", CodeCloseShown);
+    if (!PackageTarget().empty()) add("File: Package as zip...", "", PackageWorkedOn);
+    add("Help: Keyboard shortcuts", "", [] { HelpAsk(0); });
+    add("Help: Words used here", "", [] { HelpAsk(1); });
     add("New: A move", "", [] { CreateAsk(kNewMove); });
     add("New: A character", "", [] { CreateAsk(kNewCharacter); });
     add("New: A stage", "", [] { CreateAsk(kNewStage); });
@@ -167,9 +170,6 @@ void Commands(std::vector<Entry> &out) {
 } // namespace
 
 void FileMenu() {
-    if (ImGui::MenuItem(ICON_PLAY " Start page")) AskStartPage();
-    if (ImGui::MenuItem(ICON_INFO " Getting started")) AskTour();
-    ImGui::Separator();
     if (ImGui::MenuItem(ICON_SEARCH " Go to file...", "Ctrl+P")) Ask(0);
     if (ImGui::MenuItem("Commands...", "Ctrl+Shift+P")) Ask('>');
     ImGui::BeginDisabled(g_codeFile.empty());
@@ -183,6 +183,13 @@ void FileMenu() {
     ImGui::BeginDisabled(g_codeFile.empty());
     if (ImGui::MenuItem("Close the tab", "Ctrl+W")) CodeCloseShown();
     ImGui::EndDisabled();
+    ImGui::Separator();
+    std::string target = PackageTarget();
+    target = target.empty() ? "Package..." : "Package " + target.substr(target.find_last_of("\\/") + 1) + "...";
+    ImGui::BeginDisabled(PackageTarget().empty());
+    if (ImGui::MenuItem((ICON_DOWNLOAD " " + target).c_str())) PackageWorkedOn();
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("A zip of what you are working on and every file it names, to share it");
 }
 
 void PaletteFrame() {

@@ -489,6 +489,13 @@ void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float e
     if (ImGui::Button(ICON_REVERT " Revert")) ReadSource(sf);
     ImGui::EndDisabled();
     ImGui::SameLine();
+    UndoStack<std::string> &history = TrackAnims(sf);
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        sf.text = step < 0 ? history.Undo() : history.Redo();
+        sf.version++;
+        return; // what was parsed is old
+    }
+    ImGui::SameLine();
     ImGui::TextDisabled("%s  %zu commands%s", sf.path.c_str(), cf.commands.size(), g_applying ? "  applying..." : "");
     SaveState(sf.Dirty(), false);
     if (!g_applyError.empty()) {

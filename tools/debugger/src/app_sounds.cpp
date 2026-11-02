@@ -7,11 +7,20 @@
 
 namespace app {
 
+// What undo and redo put back: the sounds, sharing their WAVs with the state before when not changed
+struct SoundEntry {
+    int group, number;
+    std::shared_ptr<const std::string> wav;
+};
+using SoundState = std::vector<SoundEntry>;
+
 struct SoundFile {
     SndFile snd;
     std::string path, error; // path as the game names it; error: why it could not be read
     bool dirty = false;
     int sel = -1;
+    UndoStack<SoundState> history;
+    unsigned edits = 0, recorded = 0; // changes made, and those the history has
 };
 std::map<std::string, SoundFile> g_soundFiles; // by path
 static SoundFile *g_soundsShown;               // a file another window showed here
@@ -110,6 +119,42 @@ bool ReadWavFile(const std::string &path, std::string &wav) {
 
 const char kWavFilter[] = "WAV files (*.wav)\0*.wav\0All files (*.*)\0*.*\0";
 
+static SoundState CaptureSounds(const SndFile &snd, const SoundState *before) {
+    std::map<std::pair<int, int>, const SoundEntry *> old;
+    if (before)
+        for (const SoundEntry &e : *before) old[{e.group, e.number}] = &e;
+    SoundState st;
+    for (const SndSound &s : snd.sounds) {
+        auto it = old.find({s.group, s.number});
+        bool same = it != old.end() && *it->second->wav == s.wav;
+        st.push_back({s.group, s.number, same ? it->second->wav : std::make_shared<const std::string>(s.wav)});
+    }
+    return st;
+}
+
+static void TrackSounds(SoundFile &sf) {
+    if (!sf.history.Started()) {
+        sf.history.Start(CaptureSounds(sf.snd, nullptr), !sf.dirty);
+        sf.recorded = sf.edits;
+    } else if (sf.recorded != sf.edits) {
+        sf.recorded = sf.edits;
+        sf.history.Record(CaptureSounds(sf.snd, &sf.history.Current()));
+    }
+    if (!sf.dirty) sf.history.MarkSaved();
+}
+
+static void SoundsStep(SoundFile &sf, int step) {
+    const SoundState &st = step < 0 ? sf.history.Undo() : sf.history.Redo();
+    sf.snd.sounds.clear();
+    for (const SoundEntry &e : st) {
+        SndSound s;
+        s.group = e.group, s.number = e.number, s.wav = *e.wav;
+        sf.snd.sounds.push_back(s);
+    }
+    sf.dirty = !sf.history.Saved();
+    sf.sel = -1;
+}
+
 void SoundsWindow() {
     if (!BeginTool("Sounds")) return;
     // Whose: the character worked on, or the file another window showed here, whichever came last
@@ -134,6 +179,9 @@ void SoundsWindow() {
         ImGui::Text("The %s", g_soundsShownWhat.c_str());
         ImGui::SameLine();
     }
+    TrackSounds(sf);
+    if (int step = UndoButtons(sf.history.CanUndo(), sf.history.CanRedo())) SoundsStep(sf, step);
+    ImGui::SameLine();
     ImGui::BeginDisabled(!sf.dirty);
     if (ImGui::Button(ICON_SAVE " Save")) SaveSounds(sf);
     ImGui::SetItemTooltip("Writes the SND file (the old one is kept as .bak the first time) and the game reads it again.");
@@ -143,6 +191,7 @@ void SoundsWindow() {
         std::string error;
         if (!Snd_Parse(ReadWholeFile(GamePath(sf.path)), snd, &error)) sf.error = sf.path + ": " + error;
         sf.dirty = false;
+        sf.edits++;
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
@@ -162,6 +211,7 @@ void SoundsWindow() {
                 snd.sounds.push_back(s);
                 sf.sel = (int)snd.sounds.size() - 1;
                 sf.dirty = true;
+                sf.edits++;
                 Log(LogLine::Info, "Added " + f + " as sound " + std::to_string(s.group) + ", " + std::to_string(s.number));
             }
             ImGui::CloseCurrentPopup();
@@ -191,6 +241,7 @@ void SoundsWindow() {
         if (ImGui::Button(ICON_LIST " Renumber")) {
             s.group = num[0], s.number = num[1];
             sf.dirty = true;
+            sf.edits++;
         }
         ImGui::EndDisabled();
         if (ImGui::Button(ICON_UPLOAD " Replace...")) {
@@ -199,6 +250,7 @@ void SoundsWindow() {
             if (!files.empty() && ReadWavFile(files[0], wav)) {
                 s.wav = wav;
                 sf.dirty = true;
+                sf.edits++;
             }
         }
         ImGui::SameLine();
@@ -216,6 +268,7 @@ void SoundsWindow() {
             snd.sounds.erase(snd.sounds.begin() + sf.sel);
             sf.sel = -1;
             sf.dirty = true;
+            sf.edits++;
         }
     }
 

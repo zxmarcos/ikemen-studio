@@ -612,8 +612,8 @@ void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &foun
     int count[3] = {};
     for (const auto &f : found) count[f.level]++;
     char header[96];
-    snprintf(header, sizeof(header), "Checks: %d errors, %d warnings, %d notes###stagechecks", count[0], count[1],
-             count[2]);
+    snprintf(header, sizeof(header), "Checks: %d %s, %d %s, %d %s###stagechecks", count[0], count[0] == 1 ? "error" : "errors", count[1],
+             count[1] == 1 ? "warning" : "warnings", count[2], count[2] == 1 ? "note" : "notes");
     if (!ImGui::CollapsingHeader(header)) return;
     if (found.empty()) ImGui::TextDisabled("Nothing found.");
     if (!sffRead) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: its sprites are not checked.");
@@ -906,6 +906,7 @@ void StageWindow() {
         ImGui::TableNextColumn();
         ImGui::TableNextColumn();
         add = ImGui::SmallButton(ICON_PLUS) || add;
+        ImGui::SetItemTooltip("Add this field");
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;
             for (char &ch : key) ch = (char)tolower((unsigned char)ch);

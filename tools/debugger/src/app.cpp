@@ -74,7 +74,7 @@ void Log(LogLine::Kind kind, const std::string &text) {
     g_log.push_back({kind, text});
     while (g_log.size() > kLog) g_log.pop_front();
     if (kind == LogLine::Engine) EngineLine(text);
-    if (kind == LogLine::Error) ToolError(text);
+    if (kind == LogLine::Error && text.compare(0, 7, "error: ") != 0) ToolError(text); // not what a Lua call answered
     // What the user did and how it went: not what was typed in the Console and its answer
     bool typed = text.compare(0, 2, "> ") == 0 || text.compare(0, 2, "= ") == 0;
     if (kind == LogLine::Error || ((kind == LogLine::Info || kind == LogLine::Result) && !typed)) {
@@ -87,7 +87,7 @@ void Log(LogLine::Kind kind, const std::string &text) {
 
 std::string Who(int pn, bool helper, int id) {
     char buf[48];
-    snprintf(buf, sizeof(buf), helper ? "P%d helper %d" : "P%d (%d)", pn, id);
+    snprintf(buf, sizeof(buf), helper ? "P%d helper %d" : "P%d", pn, id);
     return buf;
 }
 
@@ -689,6 +689,8 @@ void App_Frame() {
     StartPageFrame();
     NewDialog();
     UnsavedDialog();
+    PackageDialog();
+    HelpDialog();
     StatusBar();
     if (g_autoLaunch) {
         g_autoLaunch = false;

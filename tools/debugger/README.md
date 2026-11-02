@@ -46,7 +46,7 @@ Ikemen GO itself is built by `build/build.sh Win64`; it needs `chars`,
 1. Run `tools/debugger/build/ikemen-debugger.exe`. The **start page** asks what
    you want to do (test a character, edit its animations and sprites, a stage,
    the screenpack; or start a new character or stage) and opens that workspace;
-   **File > Start page** shows it again, and it can be turned off. The first
+   **Help > Start page** shows it again, and it can be turned off. The first
    time, **Getting started** follows in a corner of the window: three steps,
    each going on when you have done it (also in File).
 2. Set the match with the button on the toolbar that shows it ("kfm vs kfm on
@@ -89,6 +89,17 @@ the game with files not saved says so.
 **Ctrl+S** saves everything changed from any window, the Game window too; Ctrl+Z
 and Ctrl+Y there undo what was dragged on the game; Ctrl+1 to Ctrl+5 change
 workspace. None of these reach the game while it has the keyboard.
+
+Every editor has **undo**: Animation, Sprites, Stage, the screens, Sounds, Commands,
+Roster and Fonts. Deleting a sprite that actions show asks first, saying how many
+elements. In Animation, **Follow** shows what the game shows, and lets go when an
+element is picked or edited while the game runs, so the edit stays where it began;
+paused, it stays on.
+
+**File > Package** makes a zip of what is being worked on (the character, the stage
+or the screenpack) and says what it holds, what the def names that is missing, and
+what is not saved; Show in folder opens it. **Help** has the start page, the first
+steps, the keyboard shortcuts and the words used here.
 
 On the Stage and Screenpack workspaces, Animation and Assets show what the workspace
 is about, not the player that happens to be selected: the stage's or the screen's
