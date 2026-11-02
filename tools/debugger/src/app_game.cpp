@@ -86,13 +86,14 @@ int SdlKey(ImGuiKey k) {
 bool g_gameFocused;
 
 // While Game has focus, keys go to the game (but the debugger's F5, F10 and F11, and with Ctrl what
-// saves, undoes and changes workspace: the game's own debug keys would take them).
+// saves, undoes and changes workspace: the game's own debug keys would take them). None on a stage's
+// workspace: Esc would open the pause menu, and a KO end the match.
 void ForwardKeys(bool focused) {
     static std::vector<ImGuiKey> held;
     ImGuiIO &io = ImGui::GetIO();
     g_gameFocused = focused;
     int mods = (io.KeyShift ? 0x1 : 0) | (io.KeyCtrl ? 0x40 : 0) | (io.KeyAlt ? 0x100 : 0); // SDL KMOD_L*
-    if (!focused || io.WantTextInput || !g_frameLink.IsOpen()) {
+    if (!focused || io.WantTextInput || !g_frameLink.IsOpen() || CurrentProject() == kProjectStage) {
         for (ImGuiKey k : held) g_frameLink.SendKey(SdlKey(k), false, mods);
         held.clear();
         return;
@@ -454,6 +455,7 @@ static void SelectionLine(bool focused) {
     } else {
         ImGui::TextDisabled("Click a fighter to select it, drag to move it.");
     }
+    if (CurrentProject() == kProjectStage) return; // no keys go to the game there
     ImGui::SameLine();
     if (focused) ImGui::TextColored(Ink(kGreen), ICON_GAME " keys go to the game");
     else ImGui::TextDisabled(ICON_GAME " click the picture to play");
@@ -470,16 +472,22 @@ void GameWindow() {
     // What a click on the picture selects, and what is drawn over it; the line goes on in a second
     // one when the window is narrow
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Select");
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Fighters", !g_stagePick && !g_screenPick && !ModelPicking())) SetPickMode(kPickFighters);
-    ImGui::SetItemTooltip("A click selects a player or helper, a drag moves it.");
-    SameLineFits(CheckboxWidth("Stage"));
-    if (ImGui::RadioButton("Stage", g_stagePick)) SetPickMode(kPickStage);
-    ImGui::SetItemTooltip("A click selects one of the stage's backgrounds, a drag moves it; the limits' handles too.");
-    SameLineFits(CheckboxWidth("Screen"));
-    if (ImGui::RadioButton("Screen", g_screenPick)) SetPickMode(kPickScreen);
-    ImGui::SetItemTooltip("A click selects an element of the fight screen or the menus (lifebars, time...), a drag\nmoves it with its group, Alt+drag alone.");
+    if (CurrentProject() == kProjectStage) {
+        // Only the stage is here to pick, or its 3D model
+        if (!g_stagePick && !ModelPicking()) SetPickMode(kPickStage);
+        ImGui::TextDisabled("Select backgrounds");
+    } else {
+        ImGui::TextDisabled("Select");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Fighters", !g_stagePick && !g_screenPick && !ModelPicking())) SetPickMode(kPickFighters);
+        ImGui::SetItemTooltip("A click selects a player or helper, a drag moves it.");
+        SameLineFits(CheckboxWidth("Stage"));
+        if (ImGui::RadioButton("Stage", g_stagePick)) SetPickMode(kPickStage);
+        ImGui::SetItemTooltip("A click selects one of the stage's backgrounds, a drag moves it; the limits' handles too.");
+        SameLineFits(CheckboxWidth("Screen"));
+        if (ImGui::RadioButton("Screen", g_screenPick)) SetPickMode(kPickScreen);
+        ImGui::SetItemTooltip("A click selects an element of the fight screen or the menus (lifebars, time...), a drag\nmoves it with its group, Alt+drag alone.");
+    }
     ModelPickToggle();
     SameLineFits(CheckboxWidth(ICON_WATCH " Show " ICON_CARET));
     if (ImGui::Button(ICON_WATCH " Show " ICON_CARET)) ImGui::OpenPopup("show");
@@ -501,9 +509,11 @@ void GameWindow() {
         ImGui::SetItemTooltip("Zoomed in (mouse wheel), keep the selected player in view. The right button pans.");
         ImGui::EndPopup();
     }
-    SameLineFits(CheckboxWidth(ICON_TRACE " Go to " ICON_CARET));
-    GoToButton();
-    GoToLine();
+    if (CurrentProject() != kProjectStage) { // the game stays on the stage there
+        SameLineFits(CheckboxWidth(ICON_TRACE " Go to " ICON_CARET));
+        GoToButton();
+        GoToLine();
+    }
     if (g_frameTex && AdvancedTools()) {
         ImGui::SameLine();
         ImGui::TextDisabled("%dx%d, frame %u", g_texW, g_texH, g_frame.frame);

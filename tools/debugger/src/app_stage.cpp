@@ -130,6 +130,27 @@ void PlayStage(const std::string &def) {
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
 }
 
+// The game on the stage's workspace stays on the project. Coming in, one that was started otherwise
+// starts again: its match can end, and its menus have no stage. A stage opened without going in, goes
+// in, asked once in case it does not load. Leaving, the game is left as it is.
+void StageRunFrame() {
+    static bool was;
+    static std::string asked;
+    bool now = CurrentProject() == kProjectStage, running = g_bridge.Running();
+    if (now && !was && running && !g_stageRun) Launch();
+    if (!now && was && running && g_stageRun)
+        Log(LogLine::Info, "The game is still on the stage, with no time limit: Restart starts the toolbar's match.");
+    was = now;
+    std::string def = NormPath(ProjectDef(kProjectStage));
+    if (!now || !g_stageRun || g_stageDef.empty() || def == NormPath(g_stageDef)) {
+        asked.clear();
+        return;
+    }
+    if (def == asked) return;
+    asked = def;
+    PlayStage(ProjectDef(kProjectStage));
+}
+
 // The section of a BG (by its index in the stage), nullptr when the def does not have it.
 const IniSection *BgSection(const IniFile &ini, int index) {
     std::vector<int> bgs = ini.StageBgs();

@@ -136,6 +136,16 @@ match again was too easy to make while debugging. A file's row never changes the
 swap is asked once while it goes in (`GoingIn`). The panel was renamed from Project to Files; a saved
 arrangement is translated as it is read and laid out again, since ImGui docks windows by name.
 
+On the Stage workspace the game stays on the project (asked by the user): `Launch` gives `-time -1` and
+the project's def in `-s`, the fighters are the toolbar's with no AI (`StageFighters`; the engine has no
+match without them), and `ForwardKeys` sends nothing, which is what closes Esc's pause menu and KOs: the
+game's own window is hidden, so keys only reach it from there. `g_stageRun` says the run started that way.
+`StageRunFrame` restarts a game of another kind on coming in, once and not on each frame (a failed
+`InstallMod` would repeat), and puts in a stage opened with `enter = false`; leaving does not restart, so
+a character's session after it has an endless round until Restart. Explorer's "Open, leaving the match as
+it is" went with this: on that workspace the stage cannot stay out of the match, though `StageInMatch` is
+still asked while a game loads, and when a stage fails to go in.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.
@@ -249,7 +259,8 @@ off it while loading (the fight screen's FX the same way, also `common.snd`).
 The Stage and Screenpack workspaces now hold Game over Animation and the
 stage/screen window over Assets. An action a BG uses cannot be deleted live: the
 engine refuses ("Invalid BG action"), keeps the stage, and the Checks say so.
-`stages/interactivestage.def` of the release does not load on this engine: its
+(2026-11-02: it did load in a test package, by `-s` and by `debugSwapStage`, without
+this being looked into.) `stages/interactivestage.def` of the release does not load on this engine: its
 attached character's `.zss` writes `shader` in an Explod, which upstream's develop
 now calls `shader.name` (one word; the file is the release's, so not changed here).
 It looked stuck on NOW LOADING because the engine's own dialog (`RetryLoadOnError`) was

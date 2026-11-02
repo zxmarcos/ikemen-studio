@@ -114,6 +114,13 @@ goes on; a character not in the match takes P1's place and the match starts agai
 already there changes nothing. A screenpack needs the game to start again, so with the
 game running it asks first. With the game stopped, Launch starts with what is open.
 
+On the **Stage** workspace the game goes straight to the project and stays there: a round
+with no time limit, the toolbar's fighters standing (`kfm` when it has none) and no keys
+reaching the game, so nothing ends the match or leads to the menus. The toolbar's match,
+Go to and the choice of what to select are not shown there, and opening another stage
+puts it in the game's place. A game already running in a match or a menu starts again
+when you come to this workspace; going to another one leaves it as it is, until Restart.
+
 **File > Package** makes a zip of the project and says what it holds, what the def
 names that is missing, and what is not saved; Show in folder opens it. **Help** has the
 start page, the first steps, the keyboard shortcuts and the words used here.

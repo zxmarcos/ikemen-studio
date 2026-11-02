@@ -113,8 +113,10 @@ void Toolbar() {
     ProjectBar();
     flow(em * 18);
     if (ImGui::Button(running ? ICON_RESTART " Restart" : ICON_PLAY " Launch (F5)")) Launch();
-    ImGui::SetItemTooltip(running ? "Starts the game again with the match beside (Ctrl+Shift+F5)."
-                                  : "Starts the game with the match beside (F5).");
+    bool onStage = CurrentProject() == kProjectStage;
+    if (onStage) ImGui::SetItemTooltip(running ? "Starts the game again on this stage (Ctrl+Shift+F5)." : "Starts the game on this stage (F5).");
+    else ImGui::SetItemTooltip(running ? "Starts the game again with the match beside (Ctrl+Shift+F5)."
+                                       : "Starts the game with the match beside (F5).");
     ImGui::SameLine();
     ImGui::BeginDisabled(!running);
     if (ImGui::Button(ICON_STOP " Stop")) {
@@ -124,14 +126,17 @@ void Toolbar() {
     ImGui::SetItemTooltip("Shift+F5");
     ImGui::EndDisabled();
 
-    // The match it starts with: one line, the fields in the popup it opens
-    flow(em * 18);
-    auto side = [](const std::string &name, bool ai) { return (name.empty() ? std::string("?") : name) + (ai ? " (AI)" : ""); };
-    std::string summary = s.p1.empty() && s.p2.empty() ? std::string("Title screen")
-                                                       : side(s.p1, s.ai1) + "  vs  " + side(s.p2, s.ai2) +
-                                                             (s.stage.empty() ? "" : "  on " + s.stage);
-    if (ImGui::Button((std::string(ICON_GAME "  ") + summary + "  " ICON_CARET + "###match").c_str())) ImGui::OpenPopup("match");
-    ImGui::SetItemTooltip("The match the game starts with (Launch, Restart): who fights, and where");
+    // The match it starts with: one line, the fields in the popup it opens. A stage's workspace has
+    // none to choose: the game goes to the project
+    if (!onStage) {
+        flow(em * 18);
+        auto side = [](const std::string &name, bool ai) { return (name.empty() ? std::string("?") : name) + (ai ? " (AI)" : ""); };
+        std::string summary = s.p1.empty() && s.p2.empty() ? std::string("Title screen")
+                                                           : side(s.p1, s.ai1) + "  vs  " + side(s.p2, s.ai2) +
+                                                                 (s.stage.empty() ? "" : "  on " + s.stage);
+        if (ImGui::Button((std::string(ICON_GAME "  ") + summary + "  " ICON_CARET + "###match").c_str())) ImGui::OpenPopup("match");
+        ImGui::SetItemTooltip("The match the game starts with (Launch, Restart): who fights, and where");
+    }
     if (ImGui::BeginPopup("match")) {
         static std::vector<std::string> chars, stages;
         if (ImGui::IsWindowAppearing()) {

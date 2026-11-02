@@ -610,8 +610,6 @@ void StageNode(const Entry &p) {
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Use as the stage")) g_settings.stage = StageNameOf(p.def);
         ImGui::SetItemTooltip("In the match the game starts with (Launch, Restart).");
-        if (ImGui::MenuItem("Open, leaving the match as it is")) ProjectOpen(kProjectStage, p.def, false);
-        ImGui::SetItemTooltip("The project becomes this stage, edited from disk; the game goes on with the one it has.");
         ImGui::Separator();
         FileMenuItems(p.def, "");
         ImGui::EndPopup();

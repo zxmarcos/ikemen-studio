@@ -294,6 +294,7 @@ void SendCtrlBreak(const CtrlBreak &b, bool on, size_t from = 1);
 CtrlBreak *FindCtrlBreak(const std::string &file, int line);
 void ToggleCtrlBreak(const std::string &file, int line);
 void Launch(bool menus = false); // menus: without -p1 -p2, the game starts in its menus
+extern bool g_stageRun;          // it was started on the stage project (the stage's workspace)
 
 // ---------------------------------------------------------------------------
 // The windows
@@ -734,6 +735,7 @@ void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
 void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
 void StageOpen();                                // another stage is open: nothing of the last one stays selected
 void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
+void StageRunFrame();                            // each frame: on the stage's workspace, the game stays on the project
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
 void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);

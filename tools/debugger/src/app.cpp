@@ -4,6 +4,7 @@
 #include "app.h"
 #include "app_internal.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <fstream>
@@ -16,7 +17,7 @@ namespace app {
 Bridge g_bridge;
 Settings g_settings;
 std::string g_iniPath;
-bool g_firstRun, g_autoLaunch;
+bool g_firstRun, g_autoLaunch, g_stageRun;
 
 bool g_hello;
 std::string g_modVersion, g_ikemenVersion;
@@ -229,17 +230,38 @@ bool InstallMod() {
     return true;
 }
 
+// One argument of the command line, spaces or not
+static std::string Arg(const std::string &s) { return s.find(' ') == std::string::npos ? s : "\"" + s + "\""; }
+
+// Who stands on a stage being edited: the toolbar's, either of them, or someone the game has
+static void StageFighters(std::string &p1, std::string &p2) {
+    p1 = g_settings.p1.empty() ? g_settings.p2 : g_settings.p1;
+    p2 = g_settings.p2.empty() ? p1 : g_settings.p2;
+    if (!p1.empty()) return;
+    std::vector<std::string> chars = ListDefs(false);
+    bool first = !chars.empty() && std::find(chars.begin(), chars.end(), "kfm") == chars.end();
+    p1 = p2 = first ? chars[0] : "kfm";
+}
+
 void Launch(bool menus) {
     if (!InstallMod()) return;
     std::string args;
     const Settings &s = g_settings;
-    menus = menus || s.p1.empty() || s.p2.empty();
+    // The stage's workspace goes straight to its stage: a round with no end, nobody playing
+    g_stageRun = !menus && CurrentProject() == kProjectStage;
+    menus = !g_stageRun && (menus || s.p1.empty() || s.p2.empty());
     GoToLaunched(menus);
-    if (!menus) {
-        args += "-p1 " + s.p1 + " -p2 " + s.p2;
+    if (g_stageRun) {
+        std::string p1, p2, stage = ProjectDef(kProjectStage);
+        StageFighters(p1, p2);
+        args += "-p1 " + Arg(p1) + " -p2 " + Arg(p2) + " -time -1";
+        if (!stage.empty()) args += " -s " + Arg(stage);
+        args += " -loadmotif";
+    } else if (!menus) {
+        args += "-p1 " + Arg(s.p1) + " -p2 " + Arg(s.p2);
         if (s.ai1) args += " -p1.ai 1";
         if (s.ai2) args += " -p2.ai 1";
-        if (!s.stage.empty()) args += " -s " + s.stage;
+        if (!s.stage.empty()) args += " -s " + Arg(s.stage);
         // Without -loadmotif a command line match starts before the mods are loaded.
         args += " -loadmotif";
     }
@@ -247,6 +269,7 @@ void Launch(bool menus) {
     args += " -ikdbg 1";
 
     g_hello = false;
+    g_stageDef.clear(); // the last run's, until this one says
     g_exitReported = false;
     g_tick = g_roundNo = g_roundState = 0;
     g_ents.clear();
@@ -663,6 +686,7 @@ void App_Frame() {
     auto start = std::chrono::steady_clock::now();
     App_Poll();
     LayoutFrame();
+    StageRunFrame();
     PollFrames();
     GameWindow();
     AnimationWindow();
