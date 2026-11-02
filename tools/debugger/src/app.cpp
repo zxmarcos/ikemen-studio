@@ -665,7 +665,6 @@ void App_Frame() {
     WatchWindow();
     LabWindow();
     AnalysisWindow();
-    CreateToolWindow();
     ConsoleWindow();
     CodeWindow();
     PerformanceWindow();
@@ -675,6 +674,7 @@ void App_Frame() {
     ProblemsWindow();
     PaletteFrame();
     StartPageFrame();
+    NewDialog();
     StatusBar();
     if (g_autoLaunch) {
         g_autoLaunch = false;

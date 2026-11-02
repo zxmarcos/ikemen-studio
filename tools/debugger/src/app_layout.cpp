@@ -57,7 +57,6 @@ ToolWindow g_windows[] = {
     {"Sprites", "", "", false, "Assets"},
     {"Sounds", "", "", false, "Assets"},
     {"Commands", "", "", false, "Assets"},
-    {"Create", "Making", "Assets|Stage editor|Inspector"},
     {"Stage editor", "Making", "Screenpack|Inspector"},
     {"Stage", "", "", false, "Stage editor"},
     {"Model", "", "", true, "Stage editor"},
@@ -85,8 +84,8 @@ Workspace g_spaces[] = {
      "X0.14(L:Fighters,Project)(X0.68(Y0.68(L:Game)(L:Testing,Output,Code))(L:Inspector))", kFollow},
     {"Code", ICON_CODE, "Writing a character: the files and the outline, the editor in the middle, the game beside it.",
      "X0.16(L:Project)(X0.68(Y0.72(L:Code)(L:Output))(L:Game))", kFollow},
-    {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands; new moves and characters.",
-     "X0.15(L:Project,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets,Create)))", kFollow},
+    {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands.",
+     "X0.15(L:Project,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets)))", kFollow},
     {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its animations, sprites, checks and 3D model.",
      "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
     {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, their animations and sprites, the roster and fonts.",
@@ -116,7 +115,7 @@ const char *WindowIcon(const char *name) {
         {"Console", ICON_CONSOLE}, {"Performance", ICON_PERF}, {"Lab", ICON_LAB}, {"Analysis", ICON_ANALYSIS},
         {"Animation", ICON_ANIM}, {"Sprites", ICON_IMAGE}, {"Sounds", ICON_SOUND}, {"Commands", ICON_KEYBOARD},
         {"Stage", ICON_STAGE}, {"Model", ICON_CUBE}, {"Fight screen", ICON_FIGHT}, {"Motif", ICON_PALETTE},
-        {"Storyboard", ICON_CLAPPER}, {"Scenes", ICON_CLAPPER}, {"Roster", ICON_ROSTER}, {"Fonts", ICON_FONT}, {"Create", ICON_WAND}};
+        {"Storyboard", ICON_CLAPPER}, {"Scenes", ICON_CLAPPER}, {"Roster", ICON_ROSTER}, {"Fonts", ICON_FONT}};
     auto it = icons.find(name);
     return it == icons.end() ? "" : it->second;
 }
@@ -559,7 +558,7 @@ static void WorkspaceRail(float width, float height) {
 void LayoutFrame() {
     ThemeFrame();
     ImGuiIO &io = ImGui::GetIO();
-    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && !io.WantTextInput)
+    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && !io.WantTextInput && !ImGui::GetTopMostPopupModal())
         for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++)
             if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + n), false)) g_spaceAsked = n;
 

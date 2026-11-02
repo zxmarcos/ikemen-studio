@@ -541,6 +541,7 @@ int WorkPn();
 std::string WorkDef();          // its def, "" none
 std::string WorkLabel(int pn);  // "P1", "from disk"
 void WorkOn(const std::string &def);
+std::string CharDefOf(const std::string &name); // a character as ListDefs names it ("kfm", "kfm/kfm720.def"): its def
 // A player's files as the game lists them (key -> paths), kDiskPn's read from disk; nullptr not known
 const std::map<std::string, std::vector<std::string>> *FilesFor(int pn);
 
@@ -601,10 +602,11 @@ std::string AddCommandEntry(int pn, const std::string &command, int state, int w
 std::vector<std::string> CommandNames(int pn); // its CMD file's, once each, sorted
 void CommandsWindow();
 
-// Create: a move, ...
-void CreateMenu(); // File > New
-void CreateAsk(int tab); // Create's tab to the front: 0 a move, 1 a character, 2 a stage
-void CreateToolWindow();
+// File > New: a dialog for each thing made
+enum { kNewMove, kNewCharacter, kNewStage };
+void CreateMenu();
+void CreateAsk(int what);
+void NewDialog();
 
 // Stage: the stage's def file and where its BGs were drawn in the last frame (editor_stage.go)
 struct FrameBg {

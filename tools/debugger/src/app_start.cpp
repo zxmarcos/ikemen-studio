@@ -11,7 +11,7 @@ namespace {
 bool g_showAtStart = true; // saved with the settings
 bool g_asked;              // shown from the next frame
 bool g_started;            // its first frame has passed
-int g_createAsked = -1;    // Create's tab, once the workspace it goes with is entered
+int g_createAsked = -1;    // what to make, once the workspace it goes with is entered
 int g_tour = -1;           // the step of the first steps shown; -1: none
 bool g_tourDone;           // saved: seen to the end, or skipped
 int g_tourPick;            // the player picks when its step began
@@ -161,13 +161,13 @@ void StartPageFrame() {
     ImGui::Separator();
     if (ImGui::Button(ICON_PERSON " New character")) {
         GoTo("Character");
-        g_createAsked = 1;
+        g_createAsked = kNewCharacter;
         close = true, tour = false;
     }
     ImGui::SameLine();
     if (ImGui::Button(ICON_STAGE " New stage")) {
         GoTo("Stage");
-        g_createAsked = 2;
+        g_createAsked = kNewStage;
         close = true, tour = false;
     }
     ImGui::SameLine();

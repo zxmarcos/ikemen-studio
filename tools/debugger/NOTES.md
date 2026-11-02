@@ -48,7 +48,7 @@ found it functional but intimidating). It is organized by task, not by tool:
   separate Properties window was made.
 
 Second pass (2026-11-02), from what going through the tools from nothing showed: nothing
-removed, less shown. Create's forms keep their button below the fields (`BeginForm`), the
+removed, less shown. The forms of File > New keep their button below the fields (`BeginForm`), the
 move's details last; a state that exists is tried from there, so nothing moves the form.
 Sprites with several selected starts with Animation, what they are selected for. Animation's
 onion skin is a menu, Flip, Blend, Scale, Angle and the smooth change are under Effects, whose
@@ -57,6 +57,19 @@ however many lines. The boxes are "hit boxes" and "hurt boxes" in the interface,
 Clsn2 beside them where people meet the file's names. Lab shows a dummy's settings only
 with a dummy, and its reversal only with a take. Still heavy, for a next pass: Code's state
 panel beside the editor.
+
+File > New is three modal dialogs since 2026-11-02, not a window with tabs: what the menu asked
+for is the title, so the Character workspace lost a tab it did not need (saved arrangements just
+skip the old name, so `kLayoutVersion` stayed). What a form needs from behind the dialog comes to
+it or closes it: New move picks its character itself, its buttons to Animation, Commands and Code
+and Try close the dialog, and the draft waits in `g_move` until a move is made. A dialog is as
+high as its form (`ImGuiChildFlags_AutoResizeY` under a maximum) and stays centred, so it cannot
+be moved. Character and stage close once made, an error staying in them; the move stays for Try.
+Things to know: `OpenPopup` from outside a modal closes it, so the palette's keys and Ctrl+1..5
+check `GetTopMostPopupModal`; Esc on a combo arrives with the combo already closed, so the dialog
+looks at the frame before; `CreateDialog` is a Win32 macro. `WorkPn` now asks for the files of a
+player being swapped: nothing else did, so a character made and put in the match stayed "from
+disk" and New move offered no Try.
 
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
@@ -92,7 +105,7 @@ Fighter Factory's background image behind the sprite.
 Animation: `Interpolate` lines belong to the element after them (`AirElem::interp`;
 `first` includes them, so they move and go with it). Sprites' defaults follow how people
 name them: Add PNG reads the numbers from the file names (others take Group and From), and
-the Animation section offers the sprites' group as the action, not action 0. In Create's
+the Animation section offers the sprites' group as the action, not action 0. In New
 Move the action goes with the state until it is given another number, and it warns
 when the sprites are not saved: creating a move saves its text, not the SFF. The game interpolates on the
 way into that element, over the time of the one before (`UpdateInterpolation`);
@@ -568,7 +581,7 @@ tools/debugger/
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
   src/stagecheck.cpp/.h  a stage def's checks (Stage window): files, sprites, actions, ids, bounds, keys
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
-  src/app_create.cpp     Create window (the menu bar's Create): a move, a character, a stage of PNGs
+  src/app_create.cpp     File > New: a dialog for a move, a character, a stage of PNGs
   src/app_model.cpp      Model window: the stage's 3D model (the match's, or read from disk), its placement, its nodes on the Game window
   src/app_modelview.cpp  the Model window's preview: a glTF drawn by OpenGL's fixed pipeline into a framebuffer, textures by WIC
   src/gltf.cpp/.h        a glTF or glb read as model.go reads it, posed, picked, written back (its JSON edited)
@@ -578,7 +591,7 @@ tools/debugger/
   mod/ikdbg.lua          the in-game side (Lua mod, installed into external/mods at launch)
   third_party/imgui      Dear ImGui 1.92.9b docking (only the files used)
   third_party/fontawesome Font Awesome Free 6.5.2 Solid (fonts OFL, icons CC BY 4.0): CMake embeds the TTF (build/fonts.cpp), main.cpp merges it into the interface's font; src/icons.h has the ICON_* names (UTF-8, generated from the font's CSS). Use them by literal concatenation: ICON_SAVE " Save", and measure a button by that same label; windows' titles stay plain text (they are the layout's ids)
-  third_party/fonts      Roboto 2.138 (Apache 2.0) for the interface, JetBrains Mono 2.304 (OFL) for code: embedded the same way, size 14 (main.cpp). Roboto over Inter because its digits are all as wide, so numbers that change each tick stay still; stb_truetype reads no OpenType features and no variable fonts, hence static TTFs. dbg::Editor_Font() gives the code font: PushFont(dbg::Editor_Font(), 0.0f) for code outside the editor (Console, Create's preview). Neither has kana or kanji
+  third_party/fonts      Roboto 2.138 (Apache 2.0) for the interface, JetBrains Mono 2.304 (OFL) for code: embedded the same way, size 14 (main.cpp). Roboto over Inter because its digits are all as wide, so numbers that change each tick stay still; stb_truetype reads no OpenType features and no variable fonts, hence static TTFs. dbg::Editor_Font() gives the code font: PushFont(dbg::Editor_Font(), 0.0f) for code outside the editor (Console, New move's text). Neither has kana or kanji
   scripts/               build.ps1/build.sh, msys_setup.ps1, test_ui.ps1, probe.ps1, gen_names (Go: ikemen_names.inc)
 ```
 
@@ -709,7 +722,7 @@ rewrite all of this history at every sync.
   keyboard (`save/config.ini`): arrows, a b c = Z X C, x y z = A S D.
   Click coordinates depend on the layout: take a shot first.
 - `test_ui.ps1 -NoLaunch` starts it as a person would: the start page, no game. A
-  path from nothing to a zip, tested so (2026-11-01): New stage, images, Create, Launch, a BG
+  path from nothing to a zip, tested so (2026-11-01): New stage, images, Create the stage, Launch, a BG
   picked and dragged, Save, Package; New character, Launch, a move with its action
   copied and a Clsn1 box, Try it, Package; a character's own PNGs (`300-0.png`...) into
   sprites, an action, boxes, a move on a command, pressed in the match; Copy as a new
@@ -718,7 +731,7 @@ rewrite all of this history at every sync.
   form shows. `Compare-Object` ignores the order of lines: compare hashes for a moved cell.
 - File dialogs: with the environment variable `IKDBG_TEST_PICK` set (paths
   separated by `|`) before `test_ui.ps1`, every "Open" dialog (`PickFiles`)
-  returns those files instead of opening. Create tests write new folders and
+  returns those files instead of opening. Tests of File > New write new folders and
   files (`chars/<folder>`, `stages/<file>.*`) and add to `data/select.def`:
   delete the ones made and restore select.def after.
 - Lab tests: with `-IniExtra "AI1=0`nAI2=0"` nobody moves on their own;
@@ -1072,7 +1085,7 @@ Phase 6, creation (the app writes text, `src/make.cpp`, tested in
 window shows a command's motion as steps edited on a pad (`Cmd_Steps`;
 what Ikemen allows beyond them stays as text) and puts a ChangeState on a
 command at the top of the first `[Statedef -1]` (`AddCommandEntry`, CNS or
-ZSS); the Create window (menu bar's Create) makes a move (its statedef at
+ZSS); File > New makes a move (its statedef at
 the end of the first state file, as KFM writes its attacks, with its
 command; tried with `selfState`), a character from another one (its
 basics: constants, states below 200 and ZSS functions, the common states'

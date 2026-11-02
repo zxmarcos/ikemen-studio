@@ -299,7 +299,7 @@ std::string Make_CommandFile(const std::string &name, bool taunt) {
              "trigger1 = statetype = S\ntrigger1 = ctrl\n\n";
     else
         s += "; [Statedef -1] needs a controller: this one does nothing.\n[State -1, Nothing yet]\ntype = Null\ntrigger1 = 0\n\n";
-    s += "; Create > A move writes them here, and Commands > Start a state with this command.\n";
+    s += "; File > New > A move writes them here, and Commands > Start a state with this command.\n";
     return s;
 }
 
@@ -344,7 +344,7 @@ std::string Make_StageDef(const MakeStage &s) {
         if (t.back() == '.') t.pop_back();
         return t;
     };
-    std::string t = "; Made with the Ikemen GO debugger (Create > A stage)\n";
+    std::string t = "; Made with the Ikemen GO debugger (File > New > A stage)\n";
     t += "[Info]\nname = \"" + s.name + "\"\ndisplayname = \"" + s.name + "\"\nversiondate = " + s.date +
          "\nmugenversion = 1.1\nauthor = \"" + s.author + "\"\n";
     t += "\n[Camera]\nstartx = 0\nstarty = 0\n";

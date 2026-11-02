@@ -144,6 +144,9 @@ void Commands(std::vector<Entry> &out) {
     add("File: Open...", "", OpenDialog);
     add("File: Save and apply", "Ctrl+S", SaveAndApply);
     add("File: Close the tab", "Ctrl+W", CodeCloseShown);
+    add("New: A move", "", [] { CreateAsk(kNewMove); });
+    add("New: A character", "", [] { CreateAsk(kNewCharacter); });
+    add("New: A stage", "", [] { CreateAsk(kNewStage); });
     add("Go to file", "Ctrl+P", [] { Ask(0); });
     add("Go to line", "Ctrl+G", [] { Ask(':'); });
     add("Go to section", "Ctrl+Shift+O", [] { Ask('@'); });
@@ -184,7 +187,8 @@ void FileMenu() {
 
 void PaletteFrame() {
     ImGuiIO &io = ImGui::GetIO();
-    if (io.KeyCtrl && !io.KeyAlt) {
+    // Opening it would close a dialog
+    if (io.KeyCtrl && !io.KeyAlt && !ImGui::GetTopMostPopupModal()) {
         if (ImGui::IsKeyPressed(ImGuiKey_P, false)) Ask(io.KeyShift ? '>' : 0);
         else if (!io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) Ask(':');
         else if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_O, false)) Ask('@');

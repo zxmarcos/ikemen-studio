@@ -1,7 +1,8 @@
-// Create: new things made from a form, written into the files and applied (their text by src/make.cpp).
-// Move: an attack's statedef as KFM writes its own, at the end of the character's first state file,
-// and a ChangeState on its command at the top of [Statedef -1]. Character: a new one from another's
-// files. Stage: one of PNG images, put in the match's place.
+// File > New: new things made from a form in a dialog, written into the files and applied (their text
+// by src/make.cpp). Move: an attack's statedef as KFM writes its own, at the end of the character's
+// first state file, and a ChangeState on its command at the top of [Statedef -1]. Character: a new one
+// from another's files. Stage: one of PNG images, put in the match's place. What was filled in stays
+// for the next time until it is made.
 #include "app_internal.h"
 
 #include <cfloat>
@@ -17,8 +18,8 @@ namespace app {
 
 namespace {
 
-enum { kTabMove, kTabChar, kTabStage, kTabs };
-int g_tabAsked = -1;
+int g_asked = -1; // shown from the next frame
+int g_form = -1;  // the dialog shown
 
 struct MoveForm {
     std::string def; // the character it was set up for
@@ -64,27 +65,63 @@ void SpriteThumb(int pn, int group, int image, float size) {
     }
 }
 
-// A form's fields, which scroll, its button staying in view below them: a line for it, extra for what it says.
-void BeginForm(float extra) {
-    const ImGuiStyle &style = ImGui::GetStyle();
-    ImGui::BeginChild("form", ImVec2(0, -(ImGui::GetFrameHeightWithSpacing() + style.ItemSpacing.y * 2 + 1 + extra)));
+// A form's fields: the dialog as high as they are, until they scroll with its buttons staying in view
+void BeginForm() {
+    float most = ImGui::GetMainViewport()->WorkSize.y - ImGui::GetFontSize() * 9;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, std::max(most, 0.0f)));
+    ImGui::BeginChild("form", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
 }
 
-void MoveTab() {
-    // The character worked on: a player picked in the match, or one picked in Explorer (from disk)
-    int pn = WorkPn();
-    if (!pn) {
-        ImGui::TextDisabled("Pick a player, or a character in Explorer: the move is made for that character.");
-        return;
+// The last button of a dialog
+void CloseButton(const char *label) {
+    if (ImGui::Button(label)) ImGui::CloseCurrentPopup();
+}
+
+// The characters on disk, looked for each time a dialog opens
+std::vector<std::string> g_chars;
+bool g_charsListed;
+std::string g_charFilter;
+
+const std::vector<std::string> &Chars() {
+    if (!g_charsListed) g_chars = ListDefs(false), g_charsListed = true;
+    return g_chars;
+}
+
+// A character as ListDefs names it: true when one is picked
+bool CharCombo(const char *id, const char *shown, std::string &picked) {
+    bool done = false;
+    if (ImGui::BeginCombo(id, shown, ImGuiComboFlags_HeightLarge)) {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##filter", "filter", &g_charFilter);
+        for (const std::string &s : Chars()) {
+            if (!g_charFilter.empty() && s.find(g_charFilter) == std::string::npos) continue;
+            if (ImGui::Selectable(s.c_str(), picked == s)) picked = s, done = true;
+        }
+        ImGui::EndCombo();
     }
-    std::string def = CharFile(pn, "def");
+    return done;
+}
+
+void MoveDialog() {
+    // The character worked on: a player picked in the match, or one from disk
+    int pn = WorkPn();
+    std::string def = pn ? CharFile(pn, "def") : "";
+    float em = ImGui::GetFontSize();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("For");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 15);
+    std::string picked;
+    if (CharCombo("##for", def.empty() ? "Pick a character" : def.c_str(), picked)) WorkOn(CharDefOf(picked));
     const std::vector<std::string> *st = nullptr;
-    if (const auto *files = FilesFor(pn))
+    if (const auto *files = pn ? FilesFor(pn) : nullptr)
         if (auto f = files->find("st"); f != files->end() && !f->second.empty()) st = &f->second;
-    if (def.empty() || !st) {
-        AirPath(pn); // asks for the files
-        if (pn == kDiskPn) ImGui::TextDisabled("%s has no state file.", def.empty() ? "The character" : def.c_str());
+    if (!pn || def.empty() || !st) {
+        if (pn) AirPath(pn); // asks for the files
+        if (!pn) ImGui::TextDisabled("The move is written into that character's files.");
+        else if (pn == kDiskPn) ImGui::TextDisabled("%s has no state file.", def.empty() ? "The character" : def.c_str());
         else ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
+        CloseButton(ICON_XMARK " Cancel");
         return;
     }
     MoveForm &f = g_move;
@@ -95,19 +132,17 @@ void MoveTab() {
         while (!StatedefFile(pn, m.state).empty()) m.state += 10;
         m.action = m.state;
     }
-    float em = ImGui::GetFontSize();
+    ImGui::SameLine();
     if (pn == kDiskPn) {
-        ImGui::TextDisabled("For %s", def.c_str());
-        ImGui::SameLine(0, 0);
-        ImGui::TextColored(Ink(kOrange), " (from disk)");
+        ImGui::TextColored(Ink(kOrange), "from disk");
         ImGui::SetItemTooltip("Not in the match: the move is written into its files, to be tried once it is in the match.");
         ImGui::SameLine(0, 0);
         ImGui::TextDisabled(", at the end of %s", (*st)[0].c_str());
     } else {
-        ImGui::TextDisabled("For P%d's %s, at the end of %s", pn, def.c_str(), (*st)[0].c_str());
+        ImGui::TextDisabled("P%d, at the end of %s", pn, (*st)[0].c_str());
     }
 
-    BeginForm(0);
+    BeginForm();
     ImGui::SetNextItemWidth(em * 14);
     ImGui::InputText("name", &m.name);
     ImGui::SetNextItemWidth(em * 6);
@@ -115,7 +150,10 @@ void MoveTab() {
     ImGui::InputInt("state", &m.state, 0);
     if (m.action == stateWas) m.action = m.state; // they go together until one is given another number
     std::string taken = StatedefFile(pn, m.state);
-    if (!taken.empty()) {
+    if (f.made == m.state) {
+        ImGui::SameLine();
+        ImGui::TextColored(Ink(kGreen), "made, in %s", f.madeIn.c_str());
+    } else if (!taken.empty()) {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kRed), "exists already (%s)", taken.c_str());
     } else if (m.state < 200 || m.state >= 5000) {
@@ -175,8 +213,9 @@ void MoveTab() {
         if (ImGui::SmallButton("Animation window")) {
             g_animAction = m.action, g_animElem = m.hitElem ? m.hitElem : 1, g_animFollow = false;
             ShowWindow("Animation");
+            ImGui::CloseCurrentPopup();
         }
-        ImGui::SetItemTooltip("Shows the action there, to draw its boxes");
+        ImGui::SetItemTooltip("Shows the action there, to draw its boxes; the move waits for you in File > New");
         ImGui::EndGroup();
         // Creating the move saves its text, not the SFF: its new sprites would not show
         if (SpriteFile *spf = SpritesOf(pn); spf && spf->dirty)
@@ -212,7 +251,11 @@ void MoveTab() {
     ImGui::SameLine();
     ImGui::Checkbox("with control", &f.ctrl);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Commands window")) ShowWindow("Commands");
+    if (ImGui::SmallButton("Commands window")) {
+        ShowWindow("Commands");
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SetItemTooltip("The move waits for you in File > New");
     ImGui::TextDisabled(!f.command.empty() ? "A ChangeState on it goes at the top of [Statedef -1]%s."
                         : pn == kDiskPn    ? "Without one, try it with SelfState once the character is in the match."
                                            : "Without one, try it with the button below or SelfState.",
@@ -280,6 +323,7 @@ void MoveTab() {
             if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
                 name = name.substr(0, slash);
             SwapChar(1, name);
+            ImGui::CloseCurrentPopup();
         }
         ImGui::EndDisabled();
         ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1, to try the move."
@@ -289,17 +333,23 @@ void MoveTab() {
         char label[64];
         snprintf(label, sizeof(label), ICON_PLAY " Try state %d on P%d", m.state, pn);
         ImGui::BeginDisabled(!Connected() || g_applying || !RootId(pn));
-        if (ImGui::Button(label)) ExecOn(RootId(pn), "selfState(" + std::to_string(m.state) + ")");
+        if (ImGui::Button(label)) {
+            ExecOn(RootId(pn), "selfState(" + std::to_string(m.state) + ")");
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndDisabled();
     }
     if (f.made >= 0) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
+        if (ImGui::Button(ICON_CODE " Show in Code")) {
             g_codeFile = f.madeIn;
             g_codeLine = g_codeScrollTo = f.madeLine;
             g_codeHold = true;
+            ImGui::CloseCurrentPopup();
         }
     }
+    ImGui::SameLine();
+    CloseButton(f.made >= 0 ? ICON_CHECK " Close" : ICON_XMARK " Cancel");
 }
 
 // ---------------------------------------------------------------------------
@@ -312,9 +362,7 @@ struct CharForm {
     int mode = 0;      // 0 its basics, 1 a full copy
     bool select = true; // added to select.def
     int load = 0;      // 0 in P1's place, 1 in P2's, 2 nowhere
-    std::vector<std::string> list;
-    bool listed = false;
-    std::string filter, status;
+    std::string status;
     bool failed = false;
 };
 CharForm g_char;
@@ -532,7 +580,6 @@ void CreateCharacter(CharForm &c) {
     }
     if (!ok) return fail("Not made: " + error + " (" + to + " is left as it is).");
     c.status = "Made " + to + c.folder + ".def";
-    Log(LogLine::Info, c.status);
     // Into select.def, at the end of [Characters]
     if (c.select && !SelectDef().empty()) {
         SourceFile &sel = LoadSource(SelectDef());
@@ -552,19 +599,17 @@ void CreateCharacter(CharForm &c) {
         (c.load == 0 ? g_settings.p1 : g_settings.p2) = c.folder;
         c.status += ", P" + std::to_string(c.load + 1) + " of the next match";
     }
-    // The character worked on (Animation, Sprites, Create > Move...), in the match or not
+    // The character worked on (Animation, Sprites, New > A move...), in the match or not
     WorkOn(to + c.folder + ".def");
-    c.listed = false;
+    Log(LogLine::Info, c.status);
+    c.folder.clear(), c.name.clear();
 }
 
-void CharacterTab() {
+void CharacterDialog() {
     CharForm &c = g_char;
     float em = ImGui::GetFontSize();
-    if (!c.listed) {
-        c.list = ListDefs(false);
-        c.listed = true;
-        if (c.base.empty() && !c.list.empty()) c.base = std::find(c.list.begin(), c.list.end(), "kfm") != c.list.end() ? "kfm" : c.list[0];
-    }
+    const std::vector<std::string> &list = Chars();
+    if (c.base.empty() && !list.empty()) c.base = std::find(list.begin(), list.end(), "kfm") != list.end() ? "kfm" : list[0];
     ImGui::SetNextItemWidth(em * 10);
     ImGui::InputTextWithHint("folder", "chars/...", &c.folder);
     ImGui::SetItemTooltip("chars/<folder>/<folder>.def: letters, digits, '_' and '-'.");
@@ -577,15 +622,7 @@ void CharacterTab() {
     ImGui::TextUnformatted("Start from");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 12);
-    if (ImGui::BeginCombo("##base", c.base.c_str(), ImGuiComboFlags_HeightLarge)) {
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##filter", "filter", &c.filter);
-        for (const std::string &s : c.list) {
-            if (!c.filter.empty() && s.find(c.filter) == std::string::npos) continue;
-            if (ImGui::Selectable(s.c_str(), c.base == s)) c.base = s;
-        }
-        ImGui::EndCombo();
-    }
+    CharCombo("##base", c.base.c_str(), c.base);
     ImGui::RadioButton("its basics", &c.mode, 0);
     ImGui::SetItemTooltip("The sprites and sounds (renamed after the folder), the palettes and other files of [Files], "
                           "the constants, the states below 200 it gives itself (intro, win poses, taunt), the actions "
@@ -607,12 +644,16 @@ void CharacterTab() {
     ImGui::SameLine();
     HelpMarker("With the game running, the match starts again with it there; without, the match the game starts "
                "with (F5) has it. Either way it becomes the character worked on, as if picked in Explorer.");
-    if (ImGui::Button(ICON_WAND " Create the character")) CreateCharacter(c);
-    if (!c.status.empty()) {
-        ImGui::SameLine();
+    ImGui::Separator();
+    if (ImGui::Button(ICON_WAND " Create the character")) {
+        CreateCharacter(c);
+        if (!c.failed) ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    CloseButton(ICON_XMARK " Cancel");
+    if (c.failed) {
         ImGui::PushTextWrapPos(0);
-        if (c.failed) ImGui::TextColored(Ink(kRed), "%s", c.status.c_str());
-        else ImGui::TextUnformatted(c.status.c_str());
+        ImGui::TextColored(Ink(kRed), "%s", c.status.c_str());
         ImGui::PopTextWrapPos();
     }
 }
@@ -716,7 +757,6 @@ void CreateStage(StageForm &f) {
     if (!written) return fail("Could not write " + sff);
     if (!WriteText(def, Make_StageDef(StageOf(f)))) return fail("Could not write " + def);
     f.status = "Made " + def + " and " + sff;
-    Log(LogLine::Info, f.status);
     // Into select.def's [ExtraStages]
     if (f.select && !SelectDef().empty()) {
         SourceFile &sel = LoadSource(SelectDef());
@@ -739,6 +779,7 @@ void CreateStage(StageForm &f) {
         g_settings.stage = f.file;
         f.status += ", the stage of the next match";
     }
+    Log(LogLine::Info, f.status);
     for (StageLayer &l : f.layers) FreeLayer(l);
     f.layers.clear();
     f.file.clear(), f.name.clear();
@@ -781,11 +822,10 @@ void StagePreview(StageForm &f) {
     draw->AddText(ImVec2(P(-lw / 2.0, 0).x + 4, P(0, 0).y + 2), IM_COL32(255, 255, 255, 220), "the screen at the start");
 }
 
-void StageTab() {
+void StageDialog() {
     StageForm &f = g_stage;
     float em = ImGui::GetFontSize();
-    float wrap = ImGui::GetContentRegionAvail().x;
-    BeginForm(f.status.empty() ? 0 : ImGui::CalcTextSize(f.status.c_str(), nullptr, false, wrap).y + ImGui::GetStyle().ItemSpacing.y);
+    BeginForm();
     ImGui::SetNextItemWidth(em * 10);
     ImGui::InputTextWithHint("file", "stages/...", &f.file);
     ImGui::SetItemTooltip("stages/<file>.def and stages/<file>.sff: letters, digits, '_' and '-'.");
@@ -881,46 +921,61 @@ void StageTab() {
     ImGui::EndChild();
 
     ImGui::Separator();
-    if (ImGui::Button(ICON_WAND " Create the stage")) CreateStage(f);
-    if (!f.status.empty()) {
+    if (ImGui::Button(ICON_WAND " Create the stage")) {
+        CreateStage(f);
+        if (!f.failed) ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    CloseButton(ICON_XMARK " Cancel");
+    if (f.failed) {
         ImGui::PushTextWrapPos(0);
-        if (f.failed) ImGui::TextColored(Ink(kRed), "%s", f.status.c_str());
-        else ImGui::TextUnformatted(f.status.c_str());
+        ImGui::TextColored(Ink(kRed), "%s", f.status.c_str());
         ImGui::PopTextWrapPos();
     }
 }
 
 } // namespace
 
-void CreateAsk(int tab) {
-    g_tabAsked = tab;
-    ShowWindow("Create");
-}
+void CreateAsk(int what) { g_asked = what; }
 
 void CreateMenu() {
-    if (ImGui::MenuItem(ICON_BOLT " A move...")) CreateAsk(kTabMove);
+    if (ImGui::MenuItem(ICON_BOLT " A move...")) CreateAsk(kNewMove);
     ImGui::SetItemTooltip("An attack's state for the selected player's character, and the command that starts it.");
-    if (ImGui::MenuItem(ICON_PERSON " A character...")) CreateAsk(kTabChar);
+    if (ImGui::MenuItem(ICON_PERSON " A character...")) CreateAsk(kNewCharacter);
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
-    if (ImGui::MenuItem(ICON_STAGE " A stage...")) CreateAsk(kTabStage);
+    if (ImGui::MenuItem(ICON_STAGE " A stage...")) CreateAsk(kNewStage);
     ImGui::SetItemTooltip("A new stage of PNG images, the far ones moving slower.");
 }
 
-void CreateToolWindow() {
-    if (!BeginTool("Create")) return;
-    if (ImGui::BeginTabBar("create")) {
-        static const char *tabs[kTabs] = {"Move", "Character", "Stage"};
-        for (int i = 0; i < kTabs; i++) {
-            if (!ImGui::BeginTabItem(tabs[i], nullptr, g_tabAsked == i ? ImGuiTabItemFlags_SetSelected : 0)) continue;
-            if (i == kTabMove) MoveTab();
-            else if (i == kTabChar) CharacterTab();
-            else if (i == kTabStage) StageTab();
-            ImGui::EndTabItem();
-        }
-        g_tabAsked = -1;
-        ImGui::EndTabBar();
+void NewDialog() {
+    static const char *titles[] = {ICON_BOLT " New move", ICON_PERSON " New character", ICON_STAGE " New stage"};
+    if (g_asked >= 0) {
+        g_form = g_asked;
+        g_asked = -1;
+        g_charsListed = false;
+        g_char.failed = g_stage.failed = false;
+        if (g_move.made >= 0) g_move = MoveForm(); // that one is done: a new one, with the next free state
+        ImGui::OpenPopup(titles[g_form]);
     }
-    ImGui::End();
+    if (g_form < 0) return;
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    float em = ImGui::GetFontSize();
+    // In the middle as it grows with what is added to the form
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(em * (g_form == kNewCharacter ? 34 : 44), vp->WorkSize.x - em * 2), 0));
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    bool open = true;
+    if (!ImGui::BeginPopupModal(titles[g_form], &open, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings))
+        return;
+    // Esc leaves a field, or a combo, before the dialog; a combo it closes is gone by now, so the last frame's
+    static bool comboOpen;
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !comboOpen && !ImGui::IsAnyItemActive()) ImGui::CloseCurrentPopup();
+    if (g_form == kNewMove) MoveDialog();
+    else if (g_form == kNewCharacter) CharacterDialog();
+    else StageDialog();
+    comboOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+    ImGui::EndPopup();
 }
 
 } // namespace app

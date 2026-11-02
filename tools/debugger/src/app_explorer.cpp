@@ -275,7 +275,8 @@ void ReadDiskChar(const std::string &def) {
     }
 }
 
-// A character as the toolbar names it ("kfm", "kfm/kfm720.def"): its def
+} // namespace
+
 std::string CharDefOf(const std::string &name) {
     if (name.empty()) return "";
     std::string n = name;
@@ -283,6 +284,8 @@ std::string CharDefOf(const std::string &name) {
     if (n.find('/') == std::string::npos) return "chars/" + n + "/" + (def ? n : n + ".def");
     return "chars/" + n + (def ? "" : ".def");
 }
+
+namespace {
 
 // The player a character's def is in the match as, 0 none
 int PlayerOf(const std::string &def) {
@@ -644,6 +647,7 @@ int WorkPn() {
         def = CharDefOf(g_settings.p1); // the game not running: the character its match starts with
     }
     if (int pn = PlayerOf(def)) return pn;
+    for (const auto &kv : g_swapWanted) AirPath(kv.first); // it may be the one going in: asks who is there now
     if (!GameFileExists(def)) return 0;
     ReadDiskChar(def);
     return kDiskPn;
