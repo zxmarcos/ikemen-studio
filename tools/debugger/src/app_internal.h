@@ -763,14 +763,14 @@ void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini,
 bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
 extern bool g_stageScale;                        // the Game window shows how big a fighter is on the stage
 void ScaleOverlay(ImDrawList *draw, const std::function<ImVec2(float, float)> &toScreen);
-void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit);
+void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit, float height); // height: what the list can take
 void StageLayersClear();                         // another stage: nothing hidden, alone or locked
 bool StageBgLocked(const IniFile &ini, int index);
 void SendHiddenBgs(const IniFile *ini);          // what the game does not draw; nullptr: it draws everything
 void ShowStageBg(int index);                     // Animation and Sprites show what that BG shows
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
-void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);
+void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead, bool header = true);
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the
 // Game window its nodes outlined and picked
 void OnModel(const Json &j);

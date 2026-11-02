@@ -91,10 +91,6 @@ const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniF
 }
 
 void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
-    if (!ImGui::CollapsingHeader(ICON_FAST " Camera sweep###sweep")) {
-        g_sweeping = false;
-        return;
-    }
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
     unsigned sprites = spr ? spr->version : 0;
@@ -118,7 +114,7 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
     ImGui::Checkbox("Mark what shows nothing", &g_showEmpty);
     ImGui::SetItemTooltip("With the camera moved here: in red on the game, the parts of the screen no solid BG draws on.\n"
                           "A sprite's transparent parts count as drawn on, and BGCtrls are not followed.");
-    ImGui::SameLine();
+    SameLineFits(ImGui::CalcTextSize(ICON_REVERT " Back").x + ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginDisabled(!g_freeCam);
     if (ImGui::Button(ICON_REVERT " Back")) {
         g_sweeping = false;
@@ -658,11 +654,8 @@ static void DepthMap(const std::vector<ParallaxBg> &bgs, BgEdit &edit) {
     ImGui::TextDisabled("Far at the top; the line is the fighters.");
 }
 
-void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
+void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit, float space) {
     std::vector<int> sections = ini.StageBgs();
-    char header[64];
-    snprintf(header, sizeof(header), ICON_LAYERS " Layers (%zu)###layers", sections.size());
-    if (!ImGui::CollapsingHeader(header)) return;
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
     const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0);
@@ -675,7 +668,7 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
     }
     std::vector<std::string> keys = LayerKeys(ini);
     float em = ImGui::GetFontSize(), row = ImGui::GetFrameHeightWithSpacing();
-    float height = row * std::min<float>((float)sections.size() + 1, 8);
+    float height = std::min(row * ((float)sections.size() + 1.5f), std::max(row * 3, space - row));
     if (!ImGui::BeginTable("layers", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit, ImVec2(0, height))) return;
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("##hide");
@@ -718,6 +711,10 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit) {
             g_stageBg = n;
             ShowStageBg(n);
         }
+        // Picked on the game: the list goes to it
+        static int shown = -1;
+        if (g_stageBg == n && shown != n) ImGui::SetScrollHereY();
+        if (g_stageBg == n) shown = n;
         ImGui::SetItemTooltip("[%s]\nLayers are drawn in this order: the last one is in front.", s.name.c_str());
         ImGui::TableNextColumn();
         if (b && !b->linked) {

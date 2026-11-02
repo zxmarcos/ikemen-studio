@@ -87,12 +87,12 @@ Workspace g_spaces[] = {
     {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands.",
      "X0.15(L:Files,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets)))", kFollow},
     {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its animations, sprites, checks and 3D model.",
-     "X0.15(L:Files)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
+     "X0.15(L:Files)(X0.6(Y0.52(L:Game)(L:Animation,Assets,Code,Output))(L:Stage editor))", kStageDef},
     {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, their animations and sprites, the roster and fonts.",
      "X0.15(L:Files)(X0.62(Y0.52(L:Game)(L:Animation,Scenes,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
 };
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
-const int kLayoutVersion = 8;
+const int kLayoutVersion = 9;
 int g_layoutVersion;
 bool g_advanced;          // the advanced tools are shown
 int g_space;              // the workspace shown
@@ -676,7 +676,8 @@ void LayoutFrame() {
         // No arrangement saved, or an older one: the workspace's own. Else ImGui's settings have
         // it, and the open windows are those in it.
         if (g_layoutVersion < kLayoutVersion)
-            for (Workspace &old : g_spaces) old.saved.clear();
+            for (Workspace &old : g_spaces)
+                if (g_layoutVersion < 8 || old.code == kStageDef) old.saved.clear(); // 9 only changed the Stage's
         const Workspace &w = g_spaces[g_space];
         if (g_firstRun || w.saved.empty()) Enter(w.layout, size);
         else if (g_panelRenamed) Enter(w.saved, size);

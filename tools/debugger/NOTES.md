@@ -184,6 +184,11 @@ video's path that is not found is an error in Output and the stage stays as it w
 a video did not show on the game, in the def from the start too; not looked into. A parallax BG without
 `width` is a plain picture, so handles need it (`Make it a floor` gives it one).
 
+The Stage window (asked by the user, as it was too cramped to read): four tabs around `SectionFields`,
+which is one section's fields whatever the tab. It was a list of every section beside a table, in half
+of a column: a row of a list for a BG is gone, as Layers has them, and fields go under the list, so the
+value column has the panel's width. Layout 9 only drops the Stage workspace's saved arrangement.
+
 Motions (`MotionButton`) only write fields and sections, so they need nothing of the engine. Blink needs
 the BG to have an id, since a BGCtrl finds BGs by id, and names its sections after it, which is how Stop
 finds them. Add layer's Several images goes through `AddSpritesOfImages`, one group, a palette each.

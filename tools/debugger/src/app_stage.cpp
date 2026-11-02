@@ -658,22 +658,31 @@ void StageProblems(std::vector<Problem> &out) {
 void ChecksSection(SourceFile &sf, const IniFile &ini) {
     bool sffRead = false;
     const std::vector<StageFinding> &found = StageChecks(sf, ini, &sffRead);
-    FindingsSection(sf, found, sffRead);
+    FindingsSection(sf, found, sffRead, false);
 }
 
-void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead) {
-    int count[3] = {};
-    for (const auto &f : found) count[f.level]++;
-    char header[96];
-    snprintf(header, sizeof(header), "Checks: %d %s, %d %s, %d %s###stagechecks", count[0], count[0] == 1 ? "error" : "errors", count[1],
-             count[1] == 1 ? "warning" : "warnings", count[2], count[2] == 1 ? "note" : "notes");
-    if (!ImGui::CollapsingHeader(header)) return;
+// For the tab's name: what is wrong, not the notes
+static int StageCheckCount(SourceFile &sf, const IniFile &ini) {
+    int count = 0;
+    for (const StageFinding &f : StageChecks(sf, ini)) count += f.level != StageFinding::Note;
+    return count;
+}
+
+void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead, bool header) {
+    if (header) {
+        int count[3] = {};
+        for (const auto &f : found) count[f.level]++;
+        char title[96];
+        snprintf(title, sizeof(title), "Checks: %d %s, %d %s, %d %s###stagechecks", count[0], count[0] == 1 ? "error" : "errors", count[1],
+                 count[1] == 1 ? "warning" : "warnings", count[2], count[2] == 1 ? "note" : "notes");
+        if (!ImGui::CollapsingHeader(title)) return;
+    }
     if (found.empty()) ImGui::TextDisabled("Nothing found.");
     if (!sffRead) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: its sprites are not checked.");
     const char *names[3] = {"error", "warning", "note"};
     const ImVec4 colors[3] = {Ink(kRed), Ink(kYellow), Ink(kBlue)};
     if (ImGui::BeginTable("checks", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY,
-                          ImVec2(0, std::min<float>(found.size() + 1, 10) * ImGui::GetFrameHeight()))) {
+                          ImVec2(0, header ? std::min<float>(found.size() + 1, 10) * ImGui::GetFrameHeight() : 0))) {
         ImGui::TableSetupColumn("");
         ImGui::TableSetupColumn("line");
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
@@ -698,6 +707,174 @@ void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &foun
     }
 }
 
+// A section's fields under its name: what its kind has above them (a BGCtrl's time, a BG's start, type
+// and tools), then a table. *section: a BGCtrlDef's click on one of its BGCtrls goes there.
+static void SectionFields(SourceFile &sf, const IniFile &ini, int *section, int bg, bool live) {
+    const IniSection &s = ini.sections[*section];
+    std::vector<int> ctrls = ini.StageBgCtrls();
+    const StageView &sv = g_stageView;
+    float em = ImGui::GetFontSize();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("[%s]", s.name.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_CODE " Show in Code")) {
+        g_codeFile = sf.path;
+        g_codeLine = g_codeScrollTo = s.line;
+        g_codeHold = true;
+    }
+    std::string before = sf.text;
+    // A BGCtrl, or a BGCtrlDef and the BGCtrls after it: when they run, and their BGs on the game
+    std::string word = FirstWord(s);
+    if (word == "bgctrl" || word == "bgctrl3d" || word == "bgctrldef") {
+        int goTo = -1;
+        for (int n = 0; n < (int)ctrls.size(); n++) {
+            bool mine = ctrls[n] == *section;
+            if (word == "bgctrldef" && ctrls[n] > *section) {
+                mine = true;
+                for (int k = *section + 1; k < ctrls[n]; k++) mine = mine && FirstWord(ini.sections[k]) != "bgctrldef";
+            }
+            if (!mine) continue;
+            const IniSection &cs = ini.sections[ctrls[n]];
+            const IniField *type = cs.Field("type");
+            std::string label = (word == "bgctrldef" ? cs.name + "  " : "") + (type ? type->value : std::string("?"));
+            bool inGame = live && n < (int)sv.ctrls.size(), clicked = false;
+            IniBgTime t = Ini_BgCtrlTime(ini, ctrls[n]);
+            ImGui::PushID(n);
+            bool moved = CtrlTimeline(t, inGame && sv.ctrls[n].ran, inGame ? sv.ranAt : -1, label.c_str(), &clicked);
+            ImGui::PopID();
+            if (moved && sf.text == before && Ini_SetField(sf.text, cs, "time", Ini_BgTimeValue(t))) StageEdited(sf);
+            if (clicked && word == "bgctrldef") goTo = ctrls[n];
+            if (inGame)
+                for (int b : sv.ctrls[n].bgs) g_stageMarked.push_back(b);
+        }
+        if (goTo >= 0) *section = goTo;
+        if (word != "bgctrldef" && live) {
+            std::string on;
+            for (int b : g_stageMarked) on += (on.empty() ? "" : ", ") + BgLabel(ini, b);
+            ImGui::TextWrapped("acts on %s", on.empty() ? "no BG" : on.c_str());
+        }
+    }
+    if (bg >= 0) {
+        // start, dragged here or on the game: the game follows at once
+        float start[2];
+        s.Floats("start", start, 2);
+        float edit[2] = {start[0], start[1]};
+        ImGui::SetNextItemWidth(em * 10);
+        if (ImGui::DragFloat2("start", edit, 1.0f, -FLT_MAX, FLT_MAX, "%.0f")) {
+            int dx = (int)std::lround(edit[0] - start[0]), dy = (int)std::lround(edit[1] - start[1]);
+            MoveBg(bg, dx, dy);
+        }
+        ImGui::SetItemTooltip("Drag to move the BG; the game follows at once (other fields need Apply).");
+        for (const auto &f : g_frameBgs)
+            if (f.index == bg) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("layer %d%s, %.0fx%.0f px", f.layer, f.tiled ? ", tiled" : "", f.rect.z, f.rect.w);
+            }
+        if (BgTypeLine(sf, s)) StageEdited(sf);
+        else ParallaxBgLine(sf, ini, s, bg);
+    }
+    if (sf.text == before &&
+        ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.35f);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.65f);
+        ImGui::TableSetupColumn("what");
+        ImGui::TableSetupColumn("");
+        static std::string editing;
+        static int editLine = -1;
+        bool changed = false;
+        // What its type asks for, first: the type is just above
+        if (bg >= 0) changed = BgMissingRows(sf, s);
+        for (const IniField &f : s.fields) {
+            if (bg >= 0 && f.key == "type") continue;
+            ImGui::PushID(f.line);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (bg >= 0) {
+                BgKeyCell(s, f);
+            } else {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(f.key.c_str());
+                ImGui::SetItemTooltip("%s", f.key.c_str());
+            }
+            ImGui::TableNextColumn();
+            std::string picked;
+            if (bg < 0 || !BgChoiceCell(f, &picked)) {
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                std::string value = editLine == f.line ? editing : f.value;
+                if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
+                if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
+                    editLine = -1;
+                    if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
+                }
+            }
+            ImGui::TableNextColumn();
+            FieldRefCell(sf, s, f, &picked);
+            if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
+            ImGui::TableNextColumn();
+            if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+            ImGui::SetItemTooltip("Remove this line");
+            ImGui::PopID();
+        }
+        // A new field
+        static std::string newKey, newValue;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##nk", "new key", &newKey);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::TableNextColumn();
+        ImGui::TableNextColumn();
+        add = IconButton(ICON_PLUS) || add;
+        ImGui::SetItemTooltip("Add this field");
+        if (add && !changed && !newKey.empty() && !newValue.empty()) {
+            std::string key = newKey;
+            for (char &ch : key) ch = (char)tolower((unsigned char)ch);
+            changed = Ini_SetField(sf.text, s, key.c_str(), newValue);
+            newKey.clear(), newValue.clear();
+        }
+        ImGui::EndTable();
+        if (changed) StageEdited(sf);
+    }
+}
+
+// The sections the Camera tab shows
+static bool OfCamera(const IniSection &s) { return s.lower == "camera" || s.lower == "bound" || s.lower == "playerinfo"; }
+
+// What is left of the def, with its animations: list above, fields below
+static void StageTab(SourceFile &sf, const IniFile &ini, int *selected, bool live) {
+    std::vector<int> bgs = ini.StageBgs(), ctrls = ini.StageBgCtrls();
+    const StageView &sv = g_stageView;
+    bool hasModel = false;
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
+    ModelSection(hasModel);
+    float height = ImGui::GetContentRegionAvail().y * 0.4f;
+    if (ImGui::BeginChild("sections", ImVec2(0, height), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY)) {
+        for (int i = 0; i < (int)ini.sections.size(); i++) {
+            const IniSection &s = ini.sections[i];
+            if (s.lower.compare(0, 13, "begin action ") == 0 || OfCamera(s)) continue; // those have their place
+            if (std::find(bgs.begin(), bgs.end(), i) != bgs.end()) continue;
+            int ctrl = -1;
+            for (int n = 0; n < (int)ctrls.size(); n++)
+                if (ctrls[n] == i) ctrl = n;
+            bool ran = ctrl >= 0 && ctrl < (int)sv.ctrls.size() && sv.ctrls[ctrl].ran;
+            std::string label = (ctrl >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
+            if (ran) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kGreen));
+            if (ImGui::Selectable(label.c_str(), *selected == i)) *selected = i;
+            if (ran) {
+                ImGui::PopStyleColor();
+                ImGui::SetItemTooltip("Ran on the stage's last step.");
+            }
+        }
+        ActionList(sf);
+    }
+    ImGui::EndChild();
+    if (*selected >= 0 && *selected < (int)ini.sections.size() && !OfCamera(ini.sections[*selected])) SectionFields(sf, ini, selected, -1, live);
+    else ImGui::TextDisabled("Pick a section.");
+}
+
 void StageWindow() {
     if (!BeginTool("Stage")) return;
     SourceFile *sfp = StageSource();
@@ -709,20 +886,19 @@ void StageWindow() {
     }
     bool live = StageInMatch();
     SourceFile &sf = *sfp;
-    // The selected section: a BG picked on the game, or one clicked in the list
-    static int selSection = -1;
     static int selBg = -2;
-    static bool showSel; // the list scrolls to it
+    static int defSection = -1;     // the Stage tab's
+    static const char *camSection = "camera"; // the Camera tab's
+    enum { kLayers, kCamera, kDef, kChecks };
+    int askTab = -1;
     if (g_bgEdit) {
         g_stageBg = g_bgEdit(sf);
         g_bgEdit = nullptr;
-        selSection = -1, selBg = -2;
-        showSel = true;
+        selBg = -2;
         if (g_stageBg >= 0) ShowBg(g_stageBg);
     }
     const IniFile &ini = StageIni(sf);
     std::vector<int> bgs = ini.StageBgs();
-    float em = ImGui::GetFontSize();
 
     ImGui::BeginDisabled(!sf.Dirty());
     bool save = ImGui::Button(ICON_SAVE " Save (Ctrl+S)");
@@ -799,197 +975,63 @@ void StageWindow() {
         SaveState(sf.Dirty(), false);
     }
 
-    bool hasModel = false;
-    for (const IniSection &s : ini.sections)
-        if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
-    ModelSection(hasModel);
-    ChecksSection(sf, ini);
-    ParallaxSection(sf, ini);
-    LayersSection(sf, ini, g_bgEdit);
-
+    // A BG picked on the game, or in the list
     if (g_stageBg != selBg) {
         selBg = g_stageBg;
-        if (selBg >= 0 && selBg < (int)bgs.size()) selSection = bgs[selBg];
+        if (selBg >= 0) askTab = kLayers;
     }
-    if (selSection >= (int)ini.sections.size()) selSection = -1;
+    if (selBg >= (int)bgs.size()) selBg = g_stageBg = -1;
+    g_stageMarked.clear();
+    auto tab = [&](const char *label, int n) { return ImGui::BeginTabItem(label, nullptr, askTab == n ? ImGuiTabItemFlags_SetSelected : 0); };
 
-    // The layers: new ones go after the selected BG, in front of it
-    BgHost layers;
-    layers.selected = selBg >= 0 && selBg < (int)bgs.size() ? selBg : -1;
-    layers.parsed = [](SourceFile &s) -> const IniFile & { return StageIni(s); };
-    layers.edited = StageEdited;
-    layers.showsSff = [](const std::string &path) { return NormPath(g_stageSff) == NormPath(path); };
-    BgToolbar(sf, ini, layers, g_bgEdit);
-
-    // Left: the sections
-    if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
-        for (int i = 0; i < (int)ini.sections.size(); i++) {
-            const IniSection &s = ini.sections[i];
-            if (s.lower.compare(0, 13, "begin action ") == 0) continue; // the stage's animations
-            int bg = -1, ctrl = -1;
-            for (int n = 0; n < (int)bgs.size(); n++)
-                if (bgs[n] == i) bg = n;
-            for (int n = 0; n < (int)ctrls.size(); n++)
-                if (ctrls[n] == i) ctrl = n;
-            bool drawn = false;
-            for (const auto &f : g_frameBgs) drawn = drawn || f.index == bg;
-            bool ran = ctrl >= 0 && ctrl < (int)sv.ctrls.size() && sv.ctrls[ctrl].ran;
-            std::string label = (bg >= 0 || ctrl >= 0 ? "  " : "") + s.name + "##" + std::to_string(i);
-            bool dim = live && bg >= 0 && !drawn;
-            if (dim) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            if (ran) ImGui::PushStyleColor(ImGuiCol_Text, Ink(kGreen));
-            if (ImGui::Selectable(label.c_str(), selSection == i)) {
-                selSection = i;
-                g_stageBg = selBg = bg;
-                if (bg >= 0) ShowBg(bg);
-            }
-            if (showSel && selSection == i) {
-                ImGui::SetScrollHereY();
-                showSel = false;
-            }
-            if (dim || ran) ImGui::PopStyleColor();
-            if (dim) ImGui::SetItemTooltip("Not drawn in the last frame (off screen, invisible or disabled).");
-            if (ran) ImGui::SetItemTooltip("Ran on the stage's last step.");
-        }
-        ActionList(sf);
-    }
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    // Right: the fields of the selected section
-    ImGui::BeginGroup();
-    if (selSection < 0) {
-        ImGui::TextDisabled("Pick a section, or a BG on the Game window.");
-        ImGui::EndGroup();
+    if (!ImGui::BeginTabBar("stage")) {
         ImGui::End();
         return;
     }
-    const IniSection &s = ini.sections[selSection];
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("[%s]", s.name.c_str());
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_CODE " Show in Code")) {
-        g_codeFile = sf.path;
-        g_codeLine = g_codeScrollTo = s.line;
-        g_codeHold = true;
+    if (tab(ICON_LAYERS " Layers###layers", kLayers)) {
+        // New ones go after the selected BG, in front of it
+        BgHost layers;
+        layers.selected = selBg >= 0 ? selBg : -1;
+        layers.parsed = [](SourceFile &s) -> const IniFile & { return StageIni(s); };
+        layers.edited = StageEdited;
+        layers.showsSff = [](const std::string &path) { return NormPath(g_stageSff) == NormPath(path); };
+        BgToolbar(sf, ini, layers, g_bgEdit);
+        LayersSection(sf, ini, g_bgEdit, ImGui::GetContentRegionAvail().y * (selBg >= 0 ? 0.4f : 1.0f));
+        if (selBg >= 0) {
+            int section = bgs[selBg];
+            SectionFields(sf, ini, &section, selBg, live);
+        }
+        ImGui::EndTabItem();
     }
-    std::string before = sf.text;
-    // A BGCtrl, or a BGCtrlDef and the BGCtrls after it: when they run, and their BGs on the game
-    g_stageMarked.clear();
-    std::string word = FirstWord(s);
-    if (word == "bgctrl" || word == "bgctrl3d" || word == "bgctrldef") {
-        int goTo = -1;
-        for (int n = 0; n < (int)ctrls.size(); n++) {
-            bool mine = ctrls[n] == selSection;
-            if (word == "bgctrldef" && ctrls[n] > selSection) {
-                mine = true;
-                for (int k = selSection + 1; k < ctrls[n]; k++) mine = mine && FirstWord(ini.sections[k]) != "bgctrldef";
-            }
-            if (!mine) continue;
-            const IniSection &cs = ini.sections[ctrls[n]];
-            const IniField *type = cs.Field("type");
-            std::string label = (word == "bgctrldef" ? cs.name + "  " : "") + (type ? type->value : std::string("?"));
-            bool inGame = live && n < (int)sv.ctrls.size(), clicked = false;
-            IniBgTime t = Ini_BgCtrlTime(ini, ctrls[n]);
-            ImGui::PushID(n);
-            bool moved = CtrlTimeline(t, inGame && sv.ctrls[n].ran, inGame ? sv.ranAt : -1, label.c_str(), &clicked);
-            ImGui::PopID();
-            if (moved && sf.text == before && Ini_SetField(sf.text, cs, "time", Ini_BgTimeValue(t))) StageEdited(sf);
-            if (clicked && word == "bgctrldef") goTo = ctrls[n];
-            if (inGame)
-                for (int b : sv.ctrls[n].bgs) g_stageMarked.push_back(b);
+    if (tab(ICON_FAST " Camera###camera", kCamera)) {
+        ParallaxSection(sf, ini);
+        ImGui::Separator();
+        int section = -1;
+        for (const char *name : {"camera", "bound", "playerinfo"}) {
+            int found = -1;
+            for (int i = (int)ini.sections.size() - 1; i >= 0; i--)
+                if (ini.sections[i].lower == name) found = i; // the first, as the engine takes it
+            if (found < 0) continue;
+            if (strcmp(name, "camera") != 0) ImGui::SameLine();
+            if (ImGui::RadioButton(ini.sections[found].name.c_str(), strcmp(camSection, name) == 0)) camSection = name;
+            if (strcmp(camSection, name) == 0) section = found;
         }
-        if (goTo >= 0) selSection = goTo;
-        if (word != "bgctrldef" && live) {
-            std::string on;
-            for (int b : g_stageMarked) on += (on.empty() ? "" : ", ") + BgLabel(ini, b);
-            ImGui::TextWrapped("acts on %s", on.empty() ? "no BG" : on.c_str());
-        }
+        if (section >= 0) SectionFields(sf, ini, &section, -1, live);
+        else ImGui::TextDisabled("The def has no such section.");
+        ImGui::EndTabItem();
     }
-    if (selBg >= 0) {
-        // start, dragged here or on the game: the game follows at once
-        float start[2];
-        s.Floats("start", start, 2);
-        float edit[2] = {start[0], start[1]};
-        ImGui::SetNextItemWidth(em * 10);
-        if (ImGui::DragFloat2("start", edit, 1.0f, -FLT_MAX, FLT_MAX, "%.0f")) {
-            int dx = (int)std::lround(edit[0] - start[0]), dy = (int)std::lround(edit[1] - start[1]);
-            MoveBg(selBg, dx, dy);
-        }
-        ImGui::SetItemTooltip("Drag to move the BG; the game follows at once (other fields need Apply).");
-        for (const auto &f : g_frameBgs)
-            if (f.index == selBg) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("layer %d%s, %.0fx%.0f px", f.layer, f.tiled ? ", tiled" : "", f.rect.z, f.rect.w);
-            }
-        if (BgTypeLine(sf, s)) StageEdited(sf);
-        else ParallaxBgLine(sf, ini, s, selBg);
+    if (tab(ICON_STAGE " Stage###def", kDef)) {
+        if (defSection >= (int)ini.sections.size()) defSection = -1;
+        StageTab(sf, ini, &defSection, live);
+        ImGui::EndTabItem();
     }
-    if (sf.text == before &&
-        ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
-        ImGui::TableSetupColumn("what");
-        ImGui::TableSetupColumn("");
-        static std::string editing;
-        static int editLine = -1;
-        bool changed = false;
-        // What its type asks for, first: the type is just above
-        if (selBg >= 0) changed = BgMissingRows(sf, s);
-        for (const IniField &f : s.fields) {
-            if (selBg >= 0 && f.key == "type") continue;
-            ImGui::PushID(f.line);
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (selBg >= 0) {
-                BgKeyCell(s, f);
-            } else {
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(f.key.c_str());
-                ImGui::SetItemTooltip("%s", f.key.c_str());
-            }
-            ImGui::TableNextColumn();
-            std::string picked;
-            if (selBg < 0 || !BgChoiceCell(f, &picked)) {
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                std::string value = editLine == f.line ? editing : f.value;
-                if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
-                if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
-                    editLine = -1;
-                    if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
-                }
-            }
-            ImGui::TableNextColumn();
-            FieldRefCell(sf, s, f, &picked);
-            if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
-            ImGui::TableNextColumn();
-            if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
-            ImGui::SetItemTooltip("Remove this line");
-            ImGui::PopID();
-        }
-        // A new field
-        static std::string newKey, newValue;
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::SetNextItemWidth(em * 7);
-        ImGui::InputTextWithHint("##nk", "new key", &newKey);
-        ImGui::TableNextColumn();
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
-        ImGui::TableNextColumn();
-        ImGui::TableNextColumn();
-        add = IconButton(ICON_PLUS) || add;
-        ImGui::SetItemTooltip("Add this field");
-        if (add && !changed && !newKey.empty() && !newValue.empty()) {
-            std::string key = newKey;
-            for (char &ch : key) ch = (char)tolower((unsigned char)ch);
-            changed = Ini_SetField(sf.text, s, key.c_str(), newValue);
-            newKey.clear(), newValue.clear();
-        }
-        ImGui::EndTable();
-        if (changed) StageEdited(sf);
+    char checks[64];
+    snprintf(checks, sizeof(checks), "Checks (%d)###checks", StageCheckCount(sf, ini));
+    if (tab(checks, kChecks)) {
+        ChecksSection(sf, ini);
+        ImGui::EndTabItem();
     }
-    ImGui::EndGroup();
+    ImGui::EndTabBar();
     ImGui::End();
 }
 

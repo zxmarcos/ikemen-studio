@@ -121,7 +121,12 @@ Go to and the choice of what to select are not shown there, and opening another 
 puts it in the game's place. A game already running in a match or a menu starts again
 when you come to this workspace; going to another one leaves it as it is, until Restart.
 
-The Stage window's **Camera sweep** takes the camera along its limits, for the layers'
+The Stage window has four tabs, and the Stage workspace gives it a column of its own, with
+Assets beside Animation: **Layers**, **Camera** (with `[Camera]`, `[Bound]` and
+`[PlayerInfo]`), **Stage** (the rest of the def and its animations) and **Checks**, with
+what is wrong in its name. Picking a layer on the game goes to the first.
+
+The Camera tab takes the camera along its limits, for the layers'
 parallax: **Sweep** goes from one limit to the other and back, the sliders put it anywhere,
 and the buttons go to where it shows the most (each limit, up high, zoomed out), red with
 how much of the screen stays empty there. On the game that part is marked in red. The
@@ -131,7 +136,7 @@ keeps it over the screen from one limit to the other, and the line beside it say
 it should be for the delta it has. The sums follow the engine, and leave out BGCtrls,
 velocity and a sprite's transparent parts, which count as drawn on.
 
-**Layers** lists the BGs in the order they are drawn, each with its picture, its delta
+The Layers tab lists the BGs in the order they are drawn, each with its picture, its delta
 (drag it: the game follows) and whether it is behind or in front of the fighters. The eye
 hides a layer, the target shows it alone, and the lock has a click on the game go through it
 to what is behind. These three last for the session and change nothing in the def.
