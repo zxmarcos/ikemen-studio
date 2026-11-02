@@ -799,6 +799,10 @@ static void SectionFields(SourceFile &sf, const IniFile &ini, int *section, int 
         if (BgTypeLine(sf, s)) StageEdited(sf);
         else ParallaxBgLine(sf, ini, s, bg);
     }
+    if (bg >= 0) {
+        if (sf.text == before && BgFieldsTable(sf, s)) StageEdited(sf);
+        return;
+    }
     if (sf.text == before &&
         ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.35f);
@@ -808,30 +812,21 @@ static void SectionFields(SourceFile &sf, const IniFile &ini, int *section, int 
         static std::string editing;
         static int editLine = -1;
         bool changed = false;
-        // What its type asks for, first: the type is just above
-        if (bg >= 0) changed = BgMissingRows(sf, s);
         for (const IniField &f : s.fields) {
-            if (bg >= 0 && f.key == "type") continue;
             ImGui::PushID(f.line);
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            if (bg >= 0) {
-                BgKeyCell(s, f);
-            } else {
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(f.key.c_str());
-                ImGui::SetItemTooltip("%s", f.key.c_str());
-            }
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(f.key.c_str());
+            ImGui::SetItemTooltip("%s", f.key.c_str());
             ImGui::TableNextColumn();
             std::string picked;
-            if (bg < 0 || !BgChoiceCell(f, &picked)) {
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                std::string value = editLine == f.line ? editing : f.value;
-                if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
-                if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
-                    editLine = -1;
-                    if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
-                }
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            std::string value = editLine == f.line ? editing : f.value;
+            if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
+            if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
+                editLine = -1;
+                if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
             }
             ImGui::TableNextColumn();
             FieldRefCell(sf, s, f, &picked);
@@ -927,12 +922,12 @@ void StageWindow() {
     std::vector<int> bgs = ini.StageBgs();
 
     ImGui::BeginDisabled(!sf.Dirty());
-    bool save = ImGui::Button(ICON_SAVE " Save (Ctrl+S)");
+    bool save = ImGui::Button(ICON_SAVE " Save");
     ImGuiIO &io = ImGui::GetIO();
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
         save = sf.Dirty();
     if (save) SaveSource(sf);
-    ImGui::SetItemTooltip("Writes the def. The game already shows every change.");
+    ImGui::SetItemTooltip("Writes the def (Ctrl+S). The game already shows every change.");
     ImGui::SameLine();
     if (ImGui::Button(ICON_REVERT " Revert")) {
         ReadSource(sf);

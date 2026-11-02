@@ -14,7 +14,7 @@
 
 namespace app {
 
-void BgKeyCell(const IniSection &s, const IniField &f) {
+static void BgKeyCell(const IniSection &s, const IniField &f) {
     ImGui::AlignTextToFramePadding();
     if (Ini_BgKeyRead(s, f.key)) {
         ImGui::TextUnformatted(f.key.c_str());
@@ -40,7 +40,8 @@ static bool ChoiceCombo(const char *id, const std::string &key, const std::strin
     return picked;
 }
 
-bool BgChoiceCell(const IniField &f, std::string *value) {
+// False: its value is not one of a few, and nothing was drawn
+static bool BgChoiceCell(const IniField &f, std::string *value) {
     if (!Ini_BgChoices(f.key)) return false;
     ImGui::SetNextItemWidth(-FLT_MIN);
     ChoiceCombo("##v", f.key, f.value, value, ImGuiComboFlags_NoArrowButton); // the column is narrow
@@ -61,39 +62,169 @@ bool BgTypeLine(SourceFile &sf, const IniSection &s) {
     return changed && Ini_SetField(sf.text, s, "type", picked);
 }
 
-bool BgMissingRows(SourceFile &sf, const IniSection &s) {
+// A row for what its type could use and the BG lacks. True when the text changed.
+static bool MissingRow(SourceFile &sf, const IniSection &s, const IniBgKey &k) {
     static std::map<std::string, std::string> typed; // by key, until it is written
+    ImGui::PushID(k.key);
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    if (k.needed) ImGui::TextColored(Ink(kYellow), "%s", k.key);
+    else ImGui::TextDisabled("%s", k.key);
+    ImGui::SetItemTooltip(k.needed ? "%s: this type shows nothing without it" : "%s: this type can use it", k.key);
+    ImGui::TableNextColumn();
+    IniField ghost;
+    ghost.key = k.key;
+    std::string picked;
+    if (Ini_FieldRef(s, ghost) != kIniRefNone) {
+        FieldRefCell(sf, s, ghost, &picked);
+        ImGui::SameLine();
+    }
+    if (!BgChoiceCell(ghost, &picked)) {
+        std::string &value = typed[k.key];
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##v", k.hint, &value);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            picked = value;
+            value.clear();
+        }
+    } else {
+        ImGui::SetItemTooltip("%s", k.hint);
+    }
+    ImGui::TableNextColumn();
+    ImGui::PopID();
+    return !picked.empty() && Ini_SetField(sf.text, s, k.key, picked);
+}
+
+// The fields that take two numbers: dragged, and the second's default when the def gives one
+struct BgPair {
+    const char *key;
+    float second, speed;
+    bool whole;
+};
+static const BgPair kBgPairs[] = {
+    {"delta", 1, 0.005f, false},   {"scalestart", 1, 0.01f, false}, {"scaledelta", 0, 0.001f, false}, {"velocity", 0, 0.01f, false},
+    {"windowdelta", 0, 0.01f, false}, {"tile", 0, 0.05f, true},     {"tilespacing", 0, 0.2f, true},   {"width", 0, 1, true},
+};
+
+// A field as text, or as two numbers. True when the text changed.
+static bool FieldValue(SourceFile &sf, const IniSection &s, const IniField &f) {
+    static std::string editing;
+    static int editLine = -1;
+    for (const BgPair &p : kBgPairs) {
+        if (f.key != p.key) continue;
+        float v[2] = {0, p.second};
+        sscanf(f.value.c_str(), "%f , %f", &v[0], &v[1]);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (p.whole) {
+            int n[2] = {(int)v[0], (int)v[1]};
+            if (!ImGui::DragInt2("##v", n, p.speed)) return false;
+            return Ini_SetField(sf.text, s, p.key, std::to_string(n[0]) + ", " + std::to_string(n[1]));
+        }
+        if (!ImGui::DragFloat2("##v", v, p.speed, 0, 0, "%g")) return false;
+        return Ini_SetField(sf.text, s, p.key, Ini_Floats(v, 2));
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    std::string value = editLine == f.line ? editing : f.value;
+    if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
+    if (!ImGui::IsItemDeactivatedAfterEdit()) return false;
+    editLine = -1;
+    return value != f.value && !value.empty() && Ini_SetField(sf.text, s, f.key.c_str(), value);
+}
+
+bool BgFieldsTable(SourceFile &sf, const IniSection &s) {
+    struct Group {
+        const char *title;
+        std::vector<const char *> keys;
+    };
+    static const std::vector<Group> kGroups = {
+        {"Picture", {"spriteno", "actionno", "mask", "path", "volume", "loop", "scalemode", "scalefilter"}},
+        {"Place", {"delta", "layerno", "positionlink", "id"}},
+        {"Size", {"scalestart", "scaledelta", "width", "xscale", "yscalestart", "yscaledelta", "zoomdelta", "zoomscaledelta", "xbottomzoomdelta", "autoresizeparallax"}},
+        {"Repeat", {"tile", "tilespacing"}},
+        {"Movement", {"velocity", "sin.x", "sin.y"}},
+        {"Look", {"trans", "alpha", "xshear", "angle", "xangle", "yangle", "focallength", "projection"}},
+        {"Window", {"window", "maskwindow", "windowdelta"}},
+    };
+    auto inGroup = [](const Group &g, const std::string &key) {
+        return std::find_if(g.keys.begin(), g.keys.end(), [&](const char *k) { return key == k; }) != g.keys.end();
+    };
+    if (!ImGui::BeginTable("fields", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) return false;
+    ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthStretch, 0.35f);
+    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.65f);
+    ImGui::TableSetupColumn("");
+    std::vector<IniBgKey> missing = Ini_BgMissingKeys(s);
     bool changed = false;
-    for (const IniBgKey &k : Ini_BgMissingKeys(s)) {
-        ImGui::PushID(k.key);
-        ImGui::TableNextRow();
+    auto title = [](const char *text) {
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight());
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImGuiCol_Header));
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
-        if (k.needed) ImGui::TextColored(Ink(kYellow), "%s", k.key);
-        else ImGui::TextDisabled("%s", k.key);
-        ImGui::SetItemTooltip(k.needed ? "%s: this type shows nothing without it" : "%s: this type can use it", k.key);
+        // Across the row: the first column can be narrower than a title
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::PushClipRect(p, ImVec2(p.x + ImGui::GetWindowWidth(), p.y + ImGui::GetFrameHeight()), false);
+        ImGui::TextUnformatted(text);
+        ImGui::PopClipRect();
+    };
+    auto row = [&](const IniField &f) {
+        ImGui::PushID(f.line);
+        ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        IniField ghost;
-        ghost.key = k.key;
+        BgKeyCell(s, f);
+        ImGui::TableNextColumn();
         std::string picked;
-        if (!BgChoiceCell(ghost, &picked)) {
-            std::string &value = typed[k.key];
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputTextWithHint("##v", k.hint, &value);
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                picked = value;
-                value.clear();
-            }
-        } else {
-            ImGui::SetItemTooltip("%s", k.hint);
+        if (Ini_FieldRef(s, f) != kIniRefNone) {
+            FieldRefCell(sf, s, f, &picked);
+            ImGui::SameLine();
         }
+        if (!BgChoiceCell(f, &picked) && !changed) changed = FieldValue(sf, s, f);
+        if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
         ImGui::TableNextColumn();
-        std::string chosen;
-        if (FieldRefCell(sf, s, ghost, &chosen)) picked = chosen;
-        ImGui::TableNextColumn();
-        if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, k.key, picked);
+        if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+        ImGui::SetItemTooltip("Remove this line");
         ImGui::PopID();
+    };
+    for (const Group &g : kGroups) {
+        bool any = false;
+        for (const IniField &f : s.fields) any = any || inGroup(g, f.key);
+        for (const IniBgKey &k : missing) any = any || inGroup(g, k.key);
+        if (!any) continue;
+        title(g.title);
+        for (const IniBgKey &k : missing)
+            if (k.needed && inGroup(g, k.key) && !changed) changed = MissingRow(sf, s, k);
+        for (const IniField &f : s.fields)
+            if (inGroup(g, f.key)) row(f);
+        for (const IniBgKey &k : missing)
+            if (!k.needed && inGroup(g, k.key) && !changed) changed = MissingRow(sf, s, k);
     }
+    // What is left: its type and start are above the table
+    auto other = [&](const IniField &f) {
+        if (f.key == "type" || f.key == "start") return false;
+        return std::none_of(kGroups.begin(), kGroups.end(), [&](const Group &g) { return inGroup(g, f.key); });
+    };
+    bool any = std::any_of(s.fields.begin(), s.fields.end(), other);
+    if (any) title("Other");
+    for (const IniField &f : s.fields)
+        if (other(f)) row(f);
+    // A new field
+    static std::string newKey, newValue;
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##nk", "new key", &newKey);
+    ImGui::TableNextColumn();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::TableNextColumn();
+    add = IconButton(ICON_PLUS) || add;
+    ImGui::SetItemTooltip("Add this field");
+    if (add && !changed && !newKey.empty() && !newValue.empty()) {
+        std::string key = newKey;
+        for (char &ch : key) ch = (char)tolower((unsigned char)ch);
+        changed = Ini_SetField(sf.text, s, key.c_str(), newValue);
+        newKey.clear(), newValue.clear();
+    }
+    ImGui::EndTable();
     return changed;
 }
 

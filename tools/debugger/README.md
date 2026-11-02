@@ -144,11 +144,12 @@ to what is behind. These three last for the session and change nothing in the de
 beside a line for the fighters; dragging a bar sets the delta, and the game follows.
 
 A layer's **type** is a list under its start, in a stage and in a screen's BGs: normal, anim,
-parallax, video or dummy. The fields below follow it. What the type can use and the layer
-lacks comes first, ready to fill in, yellow when it shows nothing without it, with the
+parallax, video or dummy. The fields below follow it, in groups: Picture, Place, Size,
+Repeat, Movement, Look, Window, and Other for what fits none. What the type can use and the
+layer lacks is there ready to fill in, yellow when it shows nothing without it, with the
 sprite and action pickers where they apply; what the engine does not read for this type stays
-in the def, dimmed, so going back to the type finds it. `trans`, `scalemode` and `scalefilter`
-are lists too.
+in the def, dimmed, so going back to the type finds it. Fields of two numbers, as `delta`
+and `tile`, are two boxes to drag or type in; `trans`, `scalemode` and `scalefilter` are lists.
 
 A layer that repeats has **See the join**: the end of one copy against the start of the
 next, enlarged. The Checks name a layer whose opposite edges do not match, unless its

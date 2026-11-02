@@ -174,8 +174,8 @@ frame and only sent when it changes, or when the game is another: moving or addi
 more. The delta dragged reaches the stage through `g_bgEdit`, as the next frame starts, since `ini` is in
 use until then; each step of a drag is a step of undo. Hidden layers still count in `Parallax_Empty`.
 
-A BG's type (`Ini_BgType`, `Ini_BgMissingKeys`, `Ini_BgKeyRead`, tested; `BgTypeLine`, `BgMissingRows` in
-`app_layers.cpp`, for the Stage and screen windows): the value column is about 40 px wide in the default
+A BG's type (`Ini_BgType`, `Ini_BgMissingKeys`, `Ini_BgKeyRead`, tested; `BgTypeLine`, `BgFieldsTable` in
+`app_layers.cpp`, for the Stage and screen windows): the value column was about 40 px wide in the old
 arrangement, which is why a type looked impossible to change, so the type has a line of its own. What
 each type reads comes from `readBackGround`: a normal BG's sprite wins over its action, an action wins
 over the sprite in anim and parallax. Changing type only writes `type`: nothing is removed, and an anim
@@ -188,6 +188,9 @@ The Stage window (asked by the user, as it was too cramped to read): four tabs a
 which is one section's fields whatever the tab. It was a list of every section beside a table, in half
 of a column: a row of a list for a BG is gone, as Layers has them, and fields go under the list, so the
 value column has the panel's width. Layout 9 only drops the Stage workspace's saved arrangement.
+`BgFieldsTable` groups a BG's fields, in the Stage window and a screen's; a key in no group goes under
+Other, so nothing can be edited here that could not before. A screen's window keeps its old shape
+around it: tabs were only done for the stage. Dragging a pair writes at each step, a step of undo each.
 
 Motions (`MotionButton`) only write fields and sections, so they need nothing of the engine. Blink needs
 the BG to have an id, since a BGCtrl finds BGs by id, and names its sections after it, which is how Stop

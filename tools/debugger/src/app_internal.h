@@ -409,14 +409,11 @@ struct BgHost {
     std::function<bool(const std::string &)> showsSff;    // saving that SFF has the game read the text too
 };
 void BgToolbar(SourceFile &sf, const IniFile &ini, const BgHost &h, BgEdit &edit);
-// A BG's fields, in a table of a key, a value, what it names and a button: the key, dim when the
-// engine does not read it for this type; the value as a list when it has few (false: it does not,
-// and *value is set when one is picked); then rows for what its type could use and it lacks. True
-// when the text changed.
-void BgKeyCell(const IniSection &s, const IniField &f);
-bool BgChoiceCell(const IniField &f, std::string *value);
-bool BgMissingRows(SourceFile &sf, const IniSection &s);
-bool BgTypeLine(SourceFile &sf, const IniSection &s); // its type, on a line of its own: the table has no room for it
+// A BG's fields by what they are about, with what its type could use and it lacks: a key dim when the
+// engine does not read it for this type, a list for a value with few, two numbers where it has two. Its
+// type and start have their own lines above it. True when the text changed.
+bool BgFieldsTable(SourceFile &sf, const IniSection &s);
+bool BgTypeLine(SourceFile &sf, const IniSection &s);
 
 // Sprites
 // What undo and redo put back in a sprite file (the sprites share their pictures with the file's)
