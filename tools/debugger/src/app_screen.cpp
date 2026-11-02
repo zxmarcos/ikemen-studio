@@ -672,6 +672,7 @@ static void ScenesWindow() {
         SelectElement(d, section, prefix);
         ShowWindow(d.window);
     };
+    host.history = &TrackAnims(*sf);
     if (StoryPanel(host)) Edited(d, *sf);
     ImGui::End();
 }

@@ -114,6 +114,7 @@ IniRefKind Ini_FieldRef(const IniSection &s, const IniField &f) {
     if (named("anim") || f.key == "actionno") return kIniRefAction;
     if (named("spr") || f.key == "spriteno") return kIniRefSprite;
     if (named("snd")) return kIniRefSound;
+    if (FirstWord(s.lower) == "scene" && f.key.compare(0, 5, "sound") == 0 && named("value")) return kIniRefSound; // sound0.value
     if (f.key == "value" && FirstWord(s.lower) == "bgctrl") {
         const IniField *type = s.Field("type");
         if (type && Lower(type->value) == "anim") return kIniRefAction;

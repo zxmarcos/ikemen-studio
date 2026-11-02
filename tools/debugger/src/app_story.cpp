@@ -302,9 +302,10 @@ void SceneStrip(StoryHost &h) {
 
 enum { kPartNone, kPartStart, kPartEnd, kPartBoth };
 
-// A row's bar from start to end, its body and edges dragged. drawnEnd: where it ends on the row. True when a drag moved it.
+// A row's bar from start to end, its body and edges dragged. drawnEnd: where it ends on the row. moment: it has
+// no length (a sound), so all of it moves it and its label goes on past it. True when a drag moved it.
 bool RowBar(float x0, float y, float w, float high, int span, int &start, int &end, int drawnEnd, ImU32 col, const std::string &label, bool selected,
-            bool *clicked) {
+            bool *clicked, bool moment = false) {
     auto x = [&](int t) { return x0 + w * std::min(std::max(t, 0), span) / span; };
     float a = x(start), b = std::max(x(drawnEnd), a + 3), grip = ImGui::GetFontSize() * 0.4f;
     ImGui::SetCursorScreenPos(ImVec2(x0, y));
@@ -315,6 +316,7 @@ bool RowBar(float x0, float y, float w, float high, int span, int &start, int &e
     if (fabsf(mouse - b) < grip) over = kPartEnd;
     else if (fabsf(mouse - a) < grip) over = kPartStart;
     else if (mouse > a && mouse < b) over = kPartBoth;
+    if (moment && over != kPartNone) over = kPartBoth;
     if (ImGui::IsItemActivated()) g.dragPart = over, g.dragA = start, g.dragB = drawnEnd, g.dragSpan = span;
     bool changed = false;
     if (active && g.dragPart != kPartNone && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2)) {
@@ -339,8 +341,8 @@ bool RowBar(float x0, float y, float w, float high, int span, int &start, int &e
     draw->AddRectFilled(ImVec2(x0, y), ImVec2(x0 + w, y + high - 2), IM_COL32(40, 40, 46, 255));
     draw->AddRectFilled(ImVec2(a, y), ImVec2(b, y + high - 2), col, 2);
     if (selected) draw->AddRect(ImVec2(a, y), ImVec2(b, y + high - 2), kPlayhead, 2);
-    draw->PushClipRect(ImVec2(a, y), ImVec2(b, y + high), true);
-    draw->AddText(ImVec2(a + 4, y), IM_COL32_WHITE, label.c_str());
+    draw->PushClipRect(ImVec2(a, y), ImVec2(moment ? x0 + w : b, y + high), true);
+    draw->AddText(ImVec2((moment ? b : a) + 4, y), IM_COL32_WHITE, label.c_str());
     draw->PopClipRect();
     return changed;
 }
@@ -456,10 +458,11 @@ void SceneTimeline(StoryHost &h, const StoryScene &sc) {
         int start = s.start, end = 0;
         bool clicked = false;
         std::string label = s.key + "  " + std::to_string(s.value[0]) + "," + std::to_string(s.value[1]);
-        // A sound is a moment: as wide as a tick or its label's start
-        bool moved = RowBar(x0, y, w, rowH, span, start, end, s.start + std::max(span / 40, 1), IM_COL32(170, 120, 60, 255), label, h.section == section && h.prefix == prefix, &clicked);
+        bool moved = RowBar(x0, y, w, rowH, span, start, end, s.start + std::max(span / 80, 1), IM_COL32(170, 120, 60, 255), label,
+                            h.section == section && h.prefix == prefix, &clicked, true);
         if (moved && start != s.start) SetTime(h, g.scene, prefix + "starttime", start);
         if (clicked) h.select(section, prefix);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s: at tick %d\nDrag it to move it; right click for its menu", s.key.c_str(), s.start);
         if (ImGui::BeginPopupContextItem("sound menu")) {
             if (ImGui::MenuItem(ICON_TRASH " Delete this sound") && !g.changed)
                 g.changed = Story_RemoveKeys(h.sf->text, h.ini->sections[sc.section], prefix);
@@ -594,6 +597,20 @@ bool StoryPanel(StoryHost &h) {
         for (const StorySound &s : sc.sounds) n = std::max(n, atoi(s.key.c_str() + 5) + 1);
         SetField(h, g.scene, "sound" + std::to_string(n) + ".value", "0, 0");
     }
+    // As the Storyboard window's: the drags are made here
+    SameLineFits(UndoButtonsWidth());
+    if (int step = UndoButtons(h.history->CanUndo(), h.history->CanRedo())) {
+        h.sf->text = step < 0 ? h.history->Undo() : h.history->Redo();
+        g.changed = true;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!h.sf->Dirty());
+    bool save = ImGui::Button(ICON_SAVE "##save");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Writes the def (Ctrl+S)");
+    ImGuiIO &io = ImGui::GetIO();
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) save = h.sf->Dirty();
+    if (save) SaveSource(*h.sf);
     if (ImGui::BeginChild("rows", ImVec2(0, 0), 0, ImGuiWindowFlags_NoNavInputs)) SceneTimeline(h, sc);
     ImGui::EndChild();
     ImGui::EndGroup();

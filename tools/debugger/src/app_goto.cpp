@@ -63,10 +63,7 @@ void GoTo(const GoTarget &t) {
     g_held.clear();
     g_going = t.key;
     g_watch = t.prefix && *t.prefix ? &t : nullptr;
-    // A Turns match right after another one of this run ends at once (not found why, a first one is
-    // fine): the game starts again for it
-    bool turns = g_team[0] == 2 || g_team[1] == 2;
-    if (Connected() && g_menusRun && !turns) {
+    if (Connected() && g_menusRun) {
         SendRaw("ikdbg.goTo(" + LuaQuote(text) + ")");
         return;
     }
@@ -97,7 +94,8 @@ void OnGoTo(const Json &j) {
 }
 
 void GoToFrame() {
-    if (!g_watch) return;
+    // While the mod still has the goal, a match on screen is the one being left, maybe showing that element
+    if (!g_watch || !g_going.empty()) return;
     bool shown = false;
     for (std::string left = g_watch->prefix; !left.empty() && !shown;) { // "a|b": either
         size_t bar = left.find('|');
@@ -105,8 +103,11 @@ void GoToFrame() {
         left = bar == std::string::npos ? "" : left.substr(bar + 1);
     }
     if (!shown) return;
-    // In the game's ticks: this program sees few frames when the machine is busy
-    SendRaw(std::string("ikdbg.holdAfter('") + g_watch->key + "', " + std::to_string(g_watch->ticks) + ")");
+    // In the game's ticks: this program sees few frames when the machine is busy. In Turns the next
+    // fighter comes in soon after a KO
+    bool turns = g_team[0] == 2 || g_team[1] == 2;
+    int ticks = turns ? std::min(g_watch->ticks, 10) : g_watch->ticks;
+    SendRaw(std::string("ikdbg.holdAfter('") + g_watch->key + "', " + std::to_string(ticks) + ")");
     g_watch = nullptr;
 }
 

@@ -706,6 +706,7 @@ struct StoryHost {
     int scene = 0, tick = 0;              // where in it
     std::string section, prefix;          // the element selected (lower case)
     std::function<void(const std::string &section, const std::string &prefix)> select;
+    UndoStack<std::string> *history = nullptr; // of sf's text
 };
 bool StoryPanel(StoryHost &h);                // the preview and the timelines; true when the text changed
 void StoryPicker();                           // which storyboard the window shows, from disk

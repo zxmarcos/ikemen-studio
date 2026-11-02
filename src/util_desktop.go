@@ -22,6 +22,9 @@ func ShowInfoDialog(message, title string) {
 }
 
 func ShowErrorDialog(message string) {
+	if editorErrorDialog(message) {
+		return
+	}
 	dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
 }
 

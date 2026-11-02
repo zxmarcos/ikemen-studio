@@ -1068,13 +1068,26 @@ function ikdbg.goTo(text)
 	ikdbg.held, ikdbg.going, ikdbg.goal = nil, nil, g
 	ikdbg.leaving = true
 	togglePause(false)
-	if ikdbg.fighting then endMatch() end
+	if ikdbg.fighting then
+		g.ended = true
+		endMatch()
+	end
 	report()
 end
 
 -- Each frame of a match (the frame hook): the plan under way.
 function ikdbg.goalTick()
 	ikdbg.fighting = true
+	-- Asked while a match was still loading (the title's demo): ikdbg.goTo could not end it
+	local g = ikdbg.goal
+	if g and not g.running then
+		-- Once: each call starts its fade out again
+		if not g.ended then
+			g.ended = true
+			endMatch()
+		end
+		return
+	end
 	local p = ikdbg.going
 	if not p then return end
 	if p.ticks then

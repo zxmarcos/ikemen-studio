@@ -401,7 +401,7 @@ static void LoadErrorBar() {
     ImGui::SetItemTooltip("Fix the file (Save writes it), then load again; the game is waiting.");
     ImGui::SameLine();
     if (ImGui::Button(ICON_XMARK " Give up")) SendRaw("debugRetryLoad(false)");
-    ImGui::SetItemTooltip("The game stops on the error.");
+    ImGui::SetItemTooltip("The game closes on the error, which stays in Problems.");
 }
 
 // A line above the picture: what is selected and where to edit it, or what a click would do

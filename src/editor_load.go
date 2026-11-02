@@ -36,6 +36,16 @@ func editorRetryLoad(message string) (retry, answered bool) {
 	return e.retry, true
 }
 
+// editorErrorDialog runs in ShowErrorDialog: true when the error went to the log, not to a dialog
+// nobody would see, behind the hidden window, with the game waiting on it instead of closing.
+func editorErrorDialog(message string) bool {
+	if !debuggerAttached() {
+		return false
+	}
+	LogMessage("Error: %v", strings.ReplaceAll(strings.TrimSpace(message), "\n", " "))
+	return true
+}
+
 // editorLoadGeometry adds to the frame geometry "loadError": why a match could not load, while the
 // game waits for an answer (debugRetryLoad).
 func editorLoadGeometry(b []byte) []byte {

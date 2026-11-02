@@ -174,7 +174,8 @@ edges for its `starttime` and `endtime`, the fades' edges and the red line for
 to pick a layer and move it (Alt: that layer alone). The strip's right click adds,
 duplicates, moves and deletes scenes, and **+ Animation**, **+ Text** and **+ Sound**
 add rows. The preview is close, not exact: texts use this program's font, and BG videos
-and shaders are not drawn. **Play in the game** has the game show the same scene and
+and shaders are not drawn. Undo and Save are on the row of those buttons too, and Ctrl+Z
+and Ctrl+S work there. **Play in the game** has the game show the same scene and
 time, stopped, with your unsaved text; from then on the ruler moves the game and every
 edit shows there. A scene reached with the ruler plays neither its sounds nor its music.
 

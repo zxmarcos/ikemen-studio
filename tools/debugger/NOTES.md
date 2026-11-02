@@ -139,7 +139,10 @@ waiting behind the hidden window: found with a goroutine dump, `pprof.Lookup
 window (`src/editor_load.go`, `editorRetryLoad`, one line in `ShowRetryDialog`): the
 error with Retry and Give up, the game waiting and its frames going on. An attached
 character gives some of readEntity's fields as a Go nil, which even `type()` cannot
-read: they are dropped there. The mod's hook now reports with a traceback.
+read: they are dropped there. The mod's hook now reports with a traceback. Give up is the
+game's own No: the error goes on to a panic, which ends in `ShowErrorDialog` and the same
+kind of unseen dialog, the process waiting and the toolbar saying Running; with `-ikdbg`
+`editorErrorDialog` logs it instead (one line in `ShowErrorDialog`), for every crash.
 
 A def's fields know what they name (`Ini_FieldRef`, tested; `src/app_refs.cpp`): the
 tables' third column shows a field's sprite or action as a thumbnail, red when it
@@ -186,10 +189,16 @@ are few on a busy machine. Which element showed is known by looking: `ai.win`,
 KOs are a Double KO. A match over before its moment came is tried once more, then
 reported. A versus screen wants the roster's character, so a name it has not
 loaded takes its first one (logged): `f_getCharRef` would add it apart, without
-portraits. A Turns match right after another of the same run ends at once: not
-found why (a first one is fine), so Go to restarts the game for it. The team choice
-is what reaches the fight screen's Simul, Tag and Turns sections: each tested at 2 a
-side with both teams in that mode. `test_ui.ps1` got `mark` and
+portraits. The watch for a moment starts only once the mod has dropped the goal
+(`GoToFrame`, `g_going`): the match being left can still show that element, and a
+hold asked on it made the next match "not show" (that was also why a Turns match
+after another seemed to end at once; no restart is needed for it). In Turns the hold is at
+most 10 ticks: the next fighter comes in soon after a KO. A goal asked while a match is
+loading (the title's demo) is ended by `goalTick`, once: each `endMatch` starts its fade
+again, so calling it every tick never ends the match. The team choice is what reaches
+the fight screen's Simul, Tag and Turns sections: tested with Simul 4, Turns 4 and Tag 3
+a side, one after the other from the menus. `[Win Screen]` has one text: "Congratulations!"
+on Results (lost) is the motif's. `test_ui.ps1` got `mark` and
 `until:text`: waits on the log, since a busy machine took a load from 10 s to 32 s.
 
 Whole projects (`app_explorer.cpp`, a def's menu in Explorer; `src/pack.cpp`, tested,

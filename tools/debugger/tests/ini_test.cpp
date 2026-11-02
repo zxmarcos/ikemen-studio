@@ -192,6 +192,10 @@ static void TestBgTime() {
     CHECK(t.start == 1 && t.end == 2 && t.loop == 3 && t.ownLoop);
     t = Ini_BgCtrlTime(f, 6);
     CHECK(t.start == 0 && t.end == 0 && t.loop == -1);
+    // A storyboard's sound names a sound by its value
+    Ini_Parse("[Scene 0]\nsound0.value = 1,2\nlayer0.value = 3\n", f);
+    CHECK(Ini_FieldRef(f.sections[0], f.sections[0].fields[0]) == kIniRefSound);
+    CHECK(Ini_FieldRef(f.sections[0], f.sections[0].fields[1]) == kIniRefNone);
 }
 
 int main() {
