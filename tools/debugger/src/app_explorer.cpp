@@ -742,6 +742,7 @@ std::string SelectDef() {
 void WorkOn(const std::string &def) {
     g_workDef = def;
     g_workSelPicked = g_selPicked;
+    if (!def.empty()) AddRecent(false, def);
 }
 
 int WorkPn() {

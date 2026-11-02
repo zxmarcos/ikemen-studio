@@ -18,6 +18,14 @@ static SpriteFile *g_spritesShown; // a file another window showed here
 static std::string g_spritesShownWhat;
 static int g_spritesShownN;
 
+static bool g_spritesScroll; // the list goes to the sprite selected
+
+void SpritesSelect(SpriteFile &sf, int index) {
+    if (index < 0) return;
+    sf.sel = index;
+    g_spritesScroll = true;
+}
+
 void ShowInSprites(SpriteFile &sf, int index, const std::string &what) {
     g_spritesShown = &sf;
     g_spritesShownWhat = what;
@@ -976,7 +984,8 @@ void SpritesWindow() {
     if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, mode = Player;
     static std::string seenWork;
     if (std::string work = WorkDef(); work != seenWork) seenWork = work, mode = Player;
-    bool picked = g_screenPicked != seenPicked, scroll = false;
+    bool picked = g_screenPicked != seenPicked, scroll = g_spritesScroll;
+    g_spritesScroll = false;
     if (picked) seenPicked = g_screenPicked, mode = Screen;
     if (g_spritesShownN != seenShown) seenShown = g_spritesShownN, mode = Shown, scroll = true;
     const char *screen = nullptr;

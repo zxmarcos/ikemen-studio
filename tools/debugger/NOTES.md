@@ -102,6 +102,12 @@ but not Problems: it would stay there as an error for good. A tab of a panel can
 tests. Not done: Sounds' delete says nothing of the states using a sound; the layer images Add layer
 saves stay outside undo; Package does not run the checks first, it only counts Problems' errors.
 
+After v0.1.1's tag: `SpritesSelect` is the one way to move the list from outside. Animation calls it once
+per element, not each frame, so a sprite picked by hand stays until the element changes. `CharacterOnly`
+hides a tab per workspace through `Hidden`, and `asked` brings it back, as with the advanced tools.
+Recents (`AddRecent`, four, in the settings as `Recent=c|def`) come from `WorkOn` and `PlayStage`, so
+every way of choosing feeds them; one whose file is gone is skipped, not forgotten.
+
 Trying a package before tagging (2026-11-02): copy the exes, `ikdbg.lua`, `lib`, `data`, `font`,
 `external`, `chars/kfm` and the stages to a folder of their own, take MSYS2 out of `PATH`, and run
 `test_ui.ps1 -Folder <it> -Exe <it>\Ikemen_GO.exe`: its settings, `save` and edits stay there, so a

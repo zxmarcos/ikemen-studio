@@ -430,6 +430,7 @@ SpriteFile &SpriteFileAt(const std::string &path, const std::string &pal = ""); 
 SpriteFile *SpritesOf(int pn);
 // The Sprites window shows that file (at that sprite, -1 as it was); what: as "the font x.def"
 void ShowInSprites(SpriteFile &sf, int index, const std::string &what);
+void SpritesSelect(SpriteFile &sf, int index); // that sprite selected and in view, -1 nothing changes
 // The sprites of a group as a grid, curGroup, curImage marked; true when one is clicked. SpriteGridSize,
 // before the popup holding it, keeps it as wide from the start, so that it opens inside the window
 bool SpriteGrid(SpriteFile *spf, int &group, int curGroup, int curImage, int *pickGroup, int *pickImage);
@@ -624,6 +625,7 @@ void PaletteFrame();
 
 // app_start.cpp
 void AskStartPage();
+void AddRecent(bool stage, const std::string &def); // on the start page, for going back to it
 void AskTour();                         // the first steps, in a corner of the window
 void StartPageFrame();
 void EmptyNote(const char *text);       // an empty window: what goes there

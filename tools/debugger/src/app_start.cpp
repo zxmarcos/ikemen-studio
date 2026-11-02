@@ -18,6 +18,14 @@ int g_tour = -1;           // the step of the first steps shown; -1: none
 bool g_tourDone;           // saved: seen to the end, or skipped
 int g_tourPick;            // the player picks when its step began
 
+// The characters and stages worked on last, saved with the settings
+struct Recent {
+    bool stage;
+    std::string def;
+};
+std::vector<Recent> g_recent;
+const size_t kRecents = 4;
+
 struct Task {
     const char *icon, *title, *text, *workspace;
 };
@@ -116,6 +124,16 @@ void EmptyNote(const char *text) {
 
 void AskStartPage() { g_asked = true; }
 
+void AddRecent(bool stage, const std::string &def) {
+    if (!g_recent.empty() && g_recent[0].stage == stage && NormPath(g_recent[0].def) == NormPath(def)) return;
+    g_recent.erase(std::remove_if(g_recent.begin(), g_recent.end(),
+                                  [&](const Recent &r) { return r.stage == stage && NormPath(r.def) == NormPath(def); }),
+                   g_recent.end());
+    g_recent.insert(g_recent.begin(), {stage, def});
+    if (g_recent.size() > kRecents) g_recent.pop_back();
+    ImGui::MarkIniSettingsDirty();
+}
+
 void AskTour() { g_tour = 0; }
 
 void StartPageFrame() {
@@ -158,6 +176,34 @@ void StartPageFrame() {
         }
     }
     ImGui::Dummy(ImVec2(0, em * 0.3f));
+    // Where it was left: each shown only while its file is there
+    bool anyRecent = false;
+    for (size_t i = 0; i < g_recent.size(); i++) {
+        const Recent &r = g_recent[i];
+        if (!GameFileExists(r.def)) continue;
+        if (!anyRecent) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("Go on with");
+        }
+        anyRecent = true;
+        std::string name = r.stage ? StageNameOf(r.def) : CharNameOf(r.def);
+        ImGui::SameLine();
+        ImGui::PushID((int)i);
+        if (ImGui::Button(((r.stage ? ICON_STAGE " " : ICON_PERSON " ") + name).c_str())) {
+            Recent go = r; // going on with it moves it in the list
+            GoTo(go.stage ? "Stage" : "Character");
+            if (go.stage) PlayStage(go.def);
+            else {
+                WorkOn(go.def);
+                g_settings.p1 = CharNameOf(go.def);
+            }
+            close = true, tour = false;
+            ImGui::PopID();
+            break;
+        }
+        ImGui::SetItemTooltip("%s", r.def.c_str());
+        ImGui::PopID();
+    }
     ImGui::Separator();
     if (ImGui::Button(ICON_PERSON " New character")) {
         GoTo("Character");
@@ -290,11 +336,13 @@ void HelpDialog() {
 void StartSettingsLine(const std::string &key, const std::string &value) {
     if (key == "StartPage") g_showAtStart = value != "0";
     else if (key == "TourDone") g_tourDone = value == "1";
+    else if (key == "Recent" && value.size() > 2 && g_recent.size() < kRecents) g_recent.push_back({value[0] == 's', value.substr(2)});
 }
 
 void StartSettingsWrite(ImGuiTextBuffer *buf) {
     buf->appendf("StartPage=%d\n", g_showAtStart);
     buf->appendf("TourDone=%d\n", g_tourDone);
+    for (const Recent &r : g_recent) buf->appendf("Recent=%c|%s\n", r.stage ? 's' : 'c', r.def.c_str());
 }
 
 } // namespace app

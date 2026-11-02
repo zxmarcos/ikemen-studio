@@ -46,7 +46,8 @@ Ikemen GO itself is built by `build/build.sh Win64`; it needs `chars`,
 1. Run `tools/debugger/build/ikemen-debugger.exe`. The **start page** asks what
    you want to do (test a character, edit its animations and sprites, a stage,
    the screenpack; or start a new character or stage) and opens that workspace;
-   **Help > Start page** shows it again, and it can be turned off. The first
+   **Go on with** lists the last characters and stages worked on, one click from
+   their workspace. **Help > Start page** shows it again, and it can be turned off. The first
    time, **Getting started** follows in a corner of the window: three steps,
    each going on when you have done it (also in File).
 2. Set the match with the button on the toolbar that shows it ("kfm vs kfm on
@@ -94,7 +95,9 @@ Every editor has **undo**: Animation, Sprites, Stage, the screens, Sounds, Comma
 Roster and Fonts. Deleting a sprite that actions show asks first, saying how many
 elements. In Animation, **Follow** shows what the game shows, and lets go when an
 element is picked or edited while the game runs, so the edit stays where it began;
-paused, it stays on.
+paused, it stays on. Sprites goes to the element picked in Animation, unless several
+sprites are selected there; the game playing does not move it. Assets has no Commands
+tab on the Stage and Screenpack workspaces (Ctrl+Shift+P still shows it).
 
 **File > Package** makes a zip of what is being worked on (the character, the stage
 or the screenpack) and says what it holds, what the def names that is missing, and

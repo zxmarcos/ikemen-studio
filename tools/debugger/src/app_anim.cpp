@@ -1898,6 +1898,13 @@ void AnimationWindow() {
     // The elements; a click shows one on the game too (pause first to keep it there)
     SpriteFile *spf = screen ? sa.sprites : SpritesOf(t.pn);
     bool live = !screen && t.fe && t.fe->action == g_animAction;
+    // Sprites goes with the element picked, not with a game running through them; those picked there stay
+    static std::pair<int, int> seenElem(-1, -1);
+    if (t.act && spf && spf->picks.empty() && (!g_animFollow || g_paused || !live) && seenElem != std::make_pair(g_animAction, t.elem)) {
+        seenElem = {g_animAction, t.elem};
+        const AirElem &el = t.act->elems[t.elem - 1];
+        SpritesSelect(*spf, Sff_FindSprite(spf->doc, el.group, el.image));
+    }
     auto showElem = [&](int n) {
         g_animElem = n;
         if (live) {

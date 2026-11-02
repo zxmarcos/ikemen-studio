@@ -19,7 +19,7 @@ struct ToolWindow {
     bool advanced = false;     // shown with View > Advanced tools, or when something asks for it
     const char *panel = nullptr; // a tab of this window: it is drawn in it, only while it is the tab shown
     bool open = false;
-    bool asked = false;        // advanced, but asked for
+    bool asked = false;        // hidden, but asked for
     ToolWindow *tab = nullptr; // a panel: the tab chosen
     ToolWindow *shown = nullptr; // a panel: the tab drawn last
     float scroll = 0;          // a tab: where it was left
@@ -120,7 +120,10 @@ const char *WindowIcon(const char *name) {
     return it == icons.end() ? "" : it->second;
 }
 
-bool Hidden(const ToolWindow &t) { return t.advanced && !g_advanced && !t.asked; }
+// A character's: not on the workspace of a stage or a screen
+bool CharacterOnly(const ToolWindow &t) { return strcmp(t.name, "Commands") == 0 && g_spaces[g_space].code != kFollow; }
+
+bool Hidden(const ToolWindow &t) { return ((t.advanced && !g_advanced) || CharacterOnly(t)) && !t.asked; }
 
 ToolWindow *FindTool(const char *name) {
     for (ToolWindow &t : g_windows)
@@ -370,7 +373,7 @@ bool BeginTool(const char *name, ImGuiWindowFlags flags) {
 void ShowWindow(const char *name) {
     ToolWindow *t = FindTool(name);
     if (!t) return;
-    t->asked = t->advanced;
+    t->asked = t->advanced || CharacterOnly(*t);
     if (t->panel) {
         ToolWindow *panel = FindTool(t->panel);
         panel->tab = t;
