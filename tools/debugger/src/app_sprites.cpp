@@ -230,7 +230,7 @@ void SaveSprites(SpriteFile &sf) {
 // How files become sprites
 struct AddOptions {
     int group = 0, number = 0, step = 1;
-    bool fromNames = false, crop = false, replace = false;
+    bool fromNames = true, crop = false, replace = false; // who names a file 200-3.png means it
     int axis = SFF_AXIS_FEET; // or kAxisCustom: x, y
     int x = 0, y = 0;
     int pal = SFF_PAL_SHARED;
@@ -709,7 +709,9 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     std::string actions = pn > 0 ? CharFile(pn, "anim") : AnimFileOfSprites(sf.path);
     if (!actions.empty()) {
         ImGui::SeparatorText("Animation");
-        static int action = 0, time = 4;
+        static int action = 0, time = 4, actionOf = -1;
+        // Actions go by their sprites' group: a fixed number would add them to the standing animation
+        if (d.sprites[sel[0]].group != actionOf) actionOf = action = d.sprites[sel[0]].group;
         ImGui::SetNextItemWidth(em * 5);
         ImGui::InputInt("Action", &action, 0);
         ImGui::SetNextItemWidth(em * 5);
@@ -996,7 +998,6 @@ void SpritesWindow() {
     static bool importReplace = false, askImport = false;
     auto addPopup = [&]() {
         if (ImGui::BeginPopup("add")) {
-            ImGui::BeginDisabled(add.fromNames);
             ImGui::SetNextItemWidth(em * 6);
             ImGui::InputInt("Group", &add.group, 0);
             ImGui::SetNextItemWidth(em * 6);
@@ -1005,9 +1006,8 @@ void SpritesWindow() {
             ImGui::RadioButton("by 1", &add.step, 1);
             ImGui::SameLine();
             ImGui::RadioButton("by 10", &add.step, 10);
-            ImGui::EndDisabled();
             ImGui::Checkbox("Numbers from the file names", &add.fromNames);
-            ImGui::SetItemTooltip("200_3.png, 200-3.png or 200,3.png is group 200, number 3");
+            ImGui::SetItemTooltip("200_3.png, 200-3.png or 200,3.png is group 200, number 3; other names take the numbers above");
             ImGui::SetNextItemWidth(em * 11);
             ImGui::Combo("Axis", &add.axis, "At the feet\0In the centre\0Top left\0These numbers\0");
             if (add.axis == kAxisCustom) {

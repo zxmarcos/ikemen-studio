@@ -82,7 +82,11 @@ a ghost; Ctrl+drag and the arrows move the axis of all those selected. Not done:
 Fighter Factory's background image behind the sprite.
 
 Animation: `Interpolate` lines belong to the element after them (`AirElem::interp`;
-`first` includes them, so they move and go with it). The game interpolates on the
+`first` includes them, so they move and go with it). Sprites' defaults follow how people
+name them: Add PNG reads the numbers from the file names (others take Group and From), and
+the Animation section offers the sprites' group as the action, not action 0. In Create's
+Move the action goes with the state until it is given another number, and it warns
+when the sprites are not saved: creating a move saves its text, not the SFF. The game interpolates on the
 way into that element, over the time of the one before (`UpdateInterpolation`);
 the preview does the same while playing. Each `Air_` edit of one line keeps the
 lines parsed good; those that add or take out lines need a new parse
@@ -215,7 +219,9 @@ own folder nothing names. Files are stored, not compressed. Names are as on disk
 motif, where the engine looks first), and `<old folder>/` replaced in the defs' text
 (credits.def's `spr = ikemen1/system.sff`). Sounds, fonts and music elsewhere stay
 shared. It adds `-r data/<name>/system.def` to the session's arguments and leaves
-config.ini alone. Show > Screen shapes draws 16:9, 4:3 and a 5% margin over the picture.
+config.ini alone, so `MotifPath` reads that `-r` too: with the game stopped, the copy is
+what Explorer, Motif and Package act on, not the original. Show > Screen shapes draws 16:9,
+4:3 and a 5% margin over the picture.
 
 Timelines. BGCtrls: `CtrlTimeline` (`app_stage.cpp`) takes its times from the def, not
 the game (`Ini_BgCtrlTime`, tested: an empty part keeps what it had, the looptime left
@@ -655,7 +661,11 @@ rewrite all of this history at every sync.
 - `test_ui.ps1 -NoLaunch` starts it as a person would: the start page, no game. A
   path from nothing to a zip, tested so (2026-11-01): New stage, images, Create, Launch, a BG
   picked and dragged, Save, Package; New character, Launch, a move with its action
-  copied and a Clsn1 box, Try it, Package.
+  copied and a Clsn1 box, Try it, Package; a character's own PNGs (`300-0.png`...) into
+  sprites, an action, boxes, a move on a command, pressed in the match; Copy as a new
+  screenpack, a lifebar dragged, a roster cell moved, a storyboard edited, Package. Clicks
+  there depend on the game running (the Sprites panel is 29 px higher) and on what the
+  form shows. `Compare-Object` ignores the order of lines: compare hashes for a moved cell.
 - File dialogs: with the environment variable `IKDBG_TEST_PICK` set (paths
   separated by `|`) before `test_ui.ps1`, every "Open" dialog (`PickFiles`)
   returns those files instead of opening. Create tests write new folders and

@@ -461,7 +461,10 @@ static const std::vector<StageFinding> &Checks(ScreenDef &d, SourceFile &sf) {
 static void DefsFromDisk() {
     if (Connected()) return;
     for (ScreenDef *d : g_screens) d->items.clear();
-    if (g_motif.def.empty()) g_motif.def = ScreenpackDef();
+    if (std::string motif = ScreenpackDef(); motif != g_motif.def) {
+        g_motif.def = motif;
+        g_fight.def.clear(), g_motif.sff.clear(), g_fight.sff.clear();
+    }
     if (g_fight.def.empty()) g_fight.def = DefFile(g_motif.def, "fight");
     for (ScreenDef *d : {&g_motif, &g_fight})
         if (!d->def.empty() && d->sff.empty()) d->sff = SpritesFileOf(d->def);

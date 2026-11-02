@@ -104,7 +104,9 @@ void MoveTab() {
     ImGui::SetNextItemWidth(em * 14);
     ImGui::InputText("name", &m.name);
     ImGui::SetNextItemWidth(em * 6);
+    int stateWas = m.state;
     ImGui::InputInt("state", &m.state, 0);
+    if (m.action == stateWas) m.action = m.state; // they go together until one is given another number
     std::string taken = StatedefFile(pn, m.state);
     if (!taken.empty()) {
         ImGui::SameLine();
@@ -188,6 +190,9 @@ void MoveTab() {
         }
         ImGui::SetItemTooltip("Shows the action there, to draw its boxes");
         ImGui::EndGroup();
+        // Creating the move saves its text, not the SFF: its new sprites would not show
+        if (SpriteFile *spf = SpritesOf(pn); spf && spf->dirty)
+            ImGui::TextColored(Ink(kYellow), "The sprites are not saved: the game has not got the new ones.");
     }
     ImGui::Checkbox("a sound at the start", &m.sound);
     if (m.sound) {

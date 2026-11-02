@@ -209,9 +209,18 @@ void Scan(bool now) {
     }
 }
 
-// The game's, else the one config.ini names
+// The game's, else the one the session's arguments give (Copy as a new screenpack's -r), else the
+// one config.ini names: the game not running, a copy must not edit the original
 std::string MotifPath() {
-    std::string m = MotifDef();
+    std::string m = Connected() ? MotifDef() : "";
+    const std::string &extra = g_settings.extra;
+    if (m.empty())
+        for (size_t r = extra.find("-r "); r != std::string::npos; r = extra.find("-r ", r + 1))
+            if (r == 0 || extra[r - 1] == ' ') {
+                size_t from = extra.find_first_not_of(' ', r + 3);
+                if (from != std::string::npos) m = extra.substr(from, extra.find(' ', from) - from);
+                break;
+            }
     if (m.empty()) m = ConfigValue("config", "motif");
     return m.empty() ? "data/system.def" : m;
 }
