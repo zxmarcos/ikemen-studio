@@ -284,6 +284,7 @@ void FontsWindow() {
         FontReload(sel, nullptr);
     }
     ImGui::EndDisabled();
+    SaveState(dirty, true);
     if (!fnt) {
         ImGui::SameLine();
         if (ImGui::Button(ICON_CODE " Show in Code")) {

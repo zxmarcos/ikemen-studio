@@ -123,6 +123,13 @@ void StageOpen(const std::string &def) {
     g_stageBg = -1;
 }
 
+void PlayStage(const std::string &def) {
+    StageOpen(def);
+    g_settings.stage = def.compare(0, 7, "stages/") == 0 ? def.substr(7) : def;
+    if (Connected() && g_canTrace && NormPath(def) != NormPath(g_stageDef))
+        Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
+}
+
 // The section of a BG (by its index in the stage), nullptr when the def does not have it.
 const IniSection *BgSection(const IniFile &ini, int index) {
     std::vector<int> bgs = ini.StageBgs();
@@ -688,7 +695,7 @@ void StageWindow() {
     ImGui::SetItemTooltip("The game loads the stage again (from the text here), e.g. after its files changed.");
     UndoStack<std::string> &history = TrackAnims(sf);
     flow("xx", UndoButtonsWidth());
-    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo(), g_stagePick)) {
         sf.text = step < 0 ? history.Undo() : history.Redo();
         StageEdited(sf);
         ImGui::End(); // what was parsed is old
@@ -715,7 +722,8 @@ void StageWindow() {
     std::vector<int> ctrls = ini.StageBgCtrls();
     const StageView &sv = g_stageView;
     if (live) {
-        ImGui::TextDisabled("%s%s  %zu BGs, %zu drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), g_frameBgs.size());
+        ImGui::TextDisabled("%s  %zu BGs, %zu drawn", sf.path.c_str(), bgs.size(), g_frameBgs.size());
+        SaveState(sf.Dirty(), true);
         int running = 0;
         for (const auto &c : sv.ctrls) running += c.ran;
         ImGui::Text("stage time %d", sv.time);
@@ -729,7 +737,8 @@ void StageWindow() {
     } else {
         ImGui::TextColored(Ink(kOrange), "from disk");
         ImGui::SameLine();
-        ImGui::TextDisabled("%s%s  %zu BGs, %zu BGCtrls", sf.path.c_str(), sf.Dirty() ? " *" : "", bgs.size(), ctrls.size());
+        ImGui::TextDisabled("%s  %zu BGs, %zu BGCtrls", sf.path.c_str(), bgs.size(), ctrls.size());
+        SaveState(sf.Dirty(), false);
     }
 
     bool hasModel = false;

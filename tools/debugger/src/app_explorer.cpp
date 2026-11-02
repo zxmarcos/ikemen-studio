@@ -9,6 +9,8 @@
 #include <fstream>
 
 #include "imgui_internal.h"
+#include <cfloat>
+
 #include "imgui_stdlib.h"
 #include "ini.h"
 #include "pack.h"
@@ -285,6 +287,37 @@ std::string CharDefOf(const std::string &name) {
     return "chars/" + n + (def ? "" : ".def");
 }
 
+std::string CharNameOf(const std::string &def) {
+    std::string name = def;
+    if (name.compare(0, 6, "chars/") == 0) name = name.substr(6);
+    size_t slash = name.find('/');
+    if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
+        name = name.substr(0, slash);
+    return name;
+}
+
+void PlayCharacter(const std::string &def) {
+    g_settings.p1 = CharNameOf(def);
+    if (Connected()) SwapChar(1, g_settings.p1);
+    else Launch();
+}
+
+bool NameCombo(const char *id, const std::string &shown, const std::vector<std::string> &names, std::string &picked, const char *none) {
+    static std::string filter;
+    bool done = false;
+    if (!ImGui::BeginCombo(id, shown.c_str(), ImGuiComboFlags_HeightLarge)) return false;
+    if (ImGui::IsWindowAppearing()) filter.clear();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##filter", "filter", &filter);
+    if (none && ImGui::Selectable(none, picked.empty())) picked.clear(), done = true;
+    for (const std::string &s : names) {
+        if (!filter.empty() && s.find(filter) == std::string::npos) continue;
+        if (ImGui::Selectable(s.c_str(), picked == s)) picked = s, done = true;
+    }
+    ImGui::EndCombo();
+    return done;
+}
+
 namespace {
 
 // The player a character's def is in the match as, 0 none
@@ -513,9 +546,12 @@ void CharNode(const Project &p) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
     if (NormPath(WorkDef()) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.name.c_str(), flags);
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) WorkOn(p.def);
-    ImGui::SetItemTooltip("%s\nA click: Analysis, Sounds, Commands and Sprites work on it (from disk when it is not "
-                          "in the match).", p.def.c_str());
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+        WorkOn(p.def);
+        if (!Connected()) g_settings.p1 = CharNameOf(p.def); // what Launch starts
+    }
+    ImGui::SetItemTooltip(Connected() ? "%s\nA click: the windows work on it (from disk when it is not in the match). A right click puts it there."
+                                      : "%s\nA click: the windows work on it, and Launch starts with it as P1.", p.def.c_str());
     std::string players = PlayersOf(p.def);
     if (!players.empty()) RowNote(players.c_str(), ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
@@ -548,11 +584,13 @@ void StageNode(const Project &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
-    SourceFile *shown = Connected() ? nullptr : StageSource(); // the game not running: the Stage window's
+    SourceFile *shown = StageSource(); // the Stage window's
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
     if (shown && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.def.c_str(), flags, "%s", p.name.c_str());
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) StageOpen(p.def);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) PlayStage(p.def);
+    ImGui::SetItemTooltip(Connected() ? "%s\nA click: it takes the match's place (the match goes on) and the Stage window shows it."
+                                      : "%s\nA click: the Stage window shows it, and Launch starts on it.", p.def.c_str());
     bool playing = NormPath(p.def) == NormPath(g_stageDef);
     if (playing) RowNote("playing", ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {

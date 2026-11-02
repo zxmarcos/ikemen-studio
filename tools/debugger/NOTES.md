@@ -85,6 +85,15 @@ Console and its answer; errors go to Problems too (`ToolError`). A new message n
 that selection is automatic, nobody chose it, and it left a fighter in half of those workspaces with
 Save writing to the character's file.
 
+`SaveState` tells, on a file's line, whether the game has its changes; `keep` is the width what follows
+needs: the text shrinks to `*` rather than wrap, or the panel jumps on the first edit under the mouse.
+`LogLine::Detail` is for the log only (what starts the game), or the bridge's line would hide what
+Launch said. Ctrl+S is `LayoutFrame`'s, so it runs before the windows: Code and Commands still apply
+after it. `ForwardKeys` keeps Ctrl+S, Z, Y and 1..5 from the game, whose debug hotkeys are changeSpeed
+and toggleAI; `UndoButtons`' `fromGame` says which editor answers Ctrl+Z from the Game window. A
+click in Explorer decides what Launch starts (`g_settings`), so the toolbar shows it at once. Clicks on
+a tree row also open it: rows below move, take a shot after each click in tests.
+
 **Sprites, animations and palettes at Fighter Factory's level** (2026-11-01; the
 community's tool, compared with its help and the program itself), for character
 makers. Done in this order: (1) undo and selecting several; (2) sprites in batch;

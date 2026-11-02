@@ -130,12 +130,19 @@ void Toolbar() {
     if (ImGui::Button((std::string(ICON_GAME "  ") + summary + "  " ICON_CARET + "###match").c_str())) ImGui::OpenPopup("match");
     ImGui::SetItemTooltip("The match the game starts with (Launch, Restart): who fights, and where");
     if (ImGui::BeginPopup("match")) {
+        static std::vector<std::string> chars, stages;
+        if (ImGui::IsWindowAppearing()) {
+            chars = ListDefs(false);
+            stages = ListDefs(true);
+            for (std::string &n : stages)
+                if (n.compare(0, 7, "stages/") == 0) n = n.substr(7);
+        }
         auto player = [&](const char *label, std::string &name, bool &ai, const char *id) {
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(label);
             ImGui::SameLine(em * 6);
-            ImGui::SetNextItemWidth(em * 10);
-            ImGui::InputText((std::string("##") + label).c_str(), &name);
+            ImGui::SetNextItemWidth(em * 12);
+            NameCombo((std::string("##") + label).c_str(), name.empty() ? "nobody" : name, chars, name, "nobody");
             ImGui::SameLine();
             ImGui::Checkbox(id, &ai);
             ImGui::SetItemTooltip("The computer plays this side");
@@ -145,10 +152,10 @@ void Toolbar() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Stage");
         ImGui::SameLine(em * 6);
-        ImGui::SetNextItemWidth(em * 10);
-        ImGui::InputText("##stage", &s.stage);
-        ImGui::TextDisabled("Leave both players empty to start at the title screen.");
-        ImGui::TextDisabled("Explorer's menu on a character or a stage sets them too.");
+        ImGui::SetNextItemWidth(em * 12);
+        NameCombo("##stage", s.stage.empty() ? "the game's choice" : s.stage, stages, s.stage, "the game's choice");
+        ImGui::TextDisabled("Nobody on both sides starts at the title screen.");
+        ImGui::TextDisabled("With the game stopped, a click in Explorer sets P1 and the stage.");
         ImGui::Separator();
         if (ImGui::TreeNode(ICON_BOOKMARKS " Saved matches")) {
             MatchesPopup();

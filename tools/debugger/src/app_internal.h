@@ -152,7 +152,7 @@ struct WatchExpr {
 };
 
 struct LogLine {
-    enum Kind { Info, Result, Error, Engine, Break } kind;
+    enum Kind { Info, Result, Error, Engine, Break, Detail } kind; // Detail: for the log only, not the status bar
     std::string text;
 };
 
@@ -446,8 +446,10 @@ bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, s
 extern const char kImageFilter[];
 std::vector<int> SelectedSprites(const SpriteFile &sf); // those selected, else the one shown
 // Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the
-// keyboard: -1 undo, 1 redo, 0 neither. UndoButtonsWidth: what they take.
-int UndoButtons(bool canUndo, bool canRedo);
+// keyboard: -1 undo, 1 redo, 0 neither. fromGame: also while Game has it, for what is dragged there.
+// UndoButtonsWidth: what they take.
+int UndoButtons(bool canUndo, bool canRedo, bool fromGame = false);
+extern bool g_gameFocused; // the Game window has the keyboard
 float UndoButtonsWidth();
 void SpritesWindow();
 extern std::map<int, int> g_palNo; // pn -> the palette the game gave the player (1..), as @IKFILES tells
@@ -527,6 +529,9 @@ void SoundsUnsaved(std::vector<Unsaved> &out);
 void FontsUnsaved(std::vector<Unsaved> &out);
 void ModelUnsaved(std::vector<Unsaved> &out);
 bool SaveAll(); // false when one could not be written
+// On a file's line, what it says about its changes (live: the game shows them before they are saved),
+// short when it would leave less than keep for what follows on that line
+void SaveState(bool dirty, bool live, float keep = 0);
 void UnsavedAsk(bool closing); // the dialog listing them; closing: the window closes after it
 void UnsavedDialog();
 void OnReload(const Json &j);
@@ -561,6 +566,11 @@ std::string WorkDef();          // its def, "" none
 std::string WorkLabel(int pn);  // "P1", "from disk"
 void WorkOn(const std::string &def);
 std::string CharDefOf(const std::string &name); // a character as ListDefs names it ("kfm", "kfm/kfm720.def"): its def
+std::string CharNameOf(const std::string &def); // and the other way
+void PlayCharacter(const std::string &def);     // it becomes P1: of the match, or of a game started now
+// A name from a list, with a filter: true when one is picked. none: an entry for no name.
+bool NameCombo(const char *id, const std::string &shown, const std::vector<std::string> &names, std::string &picked,
+               const char *none = nullptr);
 // A player's files as the game lists them (key -> paths), kDiskPn's read from disk; nullptr not known
 const std::map<std::string, std::vector<std::string>> *FilesFor(int pn);
 
@@ -676,6 +686,7 @@ void StageEdited(SourceFile &sf);             // after an edit of its text: the 
 void ReloadStage(SourceFile &sf, bool fromText, bool sprites = false);
 void StageSpritesSaved(const std::string &path); // the stage using that SFF reads it again
 void StageOpen(const std::string &def);          // the Stage window shows that def while the game is not running
+void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
 void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);
 // The stage's 3D model (app_model.cpp): the Model window, a line of the Stage window, and on the

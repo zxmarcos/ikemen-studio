@@ -170,7 +170,8 @@ void SoundsWindow() {
     }
     ImGui::SameLine();
     if (ImGui::Button(ICON_STOP " Stop")) PlaySoundA(nullptr, nullptr, 0);
-    ImGui::TextDisabled("%s%s  %zu sounds", sf.path.c_str(), sf.dirty ? " *" : "", snd.sounds.size());
+    ImGui::TextDisabled("%s  %zu sounds", sf.path.c_str(), snd.sounds.size());
+    SaveState(sf.dirty, false);
     if (!sf.error.empty()) ImGui::TextColored(Ink(kRed), "%s", sf.error.c_str());
 
     // The selected sound

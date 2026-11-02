@@ -489,8 +489,8 @@ void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float e
     if (ImGui::Button(ICON_REVERT " Revert")) ReadSource(sf);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("%s%s  %zu commands%s", sf.path.c_str(), sf.Dirty() ? " *" : "", cf.commands.size(),
-                        g_applying ? "  applying..." : "");
+    ImGui::TextDisabled("%s  %zu commands%s", sf.path.c_str(), cf.commands.size(), g_applying ? "  applying..." : "");
+    SaveState(sf.Dirty(), false);
     if (!g_applyError.empty()) {
         ImGui::PushTextWrapPos(0);
         ImGui::TextColored(Ink(kRed), "%s", g_applyError.c_str());

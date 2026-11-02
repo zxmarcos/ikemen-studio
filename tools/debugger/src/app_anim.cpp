@@ -1481,6 +1481,9 @@ void AnimationWindow() {
         ImGui::SameLine();
         ImGui::TextColored(Ink(kOrange), "from disk");
         ImGui::SetItemTooltip("Not in the match: its AIR file edited from disk. Put the character in the match to see it on the game.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton(Connected() ? ICON_PLAY " Put in the match" : ICON_PLAY " Launch with it")) PlayCharacter(CharFile(kDiskPn, "def"));
+        ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1." : "The game starts with it as P1.");
     } else {
         ImGui::Text("%s  %s", Who(t.e->pn, t.e->helper, t.e->id).c_str(), t.e->name.c_str());
     }
@@ -1492,16 +1495,19 @@ void AnimationWindow() {
     SourceFile &sf = *t.sf;
     {
         ImGui::SameLine();
-        ImGui::TextDisabled("· %s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
-        if (t.act && !t.act->name.empty()) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("· %s", t.act->name.c_str());
-        }
+        ImGui::TextDisabled("· %s", sf.path.c_str());
         float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 +
                   style.ItemSpacing.x * 2 + UndoButtonsWidth();
+        SaveState(sf.Dirty(), !disk && !(screen && sa.disk), w);
+        if (t.act && !t.act->name.empty()) {
+            ImGui::SameLine();
+            // Without room it goes, not the buttons to another line: the panel would jump on the first edit
+            if (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(t.act->name.c_str()).x - em * 2 >= w)
+                ImGui::TextDisabled("· %s", t.act->name.c_str());
+        }
         rightAlign(w);
         UndoStack<std::string> &history = TrackAnims(sf);
-        if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+        if (int step = UndoButtons(history.CanUndo(), history.CanRedo(), true)) {
             sf.text = step < 0 ? history.Undo() : history.Redo();
             apply(sf);
             KeepActionShown(sf);

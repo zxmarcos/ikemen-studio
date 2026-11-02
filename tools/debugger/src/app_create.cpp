@@ -80,26 +80,10 @@ void CloseButton(const char *label) {
 // The characters on disk, looked for each time a dialog opens
 std::vector<std::string> g_chars;
 bool g_charsListed;
-std::string g_charFilter;
 
 const std::vector<std::string> &Chars() {
     if (!g_charsListed) g_chars = ListDefs(false), g_charsListed = true;
     return g_chars;
-}
-
-// A character as ListDefs names it: true when one is picked
-bool CharCombo(const char *id, const char *shown, std::string &picked) {
-    bool done = false;
-    if (ImGui::BeginCombo(id, shown, ImGuiComboFlags_HeightLarge)) {
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##filter", "filter", &g_charFilter);
-        for (const std::string &s : Chars()) {
-            if (!g_charFilter.empty() && s.find(g_charFilter) == std::string::npos) continue;
-            if (ImGui::Selectable(s.c_str(), picked == s)) picked = s, done = true;
-        }
-        ImGui::EndCombo();
-    }
-    return done;
 }
 
 void MoveDialog() {
@@ -112,7 +96,7 @@ void MoveDialog() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 15);
     std::string picked;
-    if (CharCombo("##for", def.empty() ? "Pick a character" : def.c_str(), picked)) WorkOn(CharDefOf(picked));
+    if (NameCombo("##for", def.empty() ? "Pick a character" : def, Chars(), picked)) WorkOn(CharDefOf(picked));
     const std::vector<std::string> *st = nullptr;
     if (const auto *files = pn ? FilesFor(pn) : nullptr)
         if (auto f = files->find("st"); f != files->end() && !f->second.empty()) st = &f->second;
@@ -316,13 +300,7 @@ void MoveDialog() {
         ImGui::SameLine();
         ImGui::BeginDisabled(!Connected() || g_applying);
         if (ImGui::Button("Put it in P1's place")) {
-            std::string name = def;
-            if (name.compare(0, 6, "chars/") == 0) name = name.substr(6);
-            size_t slash = name.find('/');
-            // "kfm" for chars/kfm/kfm.def, as ListDefs names it
-            if (slash != std::string::npos && _stricmp(name.substr(slash + 1).c_str(), (name.substr(0, slash) + ".def").c_str()) == 0)
-                name = name.substr(0, slash);
-            SwapChar(1, name);
+            SwapChar(1, CharNameOf(def));
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndDisabled();
@@ -622,7 +600,7 @@ void CharacterDialog() {
     ImGui::TextUnformatted("Start from");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 12);
-    CharCombo("##base", c.base.c_str(), c.base);
+    NameCombo("##base", c.base, list, c.base);
     ImGui::RadioButton("its basics", &c.mode, 0);
     ImGui::SetItemTooltip("The sprites and sounds (renamed after the folder), the palettes and other files of [Files], "
                           "the constants, the states below 200 it gives itself (intro, win poses, taunt), the actions "

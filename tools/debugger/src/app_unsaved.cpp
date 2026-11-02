@@ -43,6 +43,19 @@ bool SaveAll() {
     return ok;
 }
 
+void SaveState(bool dirty, bool live, float keep) {
+    if (!dirty) return;
+    bool shown = live && Connected();
+    const char *text = shown ? "in the game, not saved" : Connected() ? "not in the game yet" : "not saved";
+    ImGui::SameLine();
+    // The line stays as it was: what comes after must not move on the first edit
+    if (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text).x < keep) text = "*";
+    ImGui::TextColored(Ink(kYellow), "%s", text);
+    ImGui::SetItemTooltip("%s", shown ? "The game shows it, but only Save writes it: a new match starts from what is on disk."
+                                : Connected() ? "The game gets it when it is saved."
+                                              : "Only Save writes it.");
+}
+
 void UnsavedAsk(bool closing) {
     g_asked = true;
     g_closing = closing;

@@ -332,7 +332,8 @@ void RosterWindow() {
         g_codeHold = true;
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("%s%s", sf.path.c_str(), sf.Dirty() ? " *" : "");
+    ImGui::TextDisabled("%s", sf.path.c_str());
+    SaveState(sf.Dirty(), true);
 
     // The grid as the motif lays it out: [Select Info] rows, columns, cells skipped
     const IniSection *si = MotifSection("select info");

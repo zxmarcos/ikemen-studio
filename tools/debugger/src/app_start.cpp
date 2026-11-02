@@ -67,7 +67,7 @@ static void TourFrame() {
     } steps[] = {
         {"Start a match", "Press Launch at the top left, or F5. The game runs inside this window."},
         {"", ""}, // what the workspace picks
-        {"Change something", "Drag it on the game, or use the button on that line and change a value: the game shows it at once."},
+        {"Change something", "Drag it on the game, or use the button on that line and change a value. Each editor says whether the game has it yet."},
         {"That's all", "Ctrl+S saves. The Select choices on the game pick fighters, stages and screens the same way, and the bar at "
                        "the left changes what you are working on."},
     };

@@ -572,6 +572,11 @@ void LayoutFrame() {
     if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && !io.WantTextInput && !ImGui::GetTopMostPopupModal())
         for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++)
             if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + n), false)) g_spaceAsked = n;
+    // Saves whatever has changes, from any window (Code and Commands then apply them)
+    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_S, false) && !ImGui::GetTopMostPopupModal()) {
+        if (UnsavedList().empty()) Log(LogLine::Info, "Nothing to save.");
+        else SaveAll();
+    }
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu(ICON_FOLDER_OPEN " File")) {

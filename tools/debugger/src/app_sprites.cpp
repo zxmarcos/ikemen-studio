@@ -65,9 +65,10 @@ float UndoButtonsWidth() {
     return ImGui::CalcTextSize(ICON_BACK).x + ImGui::CalcTextSize(ICON_AGAIN).x + style.FramePadding.x * 4 + style.ItemSpacing.x;
 }
 
-int UndoButtons(bool canUndo, bool canRedo) {
+int UndoButtons(bool canUndo, bool canRedo, bool fromGame) {
     ImGuiIO &io = ImGui::GetIO();
-    bool keys = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && io.KeyCtrl;
+    bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || (fromGame && g_gameFocused);
+    bool keys = focused && !io.WantTextInput && io.KeyCtrl;
     ImGui::BeginDisabled(!canUndo);
     bool undo = ImGui::Button(ICON_BACK "##undo");
     ImGui::EndDisabled();
@@ -1000,12 +1001,12 @@ void SpritesWindow() {
         ImGui::TextUnformatted(WorkLabel(pn).c_str());
     ImGui::SameLine();
     size_t slash = sf.path.find_last_of("/\\");
-    ImGui::TextDisabled("· %s%s · %zu sprites", slash == std::string::npos ? sf.path.c_str() : sf.path.c_str() + slash + 1,
-                        dirty ? " *" : "", d.sprites.size());
+    ImGui::TextDisabled("· %s · %zu sprites", slash == std::string::npos ? sf.path.c_str() : sf.path.c_str() + slash + 1, d.sprites.size());
     ImGui::SetItemTooltip("%s: %zu sprites, %zu palettes", sf.path.c_str(), d.sprites.size(), d.pals.size());
     {
         float w = ImGui::CalcTextSize(ICON_SAVE " Save").x + ImGui::CalcTextSize(ICON_REVERT " Revert").x + style.FramePadding.x * 4 +
                   style.ItemSpacing.x * 2 + UndoButtonsWidth();
+        SaveState(dirty, !sf.dirty, w); // the colours reach the game as they change, the sprites with the file
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < w)
             ImGui::NewLine();

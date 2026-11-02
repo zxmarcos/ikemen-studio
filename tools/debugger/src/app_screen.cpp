@@ -556,13 +556,14 @@ static void ScreenWindow(ScreenDef &d) {
     ImGui::SetItemTooltip("The game loads the %s again (from the text here), e.g. after its files changed.", d.what);
     UndoStack<std::string> &history = TrackAnims(sf);
     ImGui::SameLine();
-    if (int step = UndoButtons(history.CanUndo(), history.CanRedo())) {
+    if (int step = UndoButtons(history.CanUndo(), history.CanRedo(), g_screenPick)) {
         sf.text = step < 0 ? history.Undo() : history.Redo();
         Edited(d, sf);
         ImGui::End(); // what was parsed is old
         return;
     }
-    ImGui::TextDisabled("%s%s  %zu elements drawn", sf.path.c_str(), sf.Dirty() ? " *" : "", d.items.size());
+    ImGui::TextDisabled("%s  %zu elements drawn", sf.path.c_str(), d.items.size());
+    SaveState(sf.Dirty(), &d != &g_story || g_storyPlaying);
     if (d.motif && &d != &g_story)
         ImGui::TextDisabled("Some values are read once, when a screen or the game starts: they show then.");
     {

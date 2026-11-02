@@ -83,10 +83,14 @@ int SdlKey(ImGuiKey k) {
     }
 }
 
-// While Game has focus, keys go to the game (but the debugger's F5, F10 and F11).
+bool g_gameFocused;
+
+// While Game has focus, keys go to the game (but the debugger's F5, F10 and F11, and with Ctrl what
+// saves, undoes and changes workspace: the game's own debug keys would take them).
 void ForwardKeys(bool focused) {
     static std::vector<ImGuiKey> held;
     ImGuiIO &io = ImGui::GetIO();
+    g_gameFocused = focused;
     int mods = (io.KeyShift ? 0x1 : 0) | (io.KeyCtrl ? 0x40 : 0) | (io.KeyAlt ? 0x100 : 0); // SDL KMOD_L*
     if (!focused || io.WantTextInput || !g_frameLink.IsOpen()) {
         for (ImGuiKey k : held) g_frameLink.SendKey(SdlKey(k), false, mods);
@@ -98,6 +102,8 @@ void ForwardKeys(bool focused) {
         int sdl = SdlKey(key);
         if (!sdl || key == ImGuiKey_F5 || key == ImGuiKey_F10 || key == ImGuiKey_F11) continue;
         bool down = std::find(held.begin(), held.end(), key) != held.end();
+        if (!down && io.KeyCtrl && (key == ImGuiKey_S || key == ImGuiKey_Z || key == ImGuiKey_Y || (key >= ImGuiKey_1 && key <= ImGuiKey_5)))
+            continue;
         if (ImGui::IsKeyDown(key) && !down) {
             g_frameLink.SendKey(sdl, true, mods);
             held.push_back(key);

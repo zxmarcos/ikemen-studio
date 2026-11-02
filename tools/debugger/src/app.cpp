@@ -225,7 +225,7 @@ bool InstallMod() {
         Log(LogLine::Error, "Could not write " + target);
         return false;
     }
-    Log(LogLine::Info, "Installed the bridge mod: " + target);
+    Log(LogLine::Detail, "Installed the bridge mod: " + target);
     return true;
 }
 
@@ -276,7 +276,9 @@ void Launch(bool menus) {
         Log(LogLine::Error, error);
         return;
     }
-    Log(LogLine::Info, "Started " + s.exe + " " + args + " (pid " + std::to_string(g_bridge.Pid()) + ")");
+    Log(LogLine::Detail, "Started " + s.exe + " " + args + " (pid " + std::to_string(g_bridge.Pid()) + ")");
+    if (size_t n = UnsavedList().size())
+        Log(LogLine::Info, std::to_string(n) + (n == 1 ? " file" : " files") + " not saved: the game starts from what is on disk.");
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +467,7 @@ void OnLine(const Bridge::Line &line) {
         g_ikemenVersion = j["ik"].str();
         g_canTrace = j["trace"].truthy();
         g_canSet = j["set"].truthy();
-        Log(LogLine::Info, "Bridge connected: ikdbg " + g_modVersion + ", Ikemen GO " + g_ikemenVersion +
+        Log(LogLine::Detail, "Bridge connected: ikdbg " + g_modVersion + ", Ikemen GO " + g_ikemenVersion +
                                (g_canTrace ? " (with the debugger patch)" : " (no controller trace: unpatched Ikemen GO)"));
         for (const auto &b : g_breakpoints) SendBreakpoint(b);
         for (const auto &w : g_watches) SendWatchExpr(w);
@@ -631,7 +633,7 @@ void App_Init(bool launch) {
     handler.ReadLineFn = SettingsLine;
     handler.WriteAllFn = SettingsWrite;
     ImGui::AddSettingsHandler(&handler);
-    Log(LogLine::Info, "Ikemen GO debugger. Launch starts the game (its path is in Settings, the gear on the toolbar).");
+    Log(LogLine::Detail, "Ikemen GO debugger. Launch starts the game (its path is in Settings, the gear on the toolbar).");
 }
 
 void App_Poll() {

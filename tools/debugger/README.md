@@ -80,6 +80,16 @@ the others do. Between the two sides of the bar, how the last thing done went, f
 a few seconds: what was saved or applied, in red for a while longer what failed,
 which also stays in Problems; a click shows the whole log in Console.
 
+Each editor says where its changes are, on the line of its file: **in the game, not
+saved** (Animation, Stage, the screens, Roster, Fonts, the colours of a palette: the
+game shows them, but a new match starts from what is on disk), **not in the game
+yet** (Sprites, Sounds, Commands), or **not saved** with the game stopped. Starting
+the game with files not saved says so.
+
+**Ctrl+S** saves everything changed from any window, the Game window too; Ctrl+Z
+and Ctrl+Y there undo what was dragged on the game; Ctrl+1 to Ctrl+5 change
+workspace. None of these reach the game while it has the keyboard.
+
 On the Stage and Screenpack workspaces, Animation and Assets show what the workspace
 is about, not the player that happens to be selected: the stage's or the screen's
 sprites, and a background's or an element's animation once one is picked. A
@@ -92,7 +102,10 @@ the common files (`config.ini` and its `[Common]` files), each with the files
 its def names, found as the engine finds them (a missing one in red). The
 characters in the match are marked P1, P2, the stage playing too. A click
 opens a file in its window (text in Code, an SFF in Sprites, an SND in
-Sounds). A click on a character (or one of its files) makes it the one
+Sounds). With the game stopped, a click on a character makes it the P1 Launch
+starts with; a click on a stage makes it the stage Launch starts on and, with
+the game running, puts it in the match's place at once (the match goes on). A
+character from disk has **Put in the match** in Animation. A click on a character (or one of its files) makes it the one
 **worked on**: Analysis, Animation, Sounds, Commands (its CMD file), Sprites and
 File > New > A move show it,
 read from disk when it is not in the match; a player picked in the game
