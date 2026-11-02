@@ -551,6 +551,15 @@ func editorStageFunctions(l *lua.LState) {
 		}
 		return 0
 	})
+	luaRegister(l, "debugStageEmpty", func(l *lua.LState) int {
+		/*Paint in magenta what nothing draws on, as a stage's debugbg does; a stage read again has its def's.
+		@function debugStageEmpty
+		@tparam bool on*/
+		if debuggerAttached() && sys.stage != nil {
+			sys.stage.debugbg = boolArg(l, 1)
+		}
+		return 0
+	})
 	luaRegister(l, "debugBgFrom", func(l *lua.LState) int {
 		/*Say, before debugReloadMotif or debugReloadStoryboard, which BG each new one of a BGDef was.
 		@function debugBgFrom

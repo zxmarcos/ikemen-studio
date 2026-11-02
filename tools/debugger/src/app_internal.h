@@ -765,6 +765,8 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit, float
 void StageLayersClear();                         // another stage: nothing hidden, alone or locked
 bool StageBgLocked(const IniFile &ini, int index);
 void SendHiddenBgs(const IniFile *ini);          // what the game does not draw; nullptr: it draws everything
+void SendStageEmpty(const IniFile *ini);         // what the game paints in magenta; nullptr: nothing
+bool StageHasModel(const IniFile &ini);          // [BGdef] model = x.glb
 void ShowStageBg(int index);                     // Animation and Sprites show what that BG shows
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked

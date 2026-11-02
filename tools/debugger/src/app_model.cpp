@@ -2689,9 +2689,9 @@ void ModelWindow() {
     bool keys = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && io.KeyCtrl;
     for (int redo = 0; redo < 2; redo++) {
         const auto &steps = redo ? hist.redo : hist.undo;
-        SameLineFits(buttonWidth(redo ? "Redo" : "Undo"));
+        SameLineFits(ImGui::GetFrameHeight());
         ImGui::BeginDisabled(steps.empty());
-        bool go = ImGui::Button(redo ? "Redo" : "Undo");
+        bool go = IconButton(redo ? ICON_AGAIN "##redo" : ICON_BACK "##undo");
         ImGui::EndDisabled();
         if (steps.empty()) ImGui::SetItemTooltip(redo ? "Nothing undone to do again" : "No change to undo");
         else ImGui::SetItemTooltip("%s %s (%s)", redo ? "Do again:" : "Undo:", StepLabel(steps.back()).c_str(), redo ? "Ctrl+Y" : "Ctrl+Z");

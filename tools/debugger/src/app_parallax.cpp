@@ -60,7 +60,40 @@ const std::vector<int> &EmptyAtStops(const std::vector<ParallaxBg> &bgs, const P
     return percent;
 }
 
+// With a model only the game knows what covers the screen: with what shows nothing in magenta, each
+// stop's picture is counted
+struct EmptyScan {
+    int stop = -1; // the one going on, -1 none
+    double since = 0;
+    std::vector<int> percent;
+    std::string text; // the def it was done for
+};
+EmptyScan g_scan;
+
+int MagentaPercent() {
+    size_t count = 0, total = g_frame.pixels.size() / 4;
+    for (size_t n = 0; n + 2 < g_frame.pixels.size(); n += 4)
+        count += g_frame.pixels[n] > 240 && g_frame.pixels[n + 1] < 16 && g_frame.pixels[n + 2] > 240;
+    return total ? (int)std::lround(100.0 * count / total) : 0;
+}
+
 } // namespace
+
+// What the game paints (a model's stage: the def's debugbg, or the marks of the free camera)
+void SendStageEmpty(const IniFile *ini) {
+    bool on = ini && StageHasModel(*ini) && g_showEmpty && g_freeCam;
+    if (ini)
+        for (const IniSection &s : ini->sections)
+            if (s.lower == "bgdef")
+                if (const IniField *f = s.Field("debugbg")) on = on || atoi(f->value.c_str()) != 0;
+    static bool sent;
+    static double at = -100;
+    static unsigned long game;
+    // Again while on: a stage read again has lost it
+    if (!Connected() || (game == g_bridge.Pid() && sent == on && (!on || ImGui::GetTime() - at < 0.5))) return;
+    game = g_bridge.Pid(), sent = on, at = ImGui::GetTime();
+    SendRaw(on ? "debugStageEmpty(true)" : "debugStageEmpty(false)");
+}
 
 ParallaxView StageParallaxView(const IniFile &ini) {
     ParallaxView view = Parallax_ViewOf(ini);
@@ -99,9 +132,11 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
     bool live = StageInMatch() && g_stageView.ok && g_stageView.lim[0] > 0;
     float em = ImGui::GetFontSize();
     ParallaxStop at = live && g_freeCam ? FreeStop() : ParallaxStop{"", 0, 0, 1};
+    bool model = StageHasModel(ini);
 
     if (!live) {
         g_sweeping = false;
+        g_scan.stop = -1;
         ImGui::TextDisabled("Moves the camera on the game: it needs this stage in the match.");
     }
     ImGui::BeginDisabled(!live);
@@ -112,8 +147,12 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
                           "camera and the fighters stay where they are.");
     ImGui::SameLine();
     ImGui::Checkbox("Mark what shows nothing", &g_showEmpty);
-    ImGui::SetItemTooltip("With the camera moved here: in red on the game, the parts of the screen no solid BG draws on.\n"
-                          "A sprite's transparent parts count as drawn on, and BGCtrls are not followed.");
+    if (model)
+        ImGui::SetItemTooltip("With the camera moved here: in magenta on the game, what neither the model nor a BG draws on.\n"
+                              "The game paints it, so its animations count.");
+    else
+        ImGui::SetItemTooltip("With the camera moved here: in red on the game, the parts of the screen no solid BG draws on.\n"
+                              "A sprite's transparent parts count as drawn on, and BGCtrls are not followed.");
     SameLineFits(ImGui::CalcTextSize(ICON_REVERT " Back").x + ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginDisabled(!g_freeCam);
     if (ImGui::Button(ICON_REVERT " Back")) {
@@ -134,7 +173,7 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
     slider("Across", &x, view.left, view.right, "%.0f", "From boundleft to boundright");
     slider("Height", &y, view.high, view.low, "%.0f", "From boundhigh to boundlow");
     slider("Zoom", &scale, view.minScale, 1, "%.2f", "As far out as the camera goes, to no zoom");
-    if (moved) g_sweeping = false;
+    if (moved) g_sweeping = false, g_scan.stop = -1;
     if (g_sweeping && view.right > view.left) {
         x += g_sweepWay * ImGui::GetIO().DeltaTime * (view.right - view.left) / kSweepSeconds;
         if (x >= view.right) x = view.right, g_sweepWay = -1;
@@ -145,9 +184,39 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
 
     // Where the camera shows the most: a click goes there
     std::vector<ParallaxStop> stops = Parallax_Stops(view);
-    const std::vector<int> &empty = EmptyAtStops(bgs, view, sf.text, sprites);
+    std::vector<int> empty = EmptyAtStops(bgs, view, sf.text, sprites);
+    if (model) {
+        if (g_scan.text != sf.text) g_scan = EmptyScan(), g_scan.text = sf.text;
+        bool scanning = g_scan.stop >= 0;
+        ImGui::BeginDisabled(scanning);
+        if (ImGui::Button(scanning ? "Checking..." : ICON_SEARCH " Check the limits")) {
+            g_sweeping = false;
+            g_showEmpty = true;
+            g_scan.percent.clear();
+            g_scan.stop = 0, g_scan.since = ImGui::GetTime();
+            SweepTo(view, stops[0].x, stops[0].y, stops[0].scale);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Takes the camera to each of the places below and counts how much of the picture nothing draws on.");
+        if (scanning && ImGui::GetTime() - g_scan.since > 0.4) {
+            g_scan.percent.push_back(MagentaPercent());
+            g_scan.since = ImGui::GetTime();
+            if (++g_scan.stop < (int)stops.size()) {
+                const ParallaxStop &s = stops[g_scan.stop];
+                SweepTo(view, s.x, s.y, s.scale);
+            } else {
+                g_scan.stop = -1;
+                // It stays where most is missing; with nothing missing, back to the game's camera
+                size_t worst = std::max_element(g_scan.percent.begin(), g_scan.percent.end()) - g_scan.percent.begin();
+                if (g_scan.percent[worst] > 0) SweepTo(view, stops[worst].x, stops[worst].y, stops[worst].scale);
+                else SetFreeCamera(false);
+            }
+        }
+        empty.assign(stops.size(), 0);
+        for (size_t i = 0; i < g_scan.percent.size() && i < empty.size(); i++) empty[i] = g_scan.percent[i];
+    }
     for (size_t i = 0; i < stops.size() && i < empty.size(); i++) {
-        bool worse = empty[i] > empty[0];
+        bool worse = model ? empty[i] > 0 : empty[i] > empty[0];
         // "the camera's left limit, up high": "Left, up high"
         std::string label = i ? stops[i].name.substr(strlen("the camera's ")) : "Start";
         if (size_t at = label.find(" limit"); at != std::string::npos) label.erase(at, strlen(" limit"));
@@ -158,11 +227,12 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
         ImGui::PushID((int)i);
         if (ImGui::Button(label.c_str()) && live) {
             g_sweeping = false;
+            g_scan.stop = -1;
             SweepTo(view, stops[i].x, stops[i].y, stops[i].scale);
         }
         ImGui::PopID();
         if (worse) ImGui::PopStyleColor();
-        ImGui::SetItemTooltip("%s%s", stops[i].name.c_str(), worse ? ": this much of the screen shows no BG" : "");
+        ImGui::SetItemTooltip("%s%s", stops[i].name.c_str(), worse ? ": this much of the screen shows nothing" : "");
     }
     if (!sff) ImGui::TextColored(Ink(kYellow), "The SFF could not be read: nothing is known of the BGs' sizes.");
     ImGui::EndDisabled();
@@ -453,7 +523,8 @@ void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int
 
 void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen) {
     const StageView &v = g_stageView;
-    if (!g_showEmpty || !g_freeCam || !v.ok || v.lim[0] <= 0) return;
+    // A model covers what the BGs do not: there the game paints it (SendStageEmpty)
+    if (!g_showEmpty || !g_freeCam || !v.ok || v.lim[0] <= 0 || StageHasModel(ini)) return;
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     if (!spr || !spr->doc.error.empty()) return;
     ParallaxView view = StageParallaxView(ini);

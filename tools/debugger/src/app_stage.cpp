@@ -505,11 +505,13 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     // What the game draws is the match's stage: another's def has other BGs under the same numbers
     if (!StageInMatch()) {
         SendHiddenBgs(nullptr);
+        SendStageEmpty(nullptr);
         return false;
     }
     SourceFile *sf = StageSource();
     const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
     SendHiddenBgs(ini);
+    SendStageEmpty(ini);
     if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
     ScaleOverlay(draw, toScreen);
     if (ini && FloorOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, *sf, *ini, toScreen)) return true;
@@ -642,8 +644,11 @@ const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini,
         camera = view;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
         const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, sffVersion);
-        std::vector<StageFinding> holes = Parallax_Check(ini, bgs, view);
-        found.insert(found.end(), holes.begin(), holes.end());
+        // A model may cover what the BGs leave: the Camera tab's Check the limits sees that
+        if (!StageHasModel(ini)) {
+            std::vector<StageFinding> holes = Parallax_Check(ini, bgs, view);
+            found.insert(found.end(), holes.begin(), holes.end());
+        }
         if (sff) {
             std::vector<StageFinding> seams = Parallax_Seams(bgs, *sff);
             found.insert(found.end(), seams.begin(), seams.end());
@@ -654,6 +659,12 @@ const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini,
     }
     if (sffRead) *sffRead = read;
     return found;
+}
+
+bool StageHasModel(const IniFile &ini) {
+    for (const IniSection &s : ini.sections)
+        if (s.lower == "bgdef" && s.Field("model")) return true;
+    return false;
 }
 
 std::string SettingsStageDef() {
@@ -867,10 +878,6 @@ static bool OfCamera(const IniSection &s) { return s.lower == "camera" || s.lowe
 static void StageTab(SourceFile &sf, const IniFile &ini, int *selected, bool live) {
     std::vector<int> bgs = ini.StageBgs(), ctrls = ini.StageBgCtrls();
     const StageView &sv = g_stageView;
-    bool hasModel = false;
-    for (const IniSection &s : ini.sections)
-        if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
-    ModelSection(hasModel);
     float height = ImGui::GetContentRegionAvail().y * 0.4f;
     if (ImGui::BeginChild("sections", ImVec2(0, height), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY)) {
         for (int i = 0; i < (int)ini.sections.size(); i++) {
@@ -973,6 +980,8 @@ void StageWindow() {
         ImGui::TextDisabled("%s  %zu BGs, %zu BGCtrls", sf.path.c_str(), bgs.size(), ctrls.size());
         SaveState(sf.Dirty(), false);
     }
+
+    ModelSection(StageHasModel(ini));
 
     // A BG picked on the game, or in the list
     if (g_stageBg != selBg) {
