@@ -234,6 +234,86 @@ void JoinButton(const SourceFile &sf, const IniFile &ini, const ParallaxBg &b) {
     ImGui::EndPopup();
 }
 
+// A field of the section at that line, in a text others may have just changed
+bool SetField(std::string &text, int line, const char *key, const std::string &value) {
+    IniFile parsed;
+    Ini_Parse(text, parsed); // a field added or removed moves what follows
+    for (const IniSection &now : parsed.sections)
+        if (now.line == line) return Ini_SetField(text, now, key, value);
+    return false;
+}
+
+// The BGCtrls a BG blinks by, gone. They are named after its id.
+void RemoveBlink(std::string &text, int id) {
+    std::string name = "blink " + std::to_string(id);
+    for (const char *group : {"BGCtrl", "BGCtrlDef"})
+        for (bool found = true; found;) {
+            found = false;
+            IniFile parsed;
+            Ini_Parse(text, parsed);
+            std::vector<int> sections = parsed.BgsOf(group);
+            for (int n = 0; n < (int)sections.size() && !found; n++)
+                if (parsed.sections[sections[n]].lower.find(name) != std::string::npos) found = Ini_DeleteBg(text, parsed, n, group);
+        }
+}
+
+// Movement that only takes a few fields, by name. Their numbers can be changed in the fields.
+bool MotionButton(SourceFile &sf, const IniFile &ini, const IniSection &s) {
+    struct Motion {
+        const char *label, *tip, *velocity, *sinX, *sinY;
+        bool tile;
+    };
+    static const Motion kMotions[] = {
+        {"Drift", "Scrolls on its own and repeats across, as clouds do.", "0.25, 0", "", "", true},
+        {"Drift slowly", "The same, far away.", "0.1, 0", "", "", true},
+        {"Bob", "Up and down, as water or something floating.", "", "", "2, 120, 0", false},
+        {"Sway", "From side to side, as a flag or a lamp.", "", "4, 240, 0", "", false},
+    };
+    if (ImGui::Button(ICON_PLAY " Motion " ICON_CARET)) ImGui::OpenPopup("motion");
+    ImGui::SetItemTooltip("Makes this layer move on its own: it writes velocity, sin.x or sin.y, or BGCtrls.");
+    if (!ImGui::BeginPopup("motion")) return false;
+    bool edited = false;
+    std::string text = sf.text;
+    const IniField *idField = s.Field("id");
+    int id = idField ? atoi(idField->value.c_str()) : -1;
+    for (const Motion &m : kMotions) {
+        if (ImGui::Selectable(m.label)) {
+            edited = SetField(text, s.line, "velocity", m.velocity) && SetField(text, s.line, "sin.x", m.sinX) &&
+                     SetField(text, s.line, "sin.y", m.sinY);
+            if (edited && m.tile && !s.Field("tile")) edited = SetField(text, s.line, "tile", "1, 0");
+        }
+        ImGui::SetItemTooltip("%s", m.tip);
+    }
+    if (ImGui::Selectable("Blink")) {
+        // A BGCtrl acts on a BG by id: one no BG has, when this one has none
+        if (id <= 0) {
+            id = 1;
+            for (int bg : ini.StageBgs())
+                if (const IniField *f = ini.sections[bg].Field("id")) id = std::max(id, atoi(f->value.c_str()) + 1);
+            SetField(text, s.line, "id", std::to_string(id));
+        }
+        RemoveBlink(text, id);
+        std::string name = "Blink " + std::to_string(id);
+        if (!text.empty() && text.back() != '\n') text += "\n";
+        text += "\n[BGCtrlDef " + name + "]\nctrlid = " + std::to_string(id) + "\nlooptime = 60\n\n[BGCtrl " + name +
+                " on]\ntype = Visible\ntime = 0\nvalue = 1\n\n[BGCtrl " + name + " off]\ntype = Visible\ntime = 30\nvalue = 0\n";
+        edited = true;
+    }
+    ImGui::SetItemTooltip("On for half a second, off for half a second, as a light: two BGCtrls at the end of the def.");
+    ImGui::Separator();
+    if (ImGui::Selectable("Stop")) {
+        edited = SetField(text, s.line, "velocity", "") && SetField(text, s.line, "sin.x", "") && SetField(text, s.line, "sin.y", "");
+        if (id > 0) RemoveBlink(text, id);
+    }
+    ImGui::SetItemTooltip("No velocity, no sin, no Blink.");
+    ImGui::EndPopup();
+    if (edited) {
+        sf.text = text;
+        StageEdited(sf);
+    }
+    return edited;
+}
+
 // Making a BG a floor, or what a floor can do. True when the text changed.
 bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const ParallaxView &view) {
     // A parallax BG without a width is a plain picture: making it a floor gives it one
@@ -248,15 +328,8 @@ bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const P
             s.Floats("start", own, 2);
             float start[2] = {(b.left + b.w / 2) / b.units, own[1]};
             std::string text = sf.text; // all of it, or nothing
-            auto set = [&](const char *key, const std::string &value) {
-                IniFile parsed;
-                Ini_Parse(text, parsed); // a field added moves what follows
-                for (const IniSection &now : parsed.sections)
-                    if (now.line == s.line) return Ini_SetField(text, now, key, value);
-                return false;
-            };
-            if (set("type", "parallax") && set("start", Ini_Floats(start, 2)) &&
-                set("width", std::to_string(top) + ", " + std::to_string(top * 2))) {
+            if (SetField(text, s.line, "type", "parallax") && SetField(text, s.line, "start", Ini_Floats(start, 2)) &&
+                SetField(text, s.line, "width", std::to_string(top) + ", " + std::to_string(top * 2))) {
                 sf.text = text;
                 g_floorHandles = edited = true;
                 StageEdited(sf);
@@ -351,7 +424,11 @@ void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int
     const ParallaxBg *b = BgOf(sf, ini, index);
     ParallaxView view = StageParallaxView(ini);
     if (b && !b->linked && FloorLine(sf, s, *b, view)) return; // what was parsed is old
-    if (b) JoinButton(sf, ini, *b);
+    if (b && MotionButton(sf, ini, s)) return;
+    if (b) {
+        SameLineFits(ImGui::CalcTextSize(ICON_SEARCH " See the join").x + ImGui::GetStyle().FramePadding.x * 2);
+        JoinButton(sf, ini, *b);
+    }
     if (!b || view.right <= view.left) return;
     ImGui::AlignTextToFramePadding();
     if (b->tile[0] == 1) {

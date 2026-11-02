@@ -43,7 +43,7 @@ const std::map<std::string, std::set<std::string>> kSectionKeys = {
 const std::set<std::string> kBgKeys = {
     "actionno", "add", "alpha", "angle", "autoresizeparallax", "color", "ctrlid", "delta", "dest", "id", "invertall",
     "invertblend", "layerno", "loop", "looptime", "mask", "maskwindow", "mul", "path", "positionlink", "projection",
-    "scalefilter", "scalemode", "scaledelta", "scalestart", "sctrlid", "shader.name", "sinadd", "sincolor", "sinhue",
+    "scalefilter", "scalemode", "scaledelta", "scalestart", "sctrlid", "shader.name", "sin.x", "sin.y", "sinadd", "sincolor", "sinhue",
     "sinmul", "source", "spriteno", "start", "startlayer", "tile", "tilespacing", "time", "trans", "type", "value",
     "velocity", "volume", "width", "window", "windowdelta", "x", "xangle", "xbottomzoomdelta", "xscale", "xshear",
     "y", "yangle", "ydelta", "yscale", "yscaledelta", "yscalestart", "zoomdelta", "zoomscaledelta", "focallength",
