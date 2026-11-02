@@ -251,6 +251,7 @@ std::string ExeDir();
 std::string ReadWholeFile(const std::string &path);
 void HelpMarker(const char *text);
 void SameLineFits(float width);         // SameLine when an item this wide still fits the line, else a new line
+bool IconButton(const char *label);     // a button of an icon alone: square, whichever the icon
 float CheckboxWidth(const char *label); // what ImGui::Checkbox takes
 // The windows: the menu bar, each one opened or closed, the layouts (app_layout.cpp)
 bool BeginTool(const char *name, ImGuiWindowFlags flags = 0); // ImGui::Begin; false (End called): closed or hidden

@@ -41,7 +41,7 @@ void SpriteGridSize() {
 bool SpriteGrid(SpriteFile *spf, int &group, int curGroup, int curImage, int *pickGroup, int *pickImage) {
     float em = ImGui::GetFontSize(), cell = em * 5;
     ImGui::SetNextItemWidth(em * 6);
-    ImGui::InputInt("Group", &group);
+    ImGui::InputInt("Group", &group, 0);
     if (!spf) ImGui::TextDisabled("Waiting for the sprites...");
     int col = 0;
     bool picked = false;
@@ -203,13 +203,13 @@ bool SpritePicker(SpriteFile *spf, SpritePicks &p, float height) {
     char all[40];
     snprintf(all, sizeof(all), "All of group %d", has ? p.group : 0);
     ImGui::BeginDisabled(!has);
-    if (ImGui::SmallButton(all) && has) allOf(p.group);
+    if (ImGui::Button(all) && has) allOf(p.group);
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Those chosen in the other groups stay. Ctrl+A does it too.");
     if (has && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false) && !ImGui::IsAnyItemActive()) allOf(p.group);
     ImGui::SameLine();
     ImGui::BeginDisabled(p.sprites.empty());
-    if (ImGui::SmallButton(ICON_XMARK " Clear")) p.sprites.clear();
+    if (ImGui::Button(ICON_XMARK " Clear")) p.sprites.clear();
     ImGui::EndDisabled();
     ImGui::SameLine(0, em);
     int others = (int)std::count_if(p.sprites.begin(), p.sprites.end(), [&](const std::pair<int, int> &s) { return s.first != p.group; });
@@ -255,7 +255,7 @@ static bool ActionCell(SourceFile &sf, int no, SpriteFile *spf, std::string *val
         }
         ImGui::EndChild();
         // Made here: the text only grows at its end, the field's line stays good
-        if (ImGui::SmallButton(ICON_PLUS " A new animation...")) ImGui::OpenPopup("refnew");
+        if (ImGui::Button(ICON_PLUS " A new animation...")) ImGui::OpenPopup("refnew");
         if (ImGui::BeginPopup("refnew")) {
             NewAnim a;
             if (AnimChooser(sf, spf, &a, false)) {
@@ -318,10 +318,10 @@ static void SoundCell(int group, int number, const std::string &path, const std:
     const SndFile *snd = path.empty() || group < 0 ? nullptr : SndAt(path);
     int index = snd ? Snd_Find(*snd, group, number) : -1;
     ImGui::BeginDisabled(index < 0);
-    if (ImGui::SmallButton(ICON_PLAY)) PlayWav(snd->sounds[index].wav);
+    if (IconButton(ICON_PLAY)) PlayWav(snd->sounds[index].wav);
     ImGui::SetItemTooltip("Play it");
     ImGui::SameLine(0, 2);
-    if (ImGui::SmallButton(ICON_SOUND)) ShowInSounds(path, index, what);
+    if (IconButton(ICON_SOUND)) ShowInSounds(path, index, what);
     ImGui::SetItemTooltip("Show it in Sounds");
     ImGui::EndDisabled();
     if (snd && index < 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

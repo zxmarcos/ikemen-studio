@@ -158,7 +158,7 @@ void MoveDialog() {
     ImGui::InputInt("action", &m.action, 0);
     if (m.action != m.state) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("the state's number")) m.action = m.state;
+        if (ImGui::Button("the state's number")) m.action = m.state;
     }
     std::string airPath = CharFile(pn, "anim");
     SourceFile *air = airPath.empty() ? nullptr : &LoadSource(airPath);
@@ -194,7 +194,7 @@ void MoveDialog() {
         ImGui::Text("%zu elements, %d ticks%s", a.elems.size(), ticks, endless ? " and one that lasts" : "");
         if (m.hitElem) ImGui::Text("hits from element %d (its first hit box)", m.hitElem);
         else ImGui::TextColored(Ink(kYellow), "no hit box (Clsn1): it hits nothing until one is drawn");
-        if (ImGui::SmallButton("Animation window")) {
+        if (ImGui::Button("Animation window")) {
             g_animAction = m.action, g_animElem = m.hitElem ? m.hitElem : 1, g_animFollow = false;
             ShowWindow("Animation");
             ImGui::CloseCurrentPopup();
@@ -214,7 +214,7 @@ void MoveDialog() {
         const SndFile *snd = SndOf(pn);
         int i = snd ? Snd_Find(*snd, m.snd[0], m.snd[1]) : -1;
         ImGui::BeginDisabled(i < 0);
-        if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(snd->sounds[i].wav);
+        if (ImGui::Button(ICON_PLAY " Play")) PlayWav(snd->sounds[i].wav);
         ImGui::EndDisabled();
         if (snd && i < 0) {
             ImGui::SameLine();
@@ -235,7 +235,7 @@ void MoveDialog() {
     ImGui::SameLine();
     ImGui::Checkbox("with control", &f.ctrl);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Commands window")) {
+    if (ImGui::Button("Commands window")) {
         ShowWindow("Commands");
         ImGui::CloseCurrentPopup();
     }
@@ -854,11 +854,11 @@ void StageDialog() {
         ImGui::DragFloat("delta", &l.delta, 0.01f, 0.0f, 2.0f, "%.2f");
         ImGui::SameLine();
         ImGui::BeginDisabled(i == 0);
-        if (ImGui::ArrowButton("up", ImGuiDir_Up)) up = i;
+        if (IconButton(ICON_UP "##up")) up = i;
         ImGui::EndDisabled();
         ImGui::SetItemTooltip("Further back");
         ImGui::SameLine();
-        if (ImGui::SmallButton("Remove")) remove = i;
+        if (ImGui::Button("Remove")) remove = i;
         ImGui::EndGroup();
         ImGui::PopID();
     }
@@ -882,7 +882,7 @@ void StageDialog() {
     ImGui::SetNextItemWidth(em * 14);
     ImGui::InputTextWithHint("music", "none", &f.music);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Browse...")) {
+    if (ImGui::Button("Browse...")) {
         std::vector<std::string> picked = PickFiles("Music (*.mp3;*.ogg;*.mid;*.wav;*.flac;*.mod;*.xm;*.it;*.s3m)\0"
                                                     "*.mp3;*.ogg;*.mid;*.midi;*.wav;*.flac;*.mod;*.xm;*.it;*.s3m\0"
                                                     "All files (*.*)\0*.*\0",

@@ -534,13 +534,15 @@ void SameLineFits(float width) {
     if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= right) ImGui::SameLine();
 }
 
+bool IconButton(const char *label) { return ImGui::Button(label, ImVec2(ImGui::GetFrameHeight(), 0)); }
+
 float CheckboxWidth(const char *label) {
     return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(label, nullptr, true).x;
 }
 
 void HelpMarker(const char *text) {
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    ImGui::TextDisabled(ICON_HELP);
     if (ImGui::BeginItemTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
         ImGui::TextUnformatted(text);

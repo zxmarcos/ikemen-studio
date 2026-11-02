@@ -153,9 +153,10 @@ void GoToLine() {
     } else if (!g_held.empty()) {
         std::string held = std::string("Held on ") + LabelOf(g_held);
         SameLineFits(ImGui::CalcTextSize(held.c_str()).x);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(Ink(kYellow), "%s", held.c_str());
         SameLineFits(ImGui::CalcTextSize(ICON_PLAY " Let it go on").x + ImGui::GetStyle().FramePadding.x * 2);
-        if (ImGui::SmallButton(ICON_PLAY " Let it go on")) SendRaw("ikdbg.letGo()");
+        if (ImGui::Button(ICON_PLAY " Let it go on")) SendRaw("ikdbg.letGo()");
         ImGui::SetItemTooltip("The game goes on from this screen");
     }
 }

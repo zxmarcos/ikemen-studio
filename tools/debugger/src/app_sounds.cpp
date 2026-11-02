@@ -295,15 +295,18 @@ void SoundsWindow() {
                 ImGui::PushID(i);
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                if (ImGui::SmallButton(ICON_PLAY " Play")) PlayWav(s.wav);
+                if (ImGui::Button(ICON_PLAY " Play")) PlayWav(s.wav);
                 ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
                 char label[48];
                 snprintf(label, sizeof(label), "%d, %d", s.group, s.number);
                 if (ImGui::Selectable(label, sf.sel == i, ImGuiSelectableFlags_SpanAllColumns)) sf.sel = i;
                 if (g_soundsScroll && sf.sel == i) ImGui::SetScrollHereY(), g_soundsScroll = false;
                 ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
                 ImGui::Text("%.2f s", info.Seconds());
                 ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
                 if (ok)
                     ImGui::TextDisabled("%u Hz, %u bits, %s", info.rate, info.bits, info.channels == 1 ? "mono" : "stereo");
                 else

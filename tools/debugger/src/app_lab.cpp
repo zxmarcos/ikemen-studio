@@ -106,7 +106,7 @@ void RunsView(const Take &t, int at) {
                                                : none ? ImVec4(0.3f, 0.3f, 0.3f, 0.5f)
                                                       : ImVec4(0.25f, 0.4f, 0.7f, 0.8f));
         ImGui::PushID((int)i);
-        ImGui::SmallButton(label);
+        ImGui::Button(label);
         ImGui::PopID();
         ImGui::PopStyleColor();
         ImGui::SetItemTooltip("Ticks %d to %d: %s held for %d", tick + 1, tick + t.runs[i + 1],
@@ -252,6 +252,7 @@ void TakesSection() {
         ImGui::InputText("##name", &t.name);
         ImGui::SetItemTooltip("Recorded as P%d%s%s", t.pn, t.chr.empty() ? "" : " with ", t.chr.c_str());
         ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("%d", t.Ticks());
         ImGui::TableNextColumn();
         RunsView(t, g_lab.play && g_playing == (int)n ? g_lab.at - 1 : -1);
@@ -261,7 +262,7 @@ void TakesSection() {
             if (pn > 1) ImGui::SameLine();
             char label[8];
             snprintf(label, sizeof(label), "P%d", pn);
-            if (ImGui::SmallButton(label)) {
+            if (ImGui::Button(label)) {
                 char head[96];
                 snprintf(head, sizeof(head), "ikdbg.play(%d, {%s}, %s, ", pn, RunsList(t.runs).c_str(),
                          g_loop ? "true" : "false");
@@ -273,7 +274,7 @@ void TakesSection() {
         }
         ImGui::EndDisabled();
         ImGui::TableNextColumn();
-        bool del = ImGui::SmallButton(ICON_XMARK);
+        bool del = IconButton(ICON_XMARK);
         ImGui::SetItemTooltip("Delete this take");
         if (del) {
             g_takes.erase(g_takes.begin() + n);
@@ -296,7 +297,7 @@ void CharactersSection() {
     static std::vector<std::string> list;
     static std::string filter, picked;
     static bool listed;
-    if (!listed || ImGui::SmallButton(ICON_RESTART " Look again")) list = ListDefs(false), listed = true;
+    if (!listed || ImGui::Button(ICON_RESTART " Look again")) list = ListDefs(false), listed = true;
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
     ImGui::InputTextWithHint("##filter", "filter", &filter);

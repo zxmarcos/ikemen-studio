@@ -343,7 +343,7 @@ void ActionList(SourceFile &sf) {
         if (ImGui::Selectable(row, shown)) AnimOpenFile(sf.path, no);
         if (!a.name.empty()) ImGui::SetItemTooltip("%s", a.name.c_str());
     }
-    if (ImGui::SmallButton(ICON_PLUS " New##animlist")) AnimOpenFile(sf.path, -1);
+    if (ImGui::Button(ICON_PLUS " New##animlist")) AnimOpenFile(sf.path, -1);
     ImGui::SetItemTooltip("Shows this file's animations in Animation: its Action menu makes a new one");
 }
 
@@ -546,15 +546,16 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         char zoom[16];
         snprintf(zoom, sizeof(zoom), "%.0f%%", k * 100);
         float w = ImGui::CalcTextSize(zoom).x + ImGui::CalcTextSize("Fit").x + ImGui::GetStyle().FramePadding.x * 2 +
-                  ImGui::GetStyle().ItemSpacing.x * 2 + ImGui::CalcTextSize("(?)").x;
+                  ImGui::GetStyle().ItemSpacing.x * 2 + ImGui::CalcTextSize(ICON_HELP).x;
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x < w)
             ImGui::NewLine();
         else
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - w);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("%s", zoom);
         ImGui::SameLine();
-        if (ImGui::SmallButton("Fit")) refit = true;
+        if (ImGui::Button("Fit")) refit = true;
         ImGui::SetItemTooltip("The whole action in view (double click on the preview does it too)");
         HelpMarker(boxes ? "Drag boxes: drag an edge, a corner or the inside of a box to change it; the arrow keys move "
                            "the box under the mouse (Shift: by 10). Drag sprite: drag anywhere to move the sprite; the "
@@ -568,6 +569,7 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         const ImGuiStyle &style = ImGui::GetStyle();
         float radio = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x;
         SameLineFits(ImGui::CalcTextSize("Drag: boxes sprite").x + radio * 2 + style.ItemSpacing.x * 2);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("Drag:");
         ImGui::SameLine();
         ImGui::RadioButton("boxes##drag", &g_animDrag, 0);
@@ -576,12 +578,13 @@ bool AnimPreview(const AnimTarget &t, SpriteFile *spf, bool boxes, float height)
         ImGui::RadioButton("sprite##drag", &g_animDrag, 1);
         ImGui::SetItemTooltip("A drag moves the element's sprite (its offset from the axis)");
         SameLineFits(ImGui::CalcTextSize("Draw: Hit box Hurt box").x + style.FramePadding.x * 4 + style.ItemSpacing.x * 2);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("Draw:");
         for (int g = 1; g <= 2; g++) {
             ImGui::SameLine();
             bool on = g_boxDraw == g;
             if (on) ImGui::PushStyleColor(ImGuiCol_Button, g == 1 ? IM_COL32(200, 50, 50, 255) : IM_COL32(50, 100, 220, 255));
-            if (ImGui::SmallButton(g == 1 ? "Hit box" : "Hurt box")) g_boxDraw = on ? 0 : g;
+            if (ImGui::Button(g == 1 ? "Hit box" : "Hurt box")) g_boxDraw = on ? 0 : g;
             if (on) ImGui::PopStyleColor();
             ImGui::SetItemTooltip(g == 1 ? "A drag on the preview draws a box that hits (Clsn1); a right click stops" : "A drag on the preview draws a box that can be hit (Clsn2); a right click stops");
         }
@@ -1046,27 +1049,27 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     if (several) snprintf(title, sizeof(title), "Element %d of %d, %d selected", t.elem, count, (int)group.size());
     else snprintf(title, sizeof(title), "Element %d of %d", t.elem, count);
     ImGui::SeparatorText(title);
-    if (ImGui::SmallButton(ICON_PLUS " Add...")) AskElems(group.back());
+    if (ImGui::Button(ICON_PLUS " Add...")) AskElems(group.back());
     ImGui::SetItemTooltip("New elements after this one: their sprites, one or several");
     flow("Duplicate");
-    if (ImGui::SmallButton(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, act, group)) goTo = group.back() + 2;
+    if (ImGui::Button(ICON_COPY " Duplicate") && Air_DuplicateElems(sf.text, act, group)) goTo = group.back() + 2;
     flow("Delete");
     ImGui::BeginDisabled(count <= (int)group.size());
-    if (ImGui::SmallButton(ICON_TRASH " Delete") && Air_DeleteElems(sf.text, act, group)) goTo = std::max(1, group[0]);
+    if (ImGui::Button(ICON_TRASH " Delete") && Air_DeleteElems(sf.text, act, group)) goTo = std::max(1, group[0]);
     ImGui::EndDisabled();
-    flow("<");
+    flow(ICON_LEFT);
     ImGui::BeginDisabled(index == 0 || several);
-    if (ImGui::SmallButton("<") && Air_MoveElem(sf.text, act, index, -1)) goTo = t.elem - 1;
+    if (IconButton(ICON_LEFT) && Air_MoveElem(sf.text, act, index, -1)) goTo = t.elem - 1;
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Move it earlier");
     ImGui::SameLine(0, 2);
     ImGui::BeginDisabled(index == count - 1 || several);
-    if (ImGui::SmallButton(">") && Air_MoveElem(sf.text, act, index, 1)) goTo = t.elem + 1;
+    if (IconButton(ICON_RIGHT) && Air_MoveElem(sf.text, act, index, 1)) goTo = t.elem + 1;
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Move it later");
     bool loopHere = act.loopStart == index;
     flow(loopHere ? "No loop" : "Loop here");
-    if (ImGui::SmallButton(loopHere ? "No loop" : "Loop here") && Air_SetLoopStart(sf.text, act, loopHere ? -1 : index))
+    if (ImGui::Button(loopHere ? "No loop" : "Loop here") && Air_SetLoopStart(sf.text, act, loopHere ? -1 : index))
         goTo = t.elem;
     ImGui::SetItemTooltip(loopHere ? "The action loops from here: make it loop from the start" : "Make the action loop from here (LoopStart)");
     if (goTo) return true;
@@ -1178,7 +1181,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
         const char *fields[] = {"Offset", "Time", "Flip", "Blend", "Scale", "Angle"};
         for (int f = 0; f < 6; f++) {
             if (f) flow(fields[f]);
-            if (!ImGui::SmallButton(fields[f])) continue;
+            if (!ImGui::Button(fields[f])) continue;
             for (int i : group) {
                 const AirElem &e = act.elems[i];
                 if (i == index) continue;
@@ -1204,7 +1207,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
             const char *label = boxes ? "Move boxes" : "Move offsets";
             if (boxes) flow(label);
             else ImGui::SameLine();
-            if (!ImGui::SmallButton(label)) continue;
+            if (!ImGui::Button(label)) continue;
             std::set<int> done; // boxes elements share, once
             for (int i : group) {
                 const AirElem &e = act.elems[i];
@@ -1231,7 +1234,7 @@ static bool ElementPanel(const AnimTarget &t, bool screen, SpriteFile *spf, cons
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("Line %d", el.line);
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_CODE " Show in Code")) CodeShowLine(sf.path, el.line);
+    if (ImGui::Button(ICON_CODE " Show in Code")) CodeShowLine(sf.path, el.line);
 
     // The boxes: Clsn2, then Clsn1
     for (int g = 1; g >= 0 && !screen; g--) {
@@ -1586,7 +1589,7 @@ void AnimationWindow() {
         ImGui::TextColored(Ink(kOrange), "from disk");
         ImGui::SetItemTooltip("Not in the match: its AIR file edited from disk. Put the character in the match to see it on the game.");
         ImGui::SameLine();
-        if (ImGui::SmallButton(Connected() ? ICON_PLAY " Put in the match" : ICON_PLAY " Launch with it")) PlayCharacter(CharFile(kDiskPn, "def"));
+        if (ImGui::Button(Connected() ? ICON_PLAY " Put in the match" : ICON_PLAY " Launch with it")) PlayCharacter(CharFile(kDiskPn, "def"));
         ImGui::SetItemTooltip(Connected() ? "The match starts again with it as P1." : "The game starts with it as P1.");
     } else {
         ImGui::Text("%s  %s", Who(t.e->pn, t.e->helper, t.e->id).c_str(), t.e->name.c_str());
@@ -1645,13 +1648,13 @@ void AnimationWindow() {
     if (ImGui::InputInt("##action", &g_animAction, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue)) g_animFollow = false;
     const AirFile &air = AirOf(sf);
     ImGui::SameLine(0, 2);
-    if (ImGui::ArrowButton("##prevact", ImGuiDir_Left)) {
+    if (IconButton(ICON_LEFT "##prevact")) {
         auto it = air.actions.lower_bound(g_animAction);
         if (it != air.actions.begin()) g_animAction = std::prev(it)->first, g_animElem = 1, g_animFollow = false;
     }
     ImGui::SetItemTooltip("The action before");
     ImGui::SameLine(0, 2);
-    if (ImGui::ArrowButton("##nextact", ImGuiDir_Right)) {
+    if (IconButton(ICON_RIGHT "##nextact")) {
         auto it = air.actions.upper_bound(g_animAction);
         if (it != air.actions.end()) g_animAction = it->first, g_animElem = 1, g_animFollow = false;
     }
@@ -1963,7 +1966,7 @@ void AnimationWindow() {
         auto listed = air.actions.find(g_animAction);
         if (listed != air.actions.end() && listed->second.copyOf >= 0) {
             ImGui::Text("Action %d is a copy of action %d (Copy Action): the game shows that one's elements.", g_animAction, listed->second.copyOf);
-            if (ImGui::SmallButton("Go to it")) g_animAction = listed->second.copyOf, g_animElem = 1, g_animFollow = false;
+            if (ImGui::Button("Go to it")) g_animAction = listed->second.copyOf, g_animElem = 1, g_animFollow = false;
             ImGui::End();
             return;
         }

@@ -928,7 +928,7 @@ void DragModeButtons() {
         if (k) ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x);
         bool on = g_dragMode == k;
         if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::SmallButton(names[k])) g_dragMode = k;
+        if (ImGui::Button(names[k])) g_dragMode = k;
         if (on) ImGui::PopStyleColor();
         ImGui::SetItemTooltip("%s", tips[k]);
     }
@@ -1274,20 +1274,20 @@ void KeyInspector(int a, float lw) {
                           kPaths[std::clamp(c->path, 0, 2)])
                              .c_str());
     ImGui::BeginDisabled(k == 0);
-    if (ImGui::ArrowButton("##prev", ImGuiDir_Left)) GoToKey(a, *c, k - 1);
+    if (IconButton(ICON_LEFT "##prev")) GoToKey(a, *c, k - 1);
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("The key before");
     ImGui::SameLine();
     ImGui::BeginDisabled(k + 1 >= (int)c->in.size());
-    if (ImGui::ArrowButton("##next", ImGuiDir_Right)) GoToKey(a, *c, k + 1);
+    if (IconButton(ICON_RIGHT "##next")) GoToKey(a, *c, k + 1);
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("The key after");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Go to it")) GoToKey(a, *c, k);
+    if (ImGui::Button("Go to it")) GoToKey(a, *c, k);
     ImGui::SetItemTooltip("The animation put at its time");
     ImGui::SameLine();
     ImGui::BeginDisabled(c->in.size() < 2);
-    bool del = ImGui::SmallButton(ICON_TRASH " Delete");
+    bool del = ImGui::Button(ICON_TRASH " Delete");
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("A channel keeps one key at least");
     if (del) {
@@ -1372,7 +1372,7 @@ void KeysPanel(int a, float lw) {
     if (any) {
         char label[96];
         snprintf(label, sizeof(label), "Key %s at %.2f s", NodeName(selNode).c_str(), an.time);
-        if (ImGui::SmallButton(label))
+        if (ImGui::Button(label))
             for (Channel &c : *chs)
                 if (c.node == selNode && KeyAt(c, an.time) < 0) {
                     RecordKeys(a, c.sampler);
@@ -1593,19 +1593,20 @@ void NodeInspector(int i, float lw) {
     ModelView &m = View();
     ModelView::Node &n = m.nodes[i];
     float em = ImGui::GetFontSize();
+    ImGui::AlignTextToFramePadding();
     ImGui::Text("%s", NodeName(i).c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("node %d", i);
     if (n.parent >= 0) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(("Parent: " + NodeName(n.parent)).c_str())) SelectNode(n.parent, true);
+        if (ImGui::Button(("Parent: " + NodeName(n.parent)).c_str())) SelectNode(n.parent, true);
     }
     bool visible = n.visible;
     if (ImGui::Checkbox("Visible", &visible)) SetVisible(i, visible, false);
     ImGui::SetItemTooltip(g_isLive ? "Until the round starts again; not saved." : "In the preview; not saved.");
     if (!n.children.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(n.visible ? "Hide with its children" : "Show with its children")) SetVisible(i, !n.visible, true);
+        if (ImGui::Button(n.visible ? "Hide with its children" : "Show with its children")) SetVisible(i, !n.visible, true);
     }
 
     ImGui::SeparatorText("Transform");
@@ -1665,9 +1666,10 @@ void NodeInspector(int i, float lw) {
         for (size_t p = 0; p < me.prims.size(); p++) {
             ImGui::PushID((int)p);
             int mat = me.prims[p].material;
+            ImGui::AlignTextToFramePadding();
             ImGui::Bullet();
             if (mat >= 0) {
-                if (ImGui::SmallButton(MaterialName(mat).c_str())) Select(kMaterial, mat);
+                if (ImGui::Button(MaterialName(mat).c_str())) Select(kMaterial, mat);
                 ImGui::SetItemTooltip("Edit the material");
             } else {
                 ImGui::TextDisabled("no material (not drawn)");
@@ -1767,7 +1769,7 @@ void LightInspector(int i, float lw) {
     for (int n = 0; n < (int)View().nodes.size(); n++)
         if (View().nodes[n].light == i) {
             ImGui::PushID(n);
-            if (ImGui::SmallButton(("Its node: " + NodeName(n)).c_str())) SelectNode(n, true);
+            if (ImGui::Button(("Its node: " + NodeName(n)).c_str())) SelectNode(n, true);
             ImGui::PopID();
         }
 }
@@ -2572,7 +2574,7 @@ void ModelSection(bool stageHasModel) {
     else
         ImGui::TextDisabled("3D model");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Open the Model window")) {
+    if (ImGui::Button("Open the Model window")) {
         g_wanted.clear();
         ShowWindow("Model");
     }
@@ -2711,7 +2713,7 @@ void ModelWindow() {
     }
     if (!g_wanted.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("The stage's model")) g_wanted.clear();
+        if (ImGui::Button("The stage's model")) g_wanted.clear();
         ImGui::SetItemTooltip("Show the model of the stage (the match's, else the toolbar's) instead of this file");
     }
 

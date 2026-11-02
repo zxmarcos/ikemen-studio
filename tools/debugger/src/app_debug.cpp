@@ -48,6 +48,7 @@ void MatchesPopup() {
         const SavedMatch &m = g_matches[i];
         ImGui::PushID((int)i);
         bool current = m.p1 == s.p1 && m.p2 == s.p2 && m.stage == s.stage && m.ai1 == s.ai1 && m.ai2 == s.ai2;
+        ImGui::AlignTextToFramePadding();
         if (ImGui::Selectable(m.name.c_str(), current, ImGuiSelectableFlags_AllowOverlap, ImVec2(em * 16, 0))) {
             s.p1 = m.p1, s.p2 = m.p2, s.stage = m.stage, s.ai1 = m.ai1, s.ai2 = m.ai2;
             ImGui::MarkIniSettingsDirty();
@@ -55,7 +56,7 @@ void MatchesPopup() {
         ImGui::SetItemTooltip("P1 %s%s, P2 %s%s, stage %s", m.p1.c_str(), m.ai1 ? " (AI)" : "", m.p2.c_str(),
                               m.ai2 ? " (AI)" : "", m.stage.c_str());
         ImGui::SameLine();
-        bool del = ImGui::SmallButton(ICON_XMARK);
+        bool del = IconButton(ICON_XMARK);
         ImGui::SetItemTooltip("Forget it");
         ImGui::PopID();
         if (del) {
@@ -172,7 +173,7 @@ void Toolbar() {
     ImGui::SameLine();
     if (ImGui::Button(ICON_STEP " Step (F10)")) SendRaw("ikdbg.step(1)");
     ImGui::SameLine();
-    if (ImGui::Button(ICON_ELLIPSIS)) ImGui::OpenPopup("more");
+    if (IconButton(ICON_ELLIPSIS)) ImGui::OpenPopup("more");
     ImGui::SetItemTooltip("More: speed, ten ticks at once, save and load state, reset the round");
     if (ImGui::BeginPopup("more")) {
         static float speed = 1;
@@ -214,13 +215,13 @@ void Toolbar() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(Ink(kRed), "%s", g_breakText.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton(ICON_XMARK "##break")) g_breakText.clear();
+        if (IconButton(ICON_XMARK "##break")) g_breakText.clear();
         ImGui::SetItemTooltip("Dismiss");
     }
 
     // The rest of the session
     flow(em * 6);
-    if (ImGui::Button(ICON_GEAR)) ImGui::OpenPopup("session");
+    if (IconButton(ICON_GEAR)) ImGui::OpenPopup("session");
     ImGui::SetItemTooltip("Settings: the game's executable, extra flags, connection state");
     if (ImGui::BeginPopup("session")) {
         ImGui::SetNextItemWidth(em * 28);
@@ -720,7 +721,7 @@ static void TicksTable(std::deque<FrameRow> &rows) {
     static bool onlyChanges = false;
     ImGui::Checkbox("Only ticks with a state change or a hit", &onlyChanges);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear")) rows.clear();
+    if (ImGui::Button("Clear")) rows.clear();
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
     if (g_canTrace) {
@@ -789,7 +790,7 @@ void TraceWindow() {
     ImGui::SameLine();
     ImGui::Checkbox("Follow", &follow);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear")) g_trace.clear();
+    if (ImGui::Button("Clear")) g_trace.clear();
 
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
     if (ImGui::BeginTable("trace", 3, flags)) {
@@ -819,7 +820,7 @@ void TraceWindow() {
                 if (t.hitdefSrc) {
                     const Source &s = g_sources[t.hitdefSrc];
                     ImGui::PushID((int)n);
-                    if (ImGui::SmallButton(s.type.c_str())) {
+                    if (ImGui::TextLink(s.type.c_str())) {
                         g_codeFile = s.file;
                         g_codeLine = g_codeScrollTo = s.line;
                         g_codeHold = true;
@@ -895,14 +896,17 @@ void BreakpointsWindow() {
             ImGui::TableNextColumn();
             if (ImGui::Checkbox("##on", &b.enabled) && Connected()) SendBreakpoint(b);
             ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
             for (int k = 0; k < IM_ARRAYSIZE(targetValues); k++)
                 if (targetValues[k] == b.target) ImGui::TextUnformatted(targets[k]);
             ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(b.cond.c_str());
             ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
             ImGui::Text("%d", b.hits);
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
+            if (ImGui::Button(ICON_TRASH " Delete")) {
                 if (Connected()) SendRaw("ikdbg.brkDel(" + std::to_string(b.bid) + ")");
                 g_breakpoints.erase(g_breakpoints.begin() + n);
                 ImGui::PopID();
@@ -933,6 +937,7 @@ void BreakpointsWindow() {
             ImGui::TableNextColumn();
             char where[300];
             snprintf(where, sizeof(where), "%s:%d", b.file.c_str(), b.line);
+            ImGui::AlignTextToFramePadding();
             if (ImGui::Selectable(where)) {
                 g_codeFile = b.file;
                 g_codeLine = g_codeScrollTo = b.line;
@@ -944,9 +949,10 @@ void BreakpointsWindow() {
             ImGui::SetItemTooltip("Lua over Ikemen's triggers, read after the tick on the one that ran the "
                                   "controller:\n  var(3) == 2   stateNo() == 200 and time() > 4");
             ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
             ImGui::Text("%d", b.hits);
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
+            if (ImGui::Button(ICON_TRASH " Delete")) {
                 if (Connected()) SendCtrlBreak(b, false);
                 g_ctrlBreaks.erase(g_ctrlBreaks.begin() + n);
                 ImGui::PopID();
@@ -1003,6 +1009,7 @@ void WatchWindow() {
                 SendWatchExpr(w);
             }
             ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
             if (!w.error.empty())
                 ImGui::TextColored(Ink(kRed), "%s", w.error.c_str());
             else if (w.changedTick >= 0 && w.changedTick == g_tick)
@@ -1018,7 +1025,7 @@ void WatchWindow() {
                 ImGui::EndTooltip();
             }
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton(ICON_TRASH " Delete")) {
+            if (ImGui::Button(ICON_TRASH " Delete")) {
                 if (Connected()) SendRaw("ikdbg.exprDel(" + std::to_string(w.n) + ")");
                 g_watches.erase(g_watches.begin() + n);
                 ImGui::PopID();
@@ -1124,7 +1131,7 @@ void ConsoleWindow() {
 
     ImGui::Checkbox("Engine log", &showEngine);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear")) g_log.clear();
+    if (ImGui::Button("Clear")) g_log.clear();
     ImGui::SameLine(0, em * 1.5f);
     ImGui::RadioButton("Lua", &mode, 0);
     ImGui::SameLine();

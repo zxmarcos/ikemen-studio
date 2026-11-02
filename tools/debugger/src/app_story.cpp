@@ -531,7 +531,7 @@ bool StoryPanel(StoryHost &h) {
     }
     if (g.doc.scenes.empty()) {
         ImGui::TextDisabled("This def has no scenes.");
-        if (ImGui::SmallButton(ICON_PLUS " New scene")) g.changed = Story_AddScene(h.sf->text, *h.ini, g.doc, -1);
+        if (ImGui::Button(ICON_PLUS " New scene")) g.changed = Story_AddScene(h.sf->text, *h.ini, g.doc, -1);
         return g.changed;
     }
     if (h.playing && !g.scrubbing) {
@@ -573,7 +573,7 @@ bool StoryPanel(StoryHost &h) {
     ImGui::Text("%s  %d / %d", sc.name.c_str(), g.tick, Story_Length(sc));
     ImGui::SameLine();
     if (!h.playing) {
-        if (ImGui::SmallButton(ICON_TRACE " Play in the game")) {
+        if (ImGui::Button(ICON_TRACE " Play in the game")) {
             g.seekOnStart = true;
             GoToStory(h.sf->path);
         }
@@ -583,7 +583,7 @@ bool StoryPanel(StoryHost &h) {
     }
     SceneStrip(h);
     // New rows
-    if (ImGui::SmallButton(ICON_PLUS " Animation")) ImGui::OpenPopup("newlayer");
+    if (ImGui::Button(ICON_PLUS " Animation")) ImGui::OpenPopup("newlayer");
     ImGui::SetItemTooltip("A new layer showing an animation: of images, of a group's sprites, or one the storyboard has");
     if (ImGui::BeginPopup("newlayer")) {
         NewAnim a;
@@ -600,10 +600,10 @@ bool StoryPanel(StoryHost &h) {
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_PLUS " Text") && !g.changed) g.changed = Story_AddText(h.sf->text, *h.ini, g.doc, g.scene);
+    if (ImGui::Button(ICON_PLUS " Text") && !g.changed) g.changed = Story_AddText(h.sf->text, *h.ini, g.doc, g.scene);
     ImGui::SetItemTooltip("A new layer of text, in the middle of the picture, with the first font of [SceneDef] (it gets one if it has none); black on a light scene");
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_PLUS " Sound")) {
+    if (ImGui::Button(ICON_PLUS " Sound")) {
         int n = 0;
         for (const StorySound &s : sc.sounds) n = std::max(n, atoi(s.key.c_str() + 5) + 1);
         SetField(h, g.scene, "sound" + std::to_string(n) + ".value", "0, 0");
@@ -616,7 +616,7 @@ bool StoryPanel(StoryHost &h) {
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(!h.sf->Dirty());
-    bool save = ImGui::Button(ICON_SAVE "##save");
+    bool save = IconButton(ICON_SAVE "##save");
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Writes the def (Ctrl+S)");
     ImGuiIO &io = ImGui::GetIO();

@@ -15,7 +15,12 @@
 #define ICON_SEARCH "\xef\x80\x82" // magnifying-glass
 #define ICON_GEAR "\xef\x80\x93" // gear
 #define ICON_TRASH "\xef\x8b\xad" // trash-can
-#define ICON_PLUS "\x2b" // plus
+#define ICON_PLUS "\xef\x81\xa7" // plus (its private code: U+2B would be the text font's)
+#define ICON_LEFT "\xef\x81\x93" // chevron-left
+#define ICON_RIGHT "\xef\x81\x94" // chevron-right
+#define ICON_UP "\xef\x81\xb7" // chevron-up
+#define ICON_DOWN "\xef\x81\xb8" // chevron-down
+#define ICON_HELP "\xef\x81\x99" // circle-question
 #define ICON_XMARK "\xef\x80\x8d" // xmark
 #define ICON_CHECK "\xef\x80\x8c" // check
 #define ICON_COPY "\xef\x83\x85" // copy

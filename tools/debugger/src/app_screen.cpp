@@ -443,7 +443,7 @@ static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, siz
     std::string picked;
     if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
     ImGui::TableNextColumn();
-    if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+    if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
     ImGui::SetItemTooltip("Remove this line");
     ImGui::PopID();
     return changed;
@@ -627,9 +627,10 @@ static void ScreenWindow(ScreenDef &d) {
         return;
     }
     const IniSection &s = *sp;
+    ImGui::AlignTextToFramePadding();
     ImGui::Text("[%s]", s.name.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
+    if (ImGui::Button(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = s.line;
         g_codeHold = true;
@@ -701,7 +702,7 @@ static void ScreenWindow(ScreenDef &d) {
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::TableNextColumn();
         ImGui::TableNextColumn();
-        add = ImGui::SmallButton(ICON_PLUS) || add;
+        add = IconButton(ICON_PLUS) || add;
         ImGui::SetItemTooltip("Add this field");
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;

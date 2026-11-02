@@ -166,7 +166,7 @@ void PerformanceWindow() {
         ImGui::SameLine(0, em * 1.5f);
         ImGui::Checkbox("Freeze", &s.frozen);
         ImGui::SameLine();
-        if (ImGui::SmallButton("Clear")) s.frames.clear(), s.lost = 0;
+        if (ImGui::Button("Clear")) s.frames.clear(), s.lost = 0;
         HelpMarker("Measured in the engine while this window is shown: the end of each phase of a frame in the "
                    "match loop. A frame is late when its busy time goes past the line (the frame's time at the "
                    "game's speed); then the next one is not drawn. Run without the debugger's Game window, or "

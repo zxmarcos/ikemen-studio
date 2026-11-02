@@ -415,7 +415,7 @@ static void SelectionLine(bool focused) {
     ImGui::AlignTextToFramePadding();
     auto action = [](const char *label, const char *window) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(label)) ShowWindow(window);
+        if (ImGui::Button(label)) ShowWindow(window);
     };
     if (g_stagePick && !StageInMatch()) {
         ImGui::TextDisabled("The stage open is not in the match: its backgrounds are not on the game.");
@@ -448,7 +448,7 @@ static void SelectionLine(bool focused) {
         } else if (!def.empty()) {
             // Another's: the editors stay on the project until asked
             ImGui::SameLine();
-            if (ImGui::SmallButton((ICON_FOLDER_OPEN " Open " + CharNameOf(def)).c_str())) ProjectOpen(kProjectCharacter, def);
+            if (ImGui::Button((ICON_FOLDER_OPEN " Open " + CharNameOf(def)).c_str())) ProjectOpen(kProjectCharacter, def);
             ImGui::SetItemTooltip("Makes it the project: the editors work on it from now on.");
         }
     } else {

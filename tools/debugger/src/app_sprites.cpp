@@ -70,7 +70,7 @@ void SpritesChanged(SpriteFile &sf) {
 
 float UndoButtonsWidth() {
     const ImGuiStyle &style = ImGui::GetStyle();
-    return ImGui::CalcTextSize(ICON_BACK).x + ImGui::CalcTextSize(ICON_AGAIN).x + style.FramePadding.x * 4 + style.ItemSpacing.x;
+    return ImGui::GetFrameHeight() * 2 + style.ItemSpacing.x;
 }
 
 int UndoButtons(bool canUndo, bool canRedo, bool fromGame) {
@@ -78,12 +78,12 @@ int UndoButtons(bool canUndo, bool canRedo, bool fromGame) {
     bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || (fromGame && g_gameFocused);
     bool keys = focused && !io.WantTextInput && io.KeyCtrl;
     ImGui::BeginDisabled(!canUndo);
-    bool undo = ImGui::Button(ICON_BACK "##undo");
+    bool undo = IconButton(ICON_BACK "##undo");
     ImGui::EndDisabled();
     ImGui::SetItemTooltip(canUndo ? "Undo (Ctrl+Z)" : "No change to undo");
     ImGui::SameLine();
     ImGui::BeginDisabled(!canRedo);
-    bool redo = ImGui::Button(ICON_AGAIN "##redo");
+    bool redo = IconButton(ICON_AGAIN "##redo");
     ImGui::EndDisabled();
     ImGui::SetItemTooltip(canRedo ? "Do again (Ctrl+Y)" : "Nothing undone to do again");
     undo |= keys && canUndo && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z);
@@ -409,13 +409,13 @@ static void SpriteBrowser(SpriteFile &sf, int pn, const PalChoice &view, bool sc
         if (g) ImGui::SameLine(0, 0);
         bool on = grid == (g == 1);
         if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::SmallButton(g ? "Grid" : "List")) grid = g == 1;
+        if (ImGui::Button(g ? "Grid" : "List")) grid = g == 1;
         if (on) ImGui::PopStyleColor();
     }
     ImGui::SameLine();
     float addW = ImGui::CalcTextSize(ICON_PLUS " Add PNG...").x + style.FramePadding.x * 2;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - addW));
-    if (ImGui::SmallButton(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
+    if (ImGui::Button(ICON_PLUS " Add PNG...")) ImGui::OpenPopup("add");
     ImGui::SetItemTooltip("Add sprites made of image files, an export or another SFF");
 
     int fg = -1, fn = -1;
@@ -423,7 +423,7 @@ static void SpriteBrowser(SpriteFile &sf, int pn, const PalChoice &view, bool sc
     std::vector<int> shown;
     for (int i = 0; i < (int)d.sprites.size(); i++)
         if ((fg < 0 || d.sprites[i].group == fg) && (fn < 0 || d.sprites[i].number == fn)) shown.push_back(i);
-    float h = std::max(em * 6, height - ImGui::GetFrameHeightWithSpacing() - ImGui::GetTextLineHeightWithSpacing() * 2);
+    float h = std::max(em * 6, height - ImGui::GetFrameHeightWithSpacing() * 2 - ImGui::GetTextLineHeightWithSpacing());
     if (ImGui::BeginChild("sprites", ImVec2(0, h), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoNavInputs)) {
         int at = (int)(std::find(shown.begin(), shown.end(), sf.sel) - shown.begin());
         float cellW = em * 4.2f, cellH = em * 4.2f + ImGui::GetTextLineHeight(), rowH = std::max(em * 1.9f, ImGui::GetTextLineHeightWithSpacing());
@@ -797,7 +797,7 @@ static void SpritesPanel(SpriteFile &sf, int pn) {
     const char *places[] = {"Feet", "Centre", "Top left"};
     for (int m = 0; m < 3; m++) {
         if (m) ImGui::SameLine();
-        if (ImGui::SmallButton(places[m])) {
+        if (ImGui::Button(places[m])) {
             for (int i : sel) Sff_SetAxis(d.sprites[i], m);
             SpritesChanged(sf);
         }

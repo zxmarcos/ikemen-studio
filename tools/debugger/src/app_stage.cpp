@@ -727,11 +727,12 @@ void StageWindow() {
         SaveState(sf.Dirty(), true);
         int running = 0;
         for (const auto &c : sv.ctrls) running += c.ran;
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("stage time %d", sv.time);
         ImGui::SameLine();
         ImGui::TextDisabled("%zu BGCtrls, %d running", ctrls.size(), running);
         flow("Restart the stage", pad);
-        if (ImGui::SmallButton(ICON_RESTART " Restart the stage")) SendRaw("debugStageReset()");
+        if (ImGui::Button(ICON_RESTART " Restart the stage")) SendRaw("debugStageReset()");
         ImGui::SetItemTooltip("Stage time back to 0, the BGs where they start; the BGCtrls run again from there.");
         if (ctrls.size() != sv.ctrls.size() && !sf.Dirty())
             ImGui::TextColored(Ink(kYellow), "The game has %zu BGCtrls, the def %zu.", sv.ctrls.size(), ctrls.size());
@@ -806,9 +807,10 @@ void StageWindow() {
         return;
     }
     const IniSection &s = ini.sections[selSection];
+    ImGui::AlignTextToFramePadding();
     ImGui::Text("[%s]", s.name.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_CODE " Show in Code")) {
+    if (ImGui::Button(ICON_CODE " Show in Code")) {
         g_codeFile = sf.path;
         g_codeLine = g_codeScrollTo = s.line;
         g_codeHold = true;
@@ -891,7 +893,7 @@ void StageWindow() {
             std::string picked;
             if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
             ImGui::TableNextColumn();
-            if (ImGui::SmallButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
+            if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
             ImGui::SetItemTooltip("Remove this line");
             ImGui::PopID();
         }
@@ -906,7 +908,7 @@ void StageWindow() {
         bool add = ImGui::InputTextWithHint("##nv", "value", &newValue, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::TableNextColumn();
         ImGui::TableNextColumn();
-        add = ImGui::SmallButton(ICON_PLUS) || add;
+        add = IconButton(ICON_PLUS) || add;
         ImGui::SetItemTooltip("Add this field");
         if (add && !changed && !newKey.empty() && !newValue.empty()) {
             std::string key = newKey;

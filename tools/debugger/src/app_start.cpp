@@ -100,7 +100,7 @@ static void TourFrame() {
     ImGui::PopFont();
     ImGui::TextWrapped("%s", g_tour == 1 ? "Click it on the game. The line above the picture says what is selected and where to edit it."
                                          : steps[g_tour].text);
-    if (ImGui::SmallButton(last ? ICON_CHECK " Done" : "Skip")) {
+    if (ImGui::Button(last ? ICON_CHECK " Done" : "Skip")) {
         g_tour = -1;
         g_tourDone = true;
         ImGui::MarkIniSettingsDirty();

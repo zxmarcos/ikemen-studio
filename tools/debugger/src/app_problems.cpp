@@ -109,7 +109,7 @@ void ProblemsWindow() {
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(g_engine.empty());
-    if (ImGui::SmallButton("Clear the engine's")) ClearEngineProblems();
+    if (ImGui::Button("Clear the engine's")) ClearEngineProblems();
     ImGui::EndDisabled();
     ImGui::SameLine();
     HelpMarker("Lint: the project's character (Analysis). Stage: the checks of the stage project. Apply: the last "

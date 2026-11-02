@@ -256,7 +256,7 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
             if (StepChip(steps[i], i, i == pick)) pick = i;
         }
         if (!steps.empty()) ImGui::SameLine(0, em * 0.3f);
-        if (ImGui::Button("+", ImVec2(em * 2, em * 3.4f))) {
+        if (ImGui::Button(ICON_PLUS, ImVec2(em * 2, em * 3.4f))) {
             CmdStep s;
             s.dir = 5; // F
             int at = std::min((int)steps.size(), pick + 1);
@@ -289,19 +289,23 @@ void MotionEditor(SourceFile &sf, const CmdCommand &c, int pn) {
             ImGui::AlignTextToFramePadding();
             ImGui::Text("Step %d", pick + 1);
             ImGui::SameLine();
-            if (ImGui::SmallButton("<") && pick > 0) {
+            bool earlier = IconButton(ICON_LEFT);
+            ImGui::SetItemTooltip("Move the step earlier");
+            if (earlier && pick > 0) {
                 std::swap(steps[pick], steps[pick - 1]);
                 pick--;
                 changed = true;
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton(">") && pick + 1 < (int)steps.size()) {
+            bool later = IconButton(ICON_RIGHT);
+            ImGui::SetItemTooltip("Move the step later");
+            if (later && pick + 1 < (int)steps.size()) {
                 std::swap(steps[pick], steps[pick + 1]);
                 pick++;
                 changed = true;
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton("Delete the step") && steps.size() > 1) {
+            if (ImGui::Button("Delete the step") && steps.size() > 1) {
                 steps.erase(steps.begin() + pick);
                 pick = std::max(0, pick - 1);
                 changed = true;

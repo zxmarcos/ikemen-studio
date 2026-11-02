@@ -658,7 +658,7 @@ void LintTab(Model &m) {
         ImGui::Checkbox(label, &show[i]);
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("Check again")) m.signature = 0;
+    if (ImGui::Button("Check again")) m.signature = 0;
     HelpMarker("Read from the character's state files as the engine compiles them (st, cmd, stcommon, then "
                "config.ini's common states; the first statedef of a number is the one used). Only numbers "
                "written as numbers are checked: an expression is not. Notes: states 200 to 4999 nothing "
@@ -710,7 +710,7 @@ void UseButtons(const Model &m, const std::vector<const VarUse *> &uses, const c
         }
         ImGui::PushID(id);
         ImGui::PushID((int)i);
-        if (ImGui::SmallButton(label)) ShowLine(m, u.file, u.line);
+        if (ImGui::Button(label)) ShowLine(m, u.file, u.line);
         ImGui::PopID();
         ImGui::PopID();
         std::string file = m.files[u.file].path;
@@ -826,7 +826,7 @@ void RenumberPopup(Model &m, char kind, int from) {
     ImGui::TextUnformatted("to");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 5);
-    ImGui::InputInt("##to", &to, 1, 10);
+    ImGui::InputInt("##to", &to, 0);
     to = std::clamp(to, 0, kind == 'v' ? 59 : 39);
     int usedTo = 0;
     for (const VarUse &u : m.vars) usedTo += u.kind == kind && u.index == to && !u.range;

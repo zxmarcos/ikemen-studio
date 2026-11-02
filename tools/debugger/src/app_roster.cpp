@@ -232,11 +232,12 @@ static bool EntryFields(RosterEntry &e, bool stage) {
     field("ai", "1 to 8: this AI level, whatever the difficulty.");
     // Its stages
     std::vector<std::string> stages = e.Stages();
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("stages:");
     for (size_t i = 0; i < stages.size(); i++) {
         ImGui::SameLine();
         ImGui::PushID((int)i);
-        if (ImGui::SmallButton((stages[i] + "  x").c_str())) {
+        if (ImGui::Button((stages[i] + "  " ICON_XMARK).c_str())) {
             for (size_t k = 0; k < e.items.size(); k++)
                 if (e.items[k] == stages[i]) {
                     e.items.erase(e.items.begin() + k);
@@ -247,7 +248,7 @@ static bool EntryFields(RosterEntry &e, bool stage) {
         ImGui::PopID();
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_PLUS)) ImGui::OpenPopup("addstage");
+    if (IconButton(ICON_PLUS)) ImGui::OpenPopup("addstage");
     ImGui::SetItemTooltip("Add a stage");
     if (ImGui::BeginPopup("addstage")) {
         static std::vector<std::string> list;
@@ -477,9 +478,10 @@ void RosterWindow() {
                 ImGui::TextDisabled("Pick a cell. Drag cells to move them; right click for more.");
             } else {
                 RosterCell c = r.chars[sel];
+                ImGui::AlignTextToFramePadding();
                 ImGui::Text("Line %d%s", c.first, c.slot ? "  (a slot: several characters in one cell)" : "");
                 ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
+                if (ImGui::Button(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
                 // The line as text
                 static std::string edit;
                 static int editFor = -1;
@@ -497,10 +499,11 @@ void RosterWindow() {
                     DefInfo &d = InfoOf(e.name, false, budget);
                     ImGui::SeparatorText(keyword ? e.name.c_str() : d.name.c_str());
                     if (!keyword) {
+                        ImGui::AlignTextToFramePadding();
                         ImGui::TextDisabled("%s", d.def.empty() ? "not found under chars/" : d.def.c_str());
                         if (!d.def.empty()) {
                             ImGui::SameLine();
-                            if (ImGui::SmallButton(ICON_FOLDER_OPEN " Open")) g_codeFile = d.def, g_codeLine = g_codeScrollTo = 1;
+                            if (ImGui::Button(ICON_FOLDER_OPEN " Open")) g_codeFile = d.def, g_codeLine = g_codeScrollTo = 1;
                         }
                         if (EntryFields(e, false)) Roster_SetCell(sf.text, c, c.Text());
                     }
@@ -533,19 +536,20 @@ void RosterWindow() {
                 ImGui::TextDisabled("Pick a stage. These are the stages of the stage list besides the characters' own.");
             } else {
                 RosterCell c = r.stages[ssel];
+                ImGui::AlignTextToFramePadding();
                 ImGui::Text("Line %d", c.first);
                 ImGui::SameLine();
                 ImGui::BeginDisabled(ssel == 0);
-                if (ImGui::SmallButton("Up") && Roster_MoveCell(sf.text, c, r.stages[ssel - 1].first)) ssel--;
+                if (IconButton(ICON_UP) && Roster_MoveCell(sf.text, c, r.stages[ssel - 1].first)) ssel--;
                 ImGui::EndDisabled();
                 ImGui::SameLine();
                 ImGui::BeginDisabled(ssel + 1 >= (int)r.stages.size());
-                if (ImGui::SmallButton("Down") &&
+                if (IconButton(ICON_DOWN) &&
                     Roster_MoveCell(sf.text, c, ssel + 2 < (int)r.stages.size() ? r.stages[ssel + 2].first : r.stagesEnd))
                     ssel++;
                 ImGui::EndDisabled();
                 ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
+                if (ImGui::Button(ICON_TRASH " Delete")) Roster_DeleteCell(sf.text, c);
                 if (sf.text == before && !c.slot) {
                     RosterEntry &e = c.entries[0];
                     ImGui::TextDisabled("%s", e.name.c_str());

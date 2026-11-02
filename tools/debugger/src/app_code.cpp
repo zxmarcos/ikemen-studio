@@ -498,15 +498,15 @@ void FindBar(SourceFile &sf, bool windowFocused) {
     else if (exact) ImGui::Text("%d of %zu", cur + 1, g_find.matches.size());
     else ImGui::Text("%zu found", g_find.matches.size());
     ImGui::SameLine();
-    if (ImGui::ArrowButton("##prev", ImGuiDir_Up)) Step(sf, -1);
+    if (IconButton(ICON_UP "##prev")) Step(sf, -1);
     ImGui::SetItemTooltip("The one before (Shift+F3, Shift+Enter)");
     ImGui::SameLine();
-    if (ImGui::ArrowButton("##next", ImGuiDir_Down)) Step(sf, 1);
+    if (IconButton(ICON_DOWN "##next")) Step(sf, 1);
     ImGui::SetItemTooltip("The next (F3, Enter)");
     ImGui::SameLine();
     ImGui::Checkbox("Replace", &g_find.replace);
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_XMARK)) g_find.open = false;
+    if (IconButton(ICON_XMARK)) g_find.open = false;
     ImGui::SetItemTooltip("Close (Escape)");
     if (windowFocused && ImGui::IsKeyPressed(ImGuiKey_F3)) Step(sf, io.KeyShift ? -1 : 1);
     if (escaped) {
@@ -625,7 +625,7 @@ void CodeWindow() {
     ImGui::SameLine();
     ImGui::Checkbox("Follow the state", &follow);
     ImGui::SameLine();
-    if (ImGui::SmallButton("Statedef")) JumpTo(stateSrc);
+    if (ImGui::Button("Statedef")) JumpTo(stateSrc);
     ImGui::SetItemTooltip("Go to the state the selected player is in");
     // An AIR file, or a def with actions: the action and element under the cursor, drawn in Animation
     // (which has "Show in Code" back)
@@ -634,7 +634,7 @@ void CodeWindow() {
                        (_stricmp(shown->path.c_str() + shown->path.size() - 4, ".def") == 0 && !AirOf(*shown).actions.empty()));
     if (hasActions) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("Animation") && !AnimShowLine(shown->path, dbg::Editor_CursorLine(shown->ed)))
+        if (ImGui::Button("Animation") && !AnimShowLine(shown->path, dbg::Editor_CursorLine(shown->ed)))
             Log(LogLine::Info, shown->path + " has no action there.");
         ImGui::SetItemTooltip("Show the action and element under the cursor in Animation");
     }

@@ -68,7 +68,7 @@ bool AnimChooser(SourceFile &sf, SpriteFile *spf, NewAnim *out, bool listActions
     }
     bool chosen = false;
     ImGui::SetNextItemWidth(em * 6);
-    ImGui::InputInt("Ticks per frame", &ticks);
+    ImGui::InputInt("Ticks per frame", &ticks, 0);
     ticks = std::max(ticks, 1);
     ImGui::SetItemTooltip("60 ticks are a second. Each frame can be changed afterwards in Animation.");
     out->time = ticks;
@@ -82,7 +82,7 @@ bool AnimChooser(SourceFile &sf, SpriteFile *spf, NewAnim *out, bool listActions
         ImGui::SetTooltip("%s", spf ? ("Choose several: a frame each, in the order of their names. They go in " + spf->path + ", saved at once: the game needs them there.").c_str()
                                     : "The def names no SFF.");
     ImGui::SetNextItemWidth(em * 6);
-    ImGui::InputInt("Group##frames", &group);
+    ImGui::InputInt("Group##frames", &group, 0);
     std::vector<std::pair<int, int>> frames;
     for (size_t i = 0; spf && i < spf->doc.sprites.size(); i++)
         if (spf->doc.sprites[i].group == group) frames.push_back({group, spf->doc.sprites[i].number});
@@ -221,7 +221,7 @@ void BgToolbar(SourceFile &sf, const IniFile &ini, const BgHost &h, BgEdit &edit
     BgHost host = h;
     ImGui::SameLine();
     ImGui::BeginDisabled(bg < 0);
-    if (ImGui::SmallButton(ICON_COPY "##dup"))
+    if (IconButton(ICON_COPY "##dup"))
         edit = [bg, host](SourceFile &s) {
             int copy = Ini_DuplicateBg(s.text, host.parsed(s), bg, host.group);
             host.edited(s);
@@ -232,7 +232,7 @@ void BgToolbar(SourceFile &sf, const IniFile &ini, const BgHost &h, BgEdit &edit
     auto moveBg = [&](const char *label, int dir, const char *tip) {
         ImGui::SameLine();
         ImGui::BeginDisabled(!Ini_CanMoveBg(ini, bg, dir, h.group));
-        if (ImGui::SmallButton(label))
+        if (IconButton(label))
             edit = [bg, dir, host](SourceFile &s) {
                 int at = Ini_MoveBg(s.text, host.parsed(s), bg, dir, host.group);
                 host.edited(s);
@@ -246,7 +246,7 @@ void BgToolbar(SourceFile &sf, const IniFile &ini, const BgHost &h, BgEdit &edit
     moveBg(ICON_ARROW_DOWN "##front", 1, "Down the list: drawn later, in front of the BGs it passes (on the same layerno).\n"
                                          "The BGs with positionlink after it go along.");
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_TRASH "##del"))
+    if (IconButton(ICON_TRASH "##del"))
         edit = [bg, host](SourceFile &s) {
             int left = Ini_DeleteBg(s.text, host.parsed(s), bg, host.group) ? (int)host.parsed(s).BgsOf(host.group).size() : 0;
             host.edited(s);
