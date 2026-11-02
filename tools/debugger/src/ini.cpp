@@ -1,5 +1,6 @@
 #include "ini.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -147,6 +148,188 @@ std::vector<int> IniFile::StageBgCtrls() const {
         if (w == "bgctrl" || w == "bgctrl3d") out.push_back((int)i);
     }
     return out;
+}
+
+static bool IsComment(const std::string &line) {
+    std::string t = Trim(line);
+    return !t.empty() && t[0] == ';';
+}
+
+// A section's lines, 0-based [from, to): comments running into the next header are that one's.
+static void SectionLines(const std::vector<std::string> &lines, const IniSection &s, int &from, int &to) {
+    from = s.line - 1;
+    while (from > 0 && IsComment(lines[from - 1])) from--;
+    to = s.last;
+    int end = to;
+    while (end < (int)lines.size() && IsComment(lines[end])) end++;
+    if (end == (int)lines.size() || Trim(lines[end]).empty()) to = end;
+}
+
+// Whether a BG follows another: the engine ignores positionlink on the first one.
+static bool Follows(const IniFile &ini, const std::vector<int> &bgs, int bg) {
+    const IniField *f = bg > 0 && bg < (int)bgs.size() ? ini.sections[bgs[bg]].Field("positionlink") : nullptr;
+    return f && atoi(f->value.c_str()) != 0;
+}
+
+static int LastFollower(const IniFile &ini, const std::vector<int> &bgs, int bg) {
+    while (Follows(ini, bgs, bg + 1)) bg++;
+    return bg;
+}
+
+// The block goes in before lines[at], a blank line around it.
+static void InsertBlock(std::vector<std::string> &lines, int at, std::vector<std::string> block) {
+    while (at > 0 && Trim(lines[at - 1]).empty()) at--;
+    block.insert(block.begin(), "");
+    if (at < (int)lines.size() && !Trim(lines[at]).empty()) block.push_back("");
+    lines.insert(lines.begin() + at, block.begin(), block.end());
+}
+
+static bool BgNameTaken(const IniFile &ini, const std::string &name) {
+    for (const IniSection &s : ini.sections)
+        if (s.lower == Lower(name)) return true;
+    return false;
+}
+
+// "BG base n", the first number from n that is free
+static std::string NumberedBg(const IniFile &ini, const std::string &base, int n) {
+    for (;; n++) {
+        std::string name = "BG " + base + (base.empty() ? "" : " ") + std::to_string(n);
+        if (!BgNameTaken(ini, name)) return name;
+    }
+}
+
+std::string Ini_NewBgName(const IniFile &ini, const std::string &base) {
+    std::string name;
+    for (char ch : base)
+        if (std::string("[];\n").find(ch) == std::string::npos) name += ch;
+    name = Trim(name);
+    if (name.empty()) name = "Layer";
+    return BgNameTaken(ini, "BG " + name) ? NumberedBg(ini, name, 2) : "BG " + name;
+}
+
+int Ini_AddBg(std::string &text, const IniFile &ini, int after, const std::string &name, const std::string &body) {
+    std::vector<int> bgs = ini.StageBgs();
+    std::vector<std::string> lines = SplitLines(text), block = SplitLines("[" + name + "]\n" + body);
+    if (after < 0 || after >= (int)bgs.size()) after = (int)bgs.size() - 1;
+    if (after >= 0) after = LastFollower(ini, bgs, after);
+    int from, at = (int)lines.size();
+    if (after >= 0) SectionLines(lines, ini.sections[bgs[after]], from, at);
+    else
+        for (const IniSection &s : ini.sections)
+            if (s.lower == "bgdef") SectionLines(lines, s, from, at);
+    InsertBlock(lines, at, block);
+    text = JoinLines(lines);
+    return after + 1;
+}
+
+int Ini_DuplicateBg(std::string &text, const IniFile &ini, int bg) {
+    std::vector<int> bgs = ini.StageBgs();
+    if (bg < 0 || bg >= (int)bgs.size()) return -1;
+    std::vector<std::string> lines = SplitLines(text);
+    const IniSection &s = ini.sections[bgs[bg]];
+    int from, to;
+    SectionLines(lines, s, from, to);
+    std::vector<std::string> block(lines.begin() + (s.line - 1), lines.begin() + to);
+    // "BG Sky" is copied as "BG Sky 2", "BG Sky 2" as "BG Sky 3", "BG 4" as "BG 5"
+    std::string base = s.name.find(' ') == std::string::npos ? "" : Trim(s.name.substr(s.name.find(' ')));
+    size_t digits = base.find_last_not_of("0123456789") + 1;
+    int number = digits < base.size() ? atoi(base.c_str() + digits) : 1;
+    block[0] = "[" + NumberedBg(ini, Trim(base.substr(0, digits)), number + 1) + "]";
+    int last = LastFollower(ini, bgs, bg);
+    SectionLines(lines, ini.sections[bgs[last]], from, to);
+    InsertBlock(lines, to, block);
+    text = JoinLines(lines);
+    return last + 1;
+}
+
+// The BGs moving, [a0, a1], and those they pass, [b0, b1]: a BG takes its followers along and passes
+// another with its followers; a follower stays among those of its BG.
+static bool MoveRange(const IniFile &ini, const std::vector<int> &bgs, int bg, int dir, int &a0, int &a1, int &b0, int &b1) {
+    int n = (int)bgs.size();
+    if (bg < 0 || bg >= n || (dir != 1 && dir != -1)) return false;
+    a0 = a1 = bg;
+    if (Follows(ini, bgs, bg)) {
+        b0 = b1 = bg + dir;
+        return Follows(ini, bgs, b0);
+    }
+    a1 = LastFollower(ini, bgs, bg);
+    if (dir > 0) {
+        b0 = a1 + 1;
+        if (b0 >= n) return false;
+        b1 = LastFollower(ini, bgs, b0);
+    } else {
+        b1 = bg - 1;
+        if (b1 < 0) return false;
+        for (b0 = b1; Follows(ini, bgs, b0);) b0--;
+    }
+    return true;
+}
+
+bool Ini_CanMoveBg(const IniFile &ini, int bg, int dir) {
+    int a0, a1, b0, b1;
+    return MoveRange(ini, ini.StageBgs(), bg, dir, a0, a1, b0, b1);
+}
+
+int Ini_MoveBg(std::string &text, const IniFile &ini, int bg, int dir) {
+    std::vector<int> bgs = ini.StageBgs();
+    int a0, a1, b0, b1;
+    if (!MoveRange(ini, bgs, bg, dir, a0, a1, b0, b1)) return -1;
+    int first0 = std::min(a0, b0), first1 = dir > 0 ? a1 : b1, second0 = std::max(a0, b0), second1 = dir > 0 ? b1 : a1;
+    std::vector<std::string> lines = SplitLines(text), out;
+    int x0, x1, y0, y1, unused;
+    SectionLines(lines, ini.sections[bgs[first0]], x0, unused);
+    SectionLines(lines, ini.sections[bgs[first1]], unused, x1);
+    SectionLines(lines, ini.sections[bgs[second0]], y0, unused);
+    SectionLines(lines, ini.sections[bgs[second1]], unused, y1);
+    auto copy = [&](int from, int to) { out.insert(out.end(), lines.begin() + from, lines.begin() + to); };
+    copy(0, x0);
+    copy(y0, y1);
+    copy(x1, y0);
+    copy(x0, x1);
+    copy(y1, (int)lines.size());
+    text = JoinLines(out);
+    return bg + dir * (b1 - b0 + 1);
+}
+
+bool Ini_DeleteBg(std::string &text, const IniFile &ini, int bg) {
+    std::vector<int> bgs = ini.StageBgs();
+    if (bg < 0 || bg >= (int)bgs.size()) return false;
+    std::vector<std::string> lines = SplitLines(text);
+    int from, to;
+    SectionLines(lines, ini.sections[bgs[bg]], from, to);
+    while (to + 1 < (int)lines.size() && Trim(lines[to]).empty()) to++; // the blank lines after it
+    lines.erase(lines.begin() + from, lines.begin() + to);
+    text = JoinLines(lines);
+    return true;
+}
+
+int Ini_BgFollowers(const IniFile &ini, int bg) {
+    std::vector<int> bgs = ini.StageBgs();
+    if (bg < 0 || bg >= (int)bgs.size() || Follows(ini, bgs, bg)) return 0;
+    return LastFollower(ini, bgs, bg) - bg;
+}
+
+std::vector<int> Ini_BgMap(const IniFile &was, const IniFile &now) {
+    std::vector<int> a = was.StageBgs(), b = now.StageBgs(), map(b.size(), -1);
+    std::vector<char> used(a.size());
+    auto same = [](const IniSection &x, const IniSection &y) {
+        if (x.fields.size() != y.fields.size()) return false;
+        for (size_t k = 0; k < x.fields.size(); k++)
+            if (x.fields[k].key != y.fields[k].key || x.fields[k].value != y.fields[k].value) return false;
+        return true;
+    };
+    for (int exact = 1; exact >= 0; exact--)
+        for (size_t i = 0; i < b.size(); i++) {
+            const IniSection &s = now.sections[b[i]];
+            for (size_t k = 0; k < a.size() && map[i] < 0; k++) {
+                const IniSection &o = was.sections[a[k]];
+                if (!used[k] && o.lower == s.lower && (!exact || same(o, s))) map[i] = (int)k, used[k] = 1;
+            }
+        }
+    if (a.size() == b.size())
+        for (size_t i = 0; i < b.size(); i++)
+            if (map[i] < 0 && !used[i]) map[i] = (int)i, used[i] = 1;
+    return map;
 }
 
 IniBgTime Ini_BgCtrlTime(const IniFile &ini, int section) {

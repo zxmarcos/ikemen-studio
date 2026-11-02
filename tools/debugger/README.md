@@ -186,6 +186,14 @@ In the Stage window, a BGCtrl or BGCtrlDef shows each BGCtrl's time on a bar, wi
 game or without it: drag the bar, its edges (`time`'s start and end) or the light line
 (its looptime). A click on a BGCtrlDef's bar opens that BGCtrl.
 
+**Add layer**, above its list, makes a new background from an image (it becomes a
+sprite of the stage's SFF, saved at once), a sprite or an action, behind the fighters
+or in front of them. It goes after the selected one. The buttons beside it duplicate,
+move and delete the selected one: lower in the list is drawn later, so in front. A
+background moves with those that have `positionlink` after it, and everything that
+moves keeps going from where it was. All of it works with the game or without it, and
+Undo takes it back; the def is written with Save.
+
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code
 shows that def; in the others it follows the selected player's state.

@@ -198,7 +198,160 @@ static void TestBgTime() {
     CHECK(Ini_FieldRef(f.sections[0], f.sections[0].fields[1]) == kIniRefNone);
 }
 
+static const char *kLayers =
+    "[Info]\n"
+    "name = x\n"
+    "\n"
+    ";---\n"
+    "; the sky\n"
+    "[BGdef]\n"
+    "spr = a.sff\n"
+    "\n"
+    "; far away\n"
+    "[BG Sky]\n"
+    "type = normal\n"
+    ";mask = 1\n"
+    "\n"
+    "[Begin Action 5]\n"
+    "0,0, 0,0, -1\n"
+    "\n"
+    ";---\n"
+    "[BG Floor]\n"
+    "type = normal\n"
+    "\n"
+    "[BG Rail]\n"
+    "positionlink = 1\n"
+    "\n"
+    "[BG Post]\n"
+    "positionlink = 1\n"
+    "\n"
+    "[BG Front 2]\n"
+    "type = anim\n"
+    "\n"
+    "[BGCtrlDef x]\n"
+    "ctrlid = 1\n";
+
+// The names of a text's BGs, in order
+static std::string Bgs(const std::string &text) {
+    IniFile f;
+    Ini_Parse(text, f);
+    std::string out;
+    for (int i : f.StageBgs()) out += (out.empty() ? "" : ",") + f.sections[i].name.substr(3);
+    return out;
+}
+
+static void TestLayers() {
+    IniFile f;
+    Ini_Parse(kLayers, f);
+    std::string t = kLayers;
+
+    // After a BG: past those following it, or they would follow the new one
+    CHECK(Ini_NewBgName(f, "") == "BG Layer");
+    CHECK(Ini_NewBgName(f, "sky") == "BG sky 2");
+    CHECK(Ini_NewBgName(f, " a]b; ") == "BG ab");
+    CHECK(Ini_AddBg(t, f, 1, "BG New", "type = normal\nlayerno = 1") == 4);
+    CHECK(Bgs(t) == "Sky,Floor,Rail,Post,New,Front 2");
+    CHECK(t.find("positionlink = 1\n\n[BG New]\ntype = normal\nlayerno = 1\n\n[BG Front 2]") != std::string::npos);
+    t = kLayers;
+    CHECK(Ini_AddBg(t, f, -1, "BG New", "type = normal") == 5);
+    CHECK(Bgs(t) == "Sky,Floor,Rail,Post,Front 2,New");
+    CHECK(t.find("[BG New]\ntype = normal\n\n[BGCtrlDef x]") != std::string::npos);
+    // The commented field stays in its section
+    t = kLayers;
+    CHECK(Ini_AddBg(t, f, 0, "BG New", "type = normal") == 1);
+    CHECK(t.find(";mask = 1\n\n[BG New]") != std::string::npos);
+
+    // None yet: after [BGdef]; at the end of a file without one
+    IniFile g;
+    Ini_Parse("[BGdef]\nspr = a.sff\n\n[Camera]\nstartx = 0\n", g);
+    t = "[BGdef]\nspr = a.sff\n\n[Camera]\nstartx = 0\n";
+    CHECK(Ini_AddBg(t, g, -1, "BG New", "type = normal") == 0);
+    CHECK(t == "[BGdef]\nspr = a.sff\n\n[BG New]\ntype = normal\n\n[Camera]\nstartx = 0\n");
+    Ini_Parse("[Info]\nname = x\n", g);
+    t = "[Info]\nname = x\n";
+    CHECK(Ini_AddBg(t, g, -1, "BG New", "type = normal") == 0);
+    CHECK(t == "[Info]\nname = x\n\n[BG New]\ntype = normal\n");
+
+    // A copy is the same section under a name of its own, without the comment above it
+    t = kLayers;
+    CHECK(Ini_DuplicateBg(t, f, 0) == 1);
+    CHECK(Bgs(t) == "Sky,Sky 2,Floor,Rail,Post,Front 2");
+    CHECK(t.find(";mask = 1\n\n[BG Sky 2]\ntype = normal\n;mask = 1\n") != std::string::npos);
+    t = kLayers;
+    CHECK(Ini_DuplicateBg(t, f, 4) == 5);
+    CHECK(Bgs(t) == "Sky,Floor,Rail,Post,Front 2,Front 3");
+    t = kLayers;
+    CHECK(Ini_DuplicateBg(t, f, 2) == 4); // a follower: past the others, and it follows the same BG
+    CHECK(Bgs(t) == "Sky,Floor,Rail,Post,Rail 2,Front 2");
+    t = kLayers;
+    CHECK(Ini_DuplicateBg(t, f, 9) == -1);
+    CHECK(t == kLayers);
+
+    // Moving: the comment above it goes along, what is between stays
+    t = kLayers;
+    CHECK(Ini_MoveBg(t, f, 1, -1) == 0); // with its followers
+    CHECK(Bgs(t) == "Floor,Rail,Post,Sky,Front 2");
+    CHECK(t.find("spr = a.sff\n\n;---\n[BG Floor]") != std::string::npos);
+    CHECK(t.find("; far away\n[BG Sky]\ntype = normal\n;mask = 1\n\n[BG Front 2]") != std::string::npos);
+    CHECK(t.find("[Begin Action 5]") != std::string::npos);
+    t = kLayers;
+    CHECK(Ini_MoveBg(t, f, 0, 1) == 3); // past a BG and its followers
+    CHECK(Bgs(t) == "Floor,Rail,Post,Sky,Front 2");
+    t = kLayers;
+    CHECK(Ini_MoveBg(t, f, 4, -1) == 1);
+    CHECK(Bgs(t) == "Sky,Front 2,Floor,Rail,Post");
+    t = kLayers;
+    CHECK(Ini_MoveBg(t, f, 2, 1) == 3); // a follower, among the others
+    CHECK(Bgs(t) == "Sky,Floor,Post,Rail,Front 2");
+    CHECK(!Ini_CanMoveBg(f, 2, -1) && !Ini_CanMoveBg(f, 3, 1));
+    CHECK(!Ini_CanMoveBg(f, 0, -1) && !Ini_CanMoveBg(f, 4, 1));
+    CHECK(Ini_CanMoveBg(f, 3, -1) && Ini_CanMoveBg(f, 1, 1));
+    t = kLayers;
+    CHECK(Ini_MoveBg(t, f, 0, -1) == -1);
+    CHECK(t == kLayers);
+    // Back again: the same text
+    t = kLayers;
+    int at = Ini_MoveBg(t, f, 4, -1);
+    IniFile h;
+    Ini_Parse(t, h);
+    CHECK(Ini_MoveBg(t, h, at, 1) == 4);
+    CHECK(Bgs(t) == Bgs(kLayers));
+
+    // Deleting
+    CHECK(Ini_BgFollowers(f, 1) == 2 && Ini_BgFollowers(f, 2) == 0 && Ini_BgFollowers(f, 0) == 0);
+    t = kLayers;
+    CHECK(Ini_DeleteBg(t, f, 0));
+    CHECK(Bgs(t) == "Floor,Rail,Post,Front 2");
+    CHECK(t.find("far away") == std::string::npos && t.find(";mask") == std::string::npos);
+    CHECK(t.find("spr = a.sff\n\n[Begin Action 5]") != std::string::npos);
+    t = kLayers;
+    CHECK(!Ini_DeleteBg(t, f, 5));
+    t = "[BG A]\ntype = normal\n";
+    Ini_Parse(t, g);
+    CHECK(Ini_DeleteBg(t, g, 0));
+    CHECK(t.empty());
+
+    // Which BG is which: by its section, then its name, then its place
+    auto map = [](const char *was, const char *now) {
+        IniFile a, b;
+        Ini_Parse(was, a);
+        Ini_Parse(now, b);
+        std::string out;
+        for (int i : Ini_BgMap(a, b)) out += std::to_string(i) + " ";
+        return out;
+    };
+    const char *two = "[BG A]\nstart = 1\n[BG B]\nstart = 2\n";
+    CHECK(map(two, two) == "0 1 ");
+    CHECK(map(two, "[BG B]\nstart = 2\n[BG A]\nstart = 1\n") == "1 0 ");
+    CHECK(map(two, "[BG A]\nstart = 1\n[BG N]\n[BG B]\nstart = 2\n") == "0 -1 1 ");
+    CHECK(map(two, "[BG B]\nstart = 2\n") == "1 ");
+    CHECK(map(two, "[BG B]\nstart = 9\n[BG A]\nstart = 1\n") == "1 0 "); // edited, and moved
+    CHECK(map(two, "[BG A2]\nstart = 1\n[BG B]\nstart = 2\n") == "0 1 "); // renamed
+    CHECK(map("[BG X]\nstart = 1\n[BG X]\nstart = 2\n", "[BG X]\nstart = 2\n[BG X]\nstart = 1\n") == "1 0 ");
+}
+
 int main() {
+    TestLayers();
     TestBgTime();
     TestSpritesFile();
     TestRefs();

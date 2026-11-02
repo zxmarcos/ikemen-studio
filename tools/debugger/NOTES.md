@@ -304,8 +304,22 @@ reload, which is light: a 2D stage reloads in under 1 ms (`loadSff`
 borrows the SFF in use through `findActiveSff`), a 3D stage's glTF model
 is kept while its file does not change (`editorStageModel`: stage3d went
 from ~510 ms to under 1 ms), and the stage goes on from where it was
-(`editorKeepStage`: `Stage.reset` used to set its time back to 0; BGs
-matched by index, so not when BGs were added or removed).
+(`editorKeepStage`: `Stage.reset` used to set its time back to 0).
+
+**Layers** (2026-11-02). The Stage window adds, duplicates, moves and deletes
+`[BG ...]` sections (`Ini_AddBg` and the others in `ini.cpp`), with the game or
+without it, undo included. The order of the sections is the order they are drawn
+in, within a `layerno`. New BGs go after the selected one, and never between a BG
+and those with `positionlink` after it (they would follow the new one); moving a
+BG takes them along and passes another BG with its own. Add layer takes a sprite,
+an action, or an image, which becomes a sprite in a group of its own and is saved
+in the SFF at once, since the game reads no other (`AddBgOfImage`; with other
+sprites not saved, the SFF waits for Save in Sprites and the Output says so). The
+edit runs as the next frame starts (`g_bgEdit`): what the window parsed is in use
+until the frame ends. Which BG is which after a reload comes from comparing the
+text the game has with the new one (`Ini_BgMap`: same section, then same name,
+then same place) and goes in `debugReloadStage`'s third argument, every reload
+included: by index, a moved BG would take its neighbour's movement.
 
 Phase 3, screenpacks: begun with the fight screen (`fight.def`). Window
 Fight screen: its sections and fields (`src/ini.cpp`), its elements

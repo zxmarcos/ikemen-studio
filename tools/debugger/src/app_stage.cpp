@@ -1,6 +1,7 @@
 // Stage: the stage's def file, its sections and fields edited here (the game loads the stage
-// again from the text at each change, the match going on; Save writes the file), its BGs and
-// limits picked and dragged on the Game window, a free camera, and the def's checks.
+// again from the text at each change, the match going on; Save writes the file), its BGs added,
+// moved and deleted, its BGs and limits picked and dragged on the Game window, a free camera,
+// and the def's checks.
 #include "app_internal.h"
 
 #include <windows.h>
@@ -154,6 +155,20 @@ void MoveBg(int index, int dx, int dy) {
 // game deletes once read), or from the def on disk; sprites: its SFF too (it was saved).
 void ReloadStage(SourceFile &sf, bool fromText, bool sprites) {
     if (!Connected()) return;
+    // Which BG is which, when that changes: each goes on where it was. shown: the text the game has
+    static std::map<std::string, std::string> shown;
+    std::string &was = shown.emplace(NormPath(sf.path), sf.disk).first->second;
+    IniFile before, after;
+    Ini_Parse(was, before);
+    Ini_Parse(fromText ? sf.text : sf.disk, after);
+    was = fromText ? sf.text : sf.disk;
+    std::vector<int> map = Ini_BgMap(before, after);
+    bool same = map.size() == before.StageBgs().size();
+    std::string order;
+    for (size_t i = 0; i < map.size(); i++) {
+        order += (i ? "," : "") + std::to_string(map[i]);
+        same = same && map[i] == (int)i;
+    }
     std::string arg = "nil";
     if (fromText) {
         std::string tmp = sf.path + ".ikdbg";
@@ -165,7 +180,8 @@ void ReloadStage(SourceFile &sf, bool fromText, bool sprites) {
         }
         arg = LuaQuote(tmp);
     }
-    Exec("local ok, err = debugReloadStage(" + arg + (sprites ? ", true" : "") + ") if not ok then error(err, 0) end");
+    Exec("local ok, err = debugReloadStage(" + arg + (sprites ? ", true" : ", false") + (same ? "" : ", " + LuaQuote(order)) +
+         ") if not ok then error(err, 0) end");
 }
 
 void StageSpritesSaved(const std::string &path) {
@@ -420,6 +436,122 @@ static void ShowBg(int index) {
     ShowInSprites(sprites, g >= 0 ? Sff_FindSprite(sprites.doc, g, n) : -1, "stage");
 }
 
+// An edit of the stage's BGs, made as the next frame starts (what was parsed is in use until then):
+// gives the BG to select, -1 none.
+static std::function<int(SourceFile &)> g_bgEdit;
+
+// What a new BG shows: a sprite, as Create > A stage writes them, or an action.
+static std::string BgOfSprite(int group, int number, int layer) {
+    return "type = normal\nspriteno = " + std::to_string(group) + ", " + std::to_string(number) + "\nlayerno = " +
+           std::to_string(layer) + "\nstart = 0, 0\ndelta = 1, 1\nmask = 1";
+}
+
+static std::string BgOfAction(int action, int layer) {
+    return "type = anim\nactionno = " + std::to_string(action) + "\nlayerno = " + std::to_string(layer) +
+           "\nstart = 0, 0\ndelta = 1, 1";
+}
+
+// A new BG showing an image: a sprite of the stage's SFF, saved so that the game has it (with other
+// sprites not saved yet, those stay as they are and the BG waits for Save in Sprites).
+static int AddBgOfImage(SourceFile &sf, SpriteFile &sprites, const std::string &file, std::string name, int layer) {
+    bool others = sprites.dirty;
+    int group, number;
+    if (!AddSpriteOfImage(sprites, file, &group, &number)) return g_stageBg;
+    if (name.empty()) {
+        name = file.substr(file.find_last_of("/\\") + 1);
+        name = name.substr(0, name.find_last_of('.'));
+    }
+    const IniFile &ini = StageIni(sf);
+    int bg = Ini_AddBg(sf.text, ini, g_stageBg, Ini_NewBgName(ini, name), BgOfSprite(group, number, layer));
+    if (others) {
+        Log(LogLine::Info, "Sprite " + std::to_string(group) + ", 0 is not on disk yet: save the Sprites window to see it in the game.");
+        StageEdited(sf);
+        return bg;
+    }
+    bool theGames = NormPath(g_stageSff) == NormPath(sprites.path);
+    SaveSprites(sprites); // the stage is read again with it
+    if (theGames) sf.version++;
+    else StageEdited(sf);
+    return bg;
+}
+
+// Add layer: what it shows, and whether it goes behind the fighters or in front of them.
+static void AddBgPopup(SourceFile &sf) {
+    if (!ImGui::IsPopupOpen("addbg")) return;
+    std::string sff = SpritesFileOf(sf.path);
+    SpriteFile *spf = sff.empty() ? nullptr : &SpriteFileAt(sff);
+    SpriteGridSize();
+    if (!ImGui::BeginPopup("addbg")) return;
+    float em = ImGui::GetFontSize();
+    static std::string name;
+    static int front, group;
+    if (ImGui::IsWindowAppearing()) {
+        name.clear();
+        group = INT_MAX;
+        for (size_t i = 0; spf && i < spf->doc.sprites.size(); i++) group = std::min(group, spf->doc.sprites[i].group);
+        if (group == INT_MAX) group = 0;
+    }
+    ImGui::SetNextItemWidth(em * 12);
+    ImGui::InputTextWithHint("Name", "Layer", &name);
+    ImGui::SetNextItemWidth(em * 12);
+    ImGui::Combo("Drawn", &front, "Behind the fighters\0In front of the fighters\0");
+    ImGui::SetItemTooltip("Its layerno. Among those on the same side, the list's order decides: lower in the list is in front.");
+    ImGui::BeginDisabled(!spf);
+    if (ImGui::Button(ICON_FOLDER_OPEN " From an image...")) {
+        std::vector<std::string> files = PickFiles(kImageFilter, false);
+        if (!files.empty()) {
+            std::string file = files[0], chosen = name;
+            int layer = front;
+            g_bgEdit = [=](SourceFile &s) { return AddBgOfImage(s, SpriteFileAt(sff), file, chosen, layer); };
+        }
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    if (spf) ImGui::SetItemTooltip("Becomes a sprite of %s, saved at once: the game needs it there.", sff.c_str());
+    else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("The def names no SFF ([BGdef] spr).");
+    const AirFile &air = AirOf(sf);
+    if (ImGui::BeginTabBar("shows")) {
+        if (ImGui::BeginTabItem("A sprite")) {
+            int g, n;
+            if (SpriteGrid(spf, group, -1, -1, &g, &n)) {
+                std::string chosen = name;
+                int layer = front;
+                g_bgEdit = [=](SourceFile &s) {
+                    const IniFile &ini = StageIni(s);
+                    int bg = Ini_AddBg(s.text, ini, g_stageBg, Ini_NewBgName(ini, chosen), BgOfSprite(g, n, layer));
+                    StageEdited(s);
+                    return bg;
+                };
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("An action")) {
+            float rows = std::min<float>(air.actions.size(), 12) * ImGui::GetTextLineHeightWithSpacing() + 2;
+            if (air.actions.empty()) ImGui::TextDisabled("The def has no [Begin Action].");
+            if (ImGui::BeginChild("##actions", ImVec2(0, rows))) {
+                for (const auto &[no, a] : air.actions) {
+                    std::string row = std::to_string(no) + "  " + a.name + "##" + std::to_string(no);
+                    if (!ImGui::Selectable(row.c_str())) continue;
+                    std::string chosen = name;
+                    int action = no, layer = front;
+                    g_bgEdit = [=](SourceFile &s) {
+                        const IniFile &ini = StageIni(s);
+                        int bg = Ini_AddBg(s.text, ini, g_stageBg, Ini_NewBgName(ini, chosen), BgOfAction(action, layer));
+                        StageEdited(s);
+                        return bg;
+                    };
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::EndPopup();
+}
+
 bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::function<ImVec2(float, float)> &toScreen,
                   ImVec2 scale) {
     static int dragBg = -1;
@@ -631,6 +763,17 @@ void StageWindow() {
     }
     bool live = Connected() && !g_stageDef.empty() && NormPath(g_stageDef) == NormPath(sfp->path);
     SourceFile &sf = *sfp;
+    // The selected section: a BG picked on the game, or one clicked in the list
+    static int selSection = -1;
+    static int selBg = -2;
+    static bool showSel; // the list scrolls to it
+    if (g_bgEdit) {
+        g_stageBg = g_bgEdit(sf);
+        g_bgEdit = nullptr;
+        selSection = -1, selBg = -2;
+        showSel = true;
+        if (g_stageBg >= 0) ShowBg(g_stageBg);
+    }
     const IniFile &ini = StageIni(sf);
     std::vector<int> bgs = ini.StageBgs();
     float em = ImGui::GetFontSize();
@@ -709,14 +852,56 @@ void StageWindow() {
     ModelSection(hasModel);
     ChecksSection(sf, ini);
 
-    // The selected section: a BG picked on the game, or one clicked in the list
-    static int selSection = -1;
-    static int selBg = -2;
     if (g_stageBg != selBg) {
         selBg = g_stageBg;
         if (selBg >= 0 && selBg < (int)bgs.size()) selSection = bgs[selBg];
     }
     if (selSection >= (int)ini.sections.size()) selSection = -1;
+
+    // The layers: new ones go after the selected BG, in front of it
+    if (ImGui::Button(ICON_PLUS " Add layer")) ImGui::OpenPopup("addbg");
+    ImGui::SetItemTooltip("A new [BG], after the selected one (without one, after the last): a sprite, an image or an action.");
+    AddBgPopup(sf);
+    int bg = selBg >= 0 && selBg < (int)bgs.size() ? selBg : -1;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(bg < 0);
+    if (ImGui::SmallButton(ICON_COPY "##dup"))
+        g_bgEdit = [bg](SourceFile &s) {
+            int copy = Ini_DuplicateBg(s.text, StageIni(s), bg);
+            StageEdited(s);
+            return copy;
+        };
+    ImGui::SetItemTooltip("Duplicate: the same section, under a name of its own, in front of it. Its id goes along,\n"
+                          "so the BGCtrls moving it move the copy too.");
+    auto moveBg = [&](const char *label, int dir, const char *tip) {
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!Ini_CanMoveBg(ini, bg, dir));
+        if (ImGui::SmallButton(label))
+            g_bgEdit = [bg, dir](SourceFile &s) {
+                int at = Ini_MoveBg(s.text, StageIni(s), bg, dir);
+                StageEdited(s);
+                return at;
+            };
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", tip);
+    };
+    moveBg(ICON_ARROW_UP "##back", -1, "Up the list: drawn earlier, behind the BGs it passes (on the same layerno).\n"
+                                       "The BGs with positionlink after it go along.");
+    moveBg(ICON_ARROW_DOWN "##front", 1, "Down the list: drawn later, in front of the BGs it passes (on the same layerno).\n"
+                                         "The BGs with positionlink after it go along.");
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_TRASH "##del"))
+        g_bgEdit = [bg](SourceFile &s) {
+            int left = Ini_DeleteBg(s.text, StageIni(s), bg) ? (int)StageIni(s).StageBgs().size() : 0;
+            StageEdited(s);
+            return std::min(bg, left - 1);
+        };
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        int following = Ini_BgFollowers(ini, bg);
+        if (following) ImGui::SetTooltip("Delete. %d BGs with positionlink after it will follow the BG before it, and move.", following);
+        else ImGui::SetTooltip("Delete it. Undo brings it back.");
+    }
 
     // Left: the sections
     if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
@@ -739,6 +924,10 @@ void StageWindow() {
                 selSection = i;
                 g_stageBg = selBg = bg;
                 if (bg >= 0) ShowBg(bg);
+            }
+            if (showSel && selSection == i) {
+                ImGui::SetScrollHereY();
+                showSel = false;
             }
             if (dim || ran) ImGui::PopStyleColor();
             if (dim) ImGui::SetItemTooltip("Not drawn in the last frame (off screen, invisible or disabled).");

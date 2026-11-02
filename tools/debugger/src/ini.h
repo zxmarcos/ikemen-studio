@@ -44,6 +44,22 @@ bool Ini_SetField(std::string &text, const IniSection &s, const char *key, const
 // Numbers as a field value: "10, -2.5"
 std::string Ini_Floats(const float *v, int count);
 
+// A stage's BGs as lines of its text. They are drawn in the order of their sections, and a BG with
+// positionlink follows the last one without it: that one takes them along, and nothing goes between
+// them. A BG's lines are its section's, with the comment right above it and those right after it.
+// Each returns the BG's new index, -1 when it could not be done.
+std::string Ini_NewBgName(const IniFile &ini, const std::string &base); // "BG base", numbered when taken; base empty: "Layer"
+// A new section after that BG (-1: after the last one; with none, after [BGdef])
+int Ini_AddBg(std::string &text, const IniFile &ini, int after, const std::string &name, const std::string &body);
+int Ini_DuplicateBg(std::string &text, const IniFile &ini, int bg); // right after it, under a name of its own
+int Ini_MoveBg(std::string &text, const IniFile &ini, int bg, int dir); // past the BG before (-1) or after it (1)
+bool Ini_CanMoveBg(const IniFile &ini, int bg, int dir);
+bool Ini_DeleteBg(std::string &text, const IniFile &ini, int bg);
+int Ini_BgFollowers(const IniFile &ini, int bg); // how many BGs follow it
+// For each BG of now, its index in was (-1: a new one): the same section, else the same name; with as
+// many BGs in both, the same place.
+std::vector<int> Ini_BgMap(const IniFile &was, const IniFile &now);
+
 // When a BGCtrl runs, as the engine reads it: time = start, end, looptime; end left out is start, and
 // the looptime left out is its BGCtrlDef's (-1 none). ownLoop: its time gives one.
 struct IniBgTime {

@@ -409,6 +409,11 @@ void Checkerboard(ImDrawList *draw, ImVec2 a, ImVec2 b);
 std::vector<std::string> PickFiles(const char *filter, bool multi);
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name);
 void SpritesChanged(SpriteFile &sf);
+void SaveSprites(SpriteFile &sf);
+// An image as a new sprite, in a group of its own, its axis at its top centre as a stage's layers have it:
+// false when it could not be read
+bool AddSpriteOfImage(SpriteFile &sf, const std::string &file, int *group, int *number);
+extern const char kImageFilter[];
 std::vector<int> SelectedSprites(const SpriteFile &sf); // those selected, else the one shown
 // Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the
 // keyboard: -1 undo, 1 redo, 0 neither. UndoButtonsWidth: what they take.

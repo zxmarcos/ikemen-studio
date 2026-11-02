@@ -286,6 +286,25 @@ static void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, co
     SpritesChanged(sf);
 }
 
+bool AddSpriteOfImage(SpriteFile &sf, const std::string &file, int *group, int *number) {
+    Sff_SetImageReader(DecodeImage);
+    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, {file}, SFF_PAL_OWN, SpriteLog);
+    if (made.empty()) return false;
+    int g = 0;
+    for (const SffSprite &s : sf.doc.sprites)
+        if (s.group < 9000) g = std::max(g, s.group + 1); // 9000 and up are portraits
+    while (Sff_FindSprite(sf.doc, g, 0) >= 0) g++;
+    SffSprite &s = made[0];
+    s.group = g, s.number = 0;
+    s.x = s.w / 2, s.y = 0;
+    sf.doc.sprites.push_back(s);
+    sf.sel = (int)sf.doc.sprites.size() - 1;
+    sf.picks.clear();
+    *group = g, *number = 0;
+    SpritesChanged(sf);
+    return true;
+}
+
 std::vector<int> SelectedSprites(const SpriteFile &sf) {
     if (!sf.picks.empty()) return std::vector<int>(sf.picks.begin(), sf.picks.end());
     if (sf.sel >= 0 && sf.sel < (int)sf.doc.sprites.size()) return {sf.sel};

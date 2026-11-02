@@ -65,6 +65,7 @@
 #define ICON_SETTINGS "\xef\x87\x9e" // sliders
 #define ICON_UNDO "\xef\x8b\xaa" // rotate-left
 #define ICON_ARROW_DOWN "\xef\x81\xa3" // arrow-down
+#define ICON_ARROW_UP "\xef\x81\xa2" // arrow-up
 #define ICON_ADD_BOX "\xef\x83\xbe" // square-plus
 #define ICON_DOWNLOAD "\xef\x80\x99" // download
 #define ICON_UPLOAD "\xef\x82\x93" // upload

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -62,18 +63,30 @@ func editorStageModel(filename string) (*Model, error) {
 
 // editorKeepStage, after a reload, has the new stage go on from where the old one was: its time,
 // its BGs' movement (what their velocity and sin moved them), visibility and animations, its
-// model's animations. Not when BGs were added or removed (which BG was which is not known).
-func editorKeepStage(o, n *Stage) {
+// model's animations. bgFrom says which old BG each new one was, -1 none (added, moved or removed
+// BGs: the editor knows); nil, the same index when there are as many.
+func editorKeepStage(o, n *Stage, bgFrom []int) {
 	n.stageTime = o.stageTime
 	n.bga = o.bga
-	if len(o.bg) == len(n.bg) {
-		for i, b := range n.bg {
-			ob := o.bg[i]
-			b.bga.pos, b.bga.sintime, b.bga.sinoffset, b.bga.offset = ob.bga.pos, ob.bga.sintime, ob.bga.sinoffset, ob.bga.offset
-			b.visible, b.enabled = ob.visible, ob.enabled
-			if b.anim != nil && ob.anim != nil && len(b.anim.frames) > 0 && len(ob.anim.frames) > 0 {
-				b.anim.SetAnimElem(ob.anim.curelem+1, ob.anim.curelemtime)
+	if bgFrom == nil && len(o.bg) != len(n.bg) {
+		return
+	}
+	for i, b := range n.bg {
+		from := i
+		if bgFrom != nil {
+			from = -1
+			if i < len(bgFrom) {
+				from = bgFrom[i]
 			}
+		}
+		if from < 0 || from >= len(o.bg) {
+			continue
+		}
+		ob := o.bg[from]
+		b.bga.pos, b.bga.sintime, b.bga.sinoffset, b.bga.offset = ob.bga.pos, ob.bga.sintime, ob.bga.sinoffset, ob.bga.offset
+		b.visible, b.enabled = ob.visible, ob.enabled
+		if b.anim != nil && ob.anim != nil && len(b.anim.frames) > 0 && len(ob.anim.frames) > 0 {
+			b.anim.SetAnimElem(ob.anim.curelem+1, ob.anim.curelemtime)
 		}
 	}
 }
@@ -343,8 +356,8 @@ func editorMoveStageBg(index int, dx, dy float32) error {
 // the match goes on (the camera keeps its position, the stage goes on: editorKeepStage; its
 // SFF and model are not read again, the SFF unless sprites: it was saved). textFile, when not
 // empty, is read instead of the def, then deleted: unsaved text, written next to it (its files are
-// found from where it is).
-func editorReloadStage(textFile string, sprites bool) (err error) {
+// found from where it is). bgFrom: see editorKeepStage.
+func editorReloadStage(textFile string, sprites bool, bgFrom []int) (err error) {
 	old := sys.stage
 	if old == nil {
 		return fmt.Errorf("no stage")
@@ -373,7 +386,7 @@ func editorReloadStage(textFile string, sprites bool) (err error) {
 	ns.def = old.def
 	ns.mainstage = old.mainstage
 	ns.reset()
-	editorKeepStage(old, ns)
+	editorKeepStage(old, ns, bgFrom)
 	modelPlayback(ns.model)
 	editorPutStage(old, ns)
 	return nil
@@ -471,6 +484,7 @@ func editorStageFunctions(l *lua.LState) {
 		@function debugReloadStage
 		@tparam[opt] string textFile Read this file instead, then delete it (unsaved text, in the def's folder).
 		@tparam[opt] boolean sprites Read the SFF again (after an edit of the SFF).
+		@tparam[opt] string bgFrom "0,-1,1": which BG of the stage in use each new BG was, -1 none.
 		@treturn boolean ok
 		@treturn string error*/
 		if !debuggerAttached() {
@@ -480,7 +494,18 @@ func editorStageFunctions(l *lua.LState) {
 		if !nilArg(l, 1) {
 			textFile = strArg(l, 1)
 		}
-		return result(l, editorReloadStage(textFile, !nilArg(l, 2) && boolArg(l, 2)))
+		var bgFrom []int
+		if !nilArg(l, 3) {
+			bgFrom = []int{}
+			for _, v := range strings.Split(strArg(l, 3), ",") {
+				from, err := strconv.Atoi(v)
+				if err != nil {
+					from = -1
+				}
+				bgFrom = append(bgFrom, from)
+			}
+		}
+		return result(l, editorReloadStage(textFile, !nilArg(l, 2) && boolArg(l, 2), bgFrom))
 	})
 	luaRegister(l, "debugSwapStage", func(l *lua.LState) int {
 		/*Put another stage in place of the one in use; the match goes on.
