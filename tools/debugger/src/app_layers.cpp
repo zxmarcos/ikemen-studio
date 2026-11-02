@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <climits>
+#include <cmath>
 #include <cstring>
 
 #include "imgui_stdlib.h"
@@ -97,9 +98,9 @@ bool BgMissingRows(SourceFile &sf, const IniSection &s) {
 }
 
 // What a new BG shows: a sprite, as Create > A stage writes them, or an action.
-static std::string BgOfSprite(int group, int number, int layer) {
+static std::string BgOfSprite(int group, int number, int layer, float delta = 1) {
     return "type = normal\nspriteno = " + std::to_string(group) + ", " + std::to_string(number) + "\nlayerno = " +
-           std::to_string(layer) + "\nstart = 0, 0\ndelta = 1, 1\nmask = 1";
+           std::to_string(layer) + "\nstart = 0, 0\ndelta = " + Ini_Floats(&delta, 1) + ", 1\nmask = 1";
 }
 
 static std::string BgOfAction(int action, int layer) {
@@ -286,6 +287,42 @@ static void AddBgPopup(SourceFile &sf, const BgHost &h, BgEdit &edit) {
                 };
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::EndTabItem();
+        }
+        // A picture exported layer by layer: the parallax comes from their order. Only a stage's camera moves.
+        if (h.group == "BG" && ImGui::BeginTabItem("Several images")) {
+            static float furthest = 0.2f, nearest = 1;
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::DragFloat("Delta of the furthest", &furthest, 0.01f, 0, 2, "%.2f");
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::DragFloat("Delta of the nearest", &nearest, 0.01f, 0, 2, "%.2f");
+            ImGui::SetItemTooltip("The layers between them get even steps: 1 scrolls with the fighters.");
+            ImGui::BeginDisabled(!spf);
+            if (ImGui::Button(ICON_FOLDER_OPEN " Choose the images...")) {
+                std::vector<std::string> picked = PickFiles(kImageFilter, true);
+                if (!picked.empty()) {
+                    std::vector<std::string> files = InOrder(picked);
+                    float from = furthest, to = nearest;
+                    edit = [=](SourceFile &s) {
+                        SpriteFile &sprites = SpriteFileAt(sff);
+                        bool others = sprites.dirty;
+                        std::vector<std::pair<int, int>> made;
+                        if (!AddSpritesOfImages(sprites, files, made)) return after;
+                        int at = after, last = (int)made.size() - 1;
+                        for (int n = 0; n <= last; n++) {
+                            float delta = last ? from + (to - from) * n / last : to;
+                            delta = std::round(delta * 1000) / 1000;
+                            at = AddBg(s, host, at, FileStem(files[n]), BgOfSprite(made[n].first, made[n].second, layer, delta));
+                        }
+                        ShowAdded(s, &sprites, true, others, host);
+                        return at;
+                    };
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("%s", spf ? ("A layer for each, the first of their names the furthest back. They go in " + sff + ", saved at once.").c_str() : "The def names no SFF.");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

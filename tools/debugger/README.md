@@ -147,6 +147,10 @@ A layer that repeats has **See the join**: the end of one copy against the start
 next, enlarged. The Checks name a layer whose opposite edges do not match, unless its
 picture changes as much inside as it does there.
 
+**Add layer > Several images** takes a picture exported layer by layer: each image becomes
+a layer, the first of their names the furthest back, with deltas in even steps between the
+two you give.
+
 **Motion** makes a layer move on its own: Drift for clouds, Bob for water, Sway, or Blink for
 a light, which adds two BGCtrls at the end of the def. Stop takes them away. The numbers it
 writes are in the layer's fields, to change.
