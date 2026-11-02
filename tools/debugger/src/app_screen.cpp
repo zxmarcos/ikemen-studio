@@ -2,7 +2,7 @@
 // round...) and of the motif (system.def: title, select, versus screens, menus...), their
 // sections and fields edited here (the game loads the def again from the text at each change,
 // the match or the menu going on; Save writes the file), their elements picked and dragged on
-// the Game window.
+// the Game window, their BGs added, moved and deleted.
 #include "app_internal.h"
 
 #include <cfloat>
@@ -37,6 +37,10 @@ struct ScreenDef {
     IniFile ini;
     bool parsed = false;
     int animAction = -1; // the action the element selected showed when last on screen
+    BgEdit bgEdit;       // an edit of the BGs of bgGroup, as the next frame starts
+    std::string bgGroup;
+    bool showSel = false; // the list scrolls to the section selected
+    std::string shownPath, shownText; // the text the game has
     // Its checks, again when its text or its SFF changes
     std::vector<StageFinding> found;
     std::string foundText;
@@ -104,13 +108,32 @@ bool g_screenPick;
 // The first word of a section's name, as Ikemen cuts it.
 static std::string FirstWordOf(const IniSection &s) { return s.lower.substr(0, s.lower.find(' ')); }
 
-// A BG section: its first word names a BGDef the def has ("titlebg" with [TitleBGdef]).
+// A BG section: its first word names a BGDef the def has ("titlebg" with [TitleBGdef]), or a
+// storyboard's scene shows it.
 static bool IsBgSection(const IniFile &ini, const IniSection &s) {
     std::string w = FirstWordOf(s);
-    if (w == s.lower || w == "scene") return false; // [Scene 1] with a storyboard's [SceneDef]
-    for (const IniSection &o : ini.sections)
-        if (o.lower == w + "def") return true;
-    return false;
+    return w != "scene" && Ini_BgGroup(ini, s).size() == w.size(); // not [Scene 1], or [TitleBGdef]: shorter
+}
+
+// A section as an element's: its name in lower case, "#2" after it for the second of that name,
+// which the engine reads apart when they are BGs (a motif has BGs of the same name).
+static std::string SectionKey(const IniFile &ini, int index) {
+    int n = 1;
+    for (int i = 0; i < index; i++) n += ini.sections[i].lower == ini.sections[index].lower;
+    return ini.sections[index].lower + (n > 1 ? "#" + std::to_string(n) : "");
+}
+
+// The section of a key, the first one with that name as the engine reads it when none says otherwise.
+static const IniSection *FindSection(const IniFile &ini, const std::string &key) {
+    for (const IniSection &s : ini.sections)
+        if (s.lower == key) return &s;
+    size_t hash = key.rfind('#');
+    if (hash == std::string::npos) return nullptr;
+    std::string name = key.substr(0, hash);
+    int n = atoi(key.c_str() + hash + 1);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == name && --n == 0) return &s;
+    return nullptr;
 }
 
 void ReadScreenGeometry(const Json &j) {
@@ -135,14 +158,9 @@ void ReadScreenGeometry(const Json &j) {
                 // The bg-th section named after the BGDef ("titlebg"), as loadBGDef reads them
                 if (!sf && !(sf = d->Source())) continue;
                 const IniFile &ini = d->Ini(*sf);
-                std::string name = item.section;
-                item.section.clear();
-                for (const IniSection &s : ini.sections)
-                    if (FirstWordOf(s) == name && s.lower != name && --bg == 0) {
-                        item.section = s.lower;
-                        break;
-                    }
-                if (item.section.empty()) continue;
+                std::vector<int> bgs = ini.BgsOf(item.section);
+                if (bg > (int)bgs.size()) continue;
+                item.section = SectionKey(ini, bgs[bg - 1]);
                 item.bg = true;
             }
             d->items.push_back(std::move(item));
@@ -153,12 +171,6 @@ void ReadScreenGeometry(const Json &j) {
     if (g_storyPlaying) g_storyScene = story[size_t(0)].i(), g_storyTick = story[1].i(), g_storyPaused = story[2].truthy();
 }
 
-// The section the engine names (lower case), the first one with that name as the engine reads it.
-static const IniSection *FindSection(const IniFile &ini, const std::string &lower) {
-    for (const IniSection &s : ini.sections)
-        if (s.lower == lower) return &s;
-    return nullptr;
-}
 
 static std::string ItemLabel(const IniFile *ini, const std::string &section, const std::string &prefix) {
     const IniSection *s = ini ? FindSection(*ini, section) : nullptr;
@@ -230,7 +242,19 @@ static void Reload(ScreenDef &d, SourceFile &sf, bool fromText, bool keep = fals
     }
     arg += keep ? ", true" : ", false";
     if (sprites) arg += ", true";
-    Exec(std::string("local ok, err = ") + d.reloadFn + "(" + arg + ") if not ok then error(err, 0) end");
+    // BGs added or moved go on from where they were
+    std::string moved;
+    const std::string &now = fromText ? sf.text : sf.disk;
+    if (d.shownPath != sf.path) d.shownPath = sf.path, d.shownText = sf.disk;
+    if (d.motif && d.shownText != now) {
+        IniFile before, after;
+        Ini_Parse(d.shownText, before);
+        Ini_Parse(now, after);
+        moved = Ini_BgChanges(before, after, Ini_BgGroups(after));
+    }
+    d.shownText = now;
+    if (!moved.empty()) moved = "debugBgFrom(" + LuaQuote(moved) + ") ";
+    Exec(moved + "local ok, err = " + d.reloadFn + "(" + arg + ") if not ok then error(err, 0) end");
     d.sent = ImGui::GetTime();
     d.pending = false;
 }
@@ -435,7 +459,7 @@ static bool PositionDrag(ScreenDef &d, SourceFile &sf, const IniSection &s, cons
     bool changed = false;
     if (ImGui::DragFloat2(label, edit, 1.0f, -FLT_MAX, FLT_MAX, "%.0f")) {
         float dx = std::round(edit[0] - v[0]), dy = std::round(edit[1] - v[1]);
-        if (dx != 0 || dy != 0) changed = MoveField(d, sf, s.lower, key, dx, dy);
+        if (dx != 0 || dy != 0) changed = MoveField(d, sf, d.section, key, dx, dy);
     }
     ImGui::SetItemTooltip("%s%s", tip, has ? "" : "\n(Not in the def yet: dragging adds it.)");
     ImGui::SameLine();
@@ -493,6 +517,15 @@ static void ScreenWindow(ScreenDef &d) {
         return;
     }
     SourceFile &sf = *sfp;
+    if (d.bgEdit) {
+        int bg = d.bgEdit(sf);
+        d.bgEdit = nullptr;
+        const IniFile &now = d.Ini(sf);
+        std::vector<int> bgs = now.BgsOf(d.bgGroup);
+        d.animAction = -1;
+        SelectElement(d, bg >= 0 && bg < (int)bgs.size() ? SectionKey(now, bgs[bg]) : std::string(), "");
+        d.showSel = true;
+    }
     const IniFile &ini = d.Ini(sf);
     float em = ImGui::GetFontSize();
     if (!Connected() || (&d == &g_story && !g_storyPlaying)) {
@@ -537,18 +570,44 @@ static void ScreenWindow(ScreenDef &d) {
         FindingsSection(sf, found, d.foundRead);
     }
 
+    // The layers of the screen selected: a BG of its group, its [...BGdef], a storyboard's scene
+    if (d.motif) {
+        BgHost layers;
+        layers.layers = "Behind the elements\0In front of them\0";
+        if (const IniSection *cur = d.section.empty() ? nullptr : FindSection(ini, d.section)) {
+            layers.group = Ini_BgGroup(ini, *cur);
+            std::vector<int> bgs = layers.group.empty() ? std::vector<int>() : ini.BgsOf(layers.group);
+            for (size_t n = 0; n < bgs.size(); n++)
+                if (&ini.sections[bgs[n]] == cur) layers.selected = (int)n;
+        } else {
+            layers.group.clear();
+        }
+        layers.parsed = [&d](SourceFile &s) -> const IniFile & { return d.Ini(s); };
+        layers.edited = [&d](SourceFile &s) { Edited(d, s); };
+        layers.showsSff = [&d](const std::string &path) { return !d.sff.empty() && NormPath(d.sff) == NormPath(path); };
+        d.bgGroup = layers.group;
+        BgToolbar(sf, ini, layers, d.bgEdit);
+    }
+
     // Left: the sections (not the animations), with how many of their elements are on screen
     if (ImGui::BeginChild("sections", ImVec2(em * 9, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX)) {
+        std::map<std::string, int> seen;
         for (int i = 0; i < (int)ini.sections.size(); i++) {
             const IniSection &s = ini.sections[i];
             if (s.lower.compare(0, 13, "begin action ") == 0) continue;
+            int same = ++seen[s.lower];
+            std::string key = s.lower + (same > 1 ? "#" + std::to_string(same) : "");
             int drawn = 0;
-            for (const auto &f : d.items) drawn += f.section == s.lower;
+            for (const auto &f : d.items) drawn += f.section == key;
             std::string label = s.name + (drawn ? "  (" + std::to_string(drawn) + ")" : "") + "##" + std::to_string(i);
             if (!drawn) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            if (ImGui::Selectable(label.c_str(), d.section == s.lower)) {
-                if (d.section != s.lower) d.animAction = -1;
-                SelectElement(d, s.lower, d.section != s.lower ? "" : d.prefix);
+            if (ImGui::Selectable(label.c_str(), d.section == key)) {
+                if (d.section != key) d.animAction = -1;
+                SelectElement(d, key, d.section != key ? "" : d.prefix);
+            }
+            if (d.showSel && d.section == key) {
+                ImGui::SetScrollHereY();
+                d.showSel = false;
             }
             if (!drawn) ImGui::PopStyleColor();
         }
@@ -577,7 +636,7 @@ static void ScreenWindow(ScreenDef &d) {
     // The elements of this section drawn in the last frame
     std::vector<std::string> prefixes;
     for (const auto &f : d.items)
-        if (f.section == s.lower && !f.bg && std::find(prefixes.begin(), prefixes.end(), f.prefix) == prefixes.end())
+        if (f.section == d.section && !f.bg && std::find(prefixes.begin(), prefixes.end(), f.prefix) == prefixes.end())
             prefixes.push_back(f.prefix);
     std::sort(prefixes.begin(), prefixes.end());
     if (!d.prefix.empty() && std::find(prefixes.begin(), prefixes.end(), d.prefix) == prefixes.end())
@@ -592,10 +651,10 @@ static void ScreenWindow(ScreenDef &d) {
         }
     }
     bool bgShown = false;
-    for (const auto &f : d.items) bgShown = bgShown || (f.section == s.lower && f.bg);
+    for (const auto &f : d.items) bgShown = bgShown || (f.section == d.section && f.bg);
     if (prefixes.empty() && !bgShown) ImGui::TextDisabled("None of its elements is on screen now.");
     for (const auto &f : d.items)
-        if (f.section == s.lower && f.prefix == d.prefix && (!d.prefix.empty() || f.bg)) {
+        if (f.section == d.section && f.prefix == d.prefix && (!d.prefix.empty() || f.bg)) {
             ImGui::TextDisabled("at %.0f, %.0f  %.0fx%.0f px (the game's picture), %.3g px per unit", f.rect.x, f.rect.y,
                                 f.rect.z, f.rect.w, f.k.y);
             break;

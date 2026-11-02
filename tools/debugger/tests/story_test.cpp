@@ -184,6 +184,13 @@ static void TestEdits() {
     CHECK(Story_AddText(text, ini, doc, 0));
     Read(text, ini, doc);
     CHECK(doc.scenes[0].layers[0].font[0] == 0 && doc.scenes[0].layers[0].font[3] == 0 && doc.scenes[0].layers[0].font[5] == 0);
+    text = "[Info]\nlocalcoord = 640,480\n\n[Scene 0]\nlayerall.pos = 10, 20\nend.time = 9\n\n[Scene 1]\nend.time = 5\n";
+    Read(text, ini, doc);
+    CHECK(Story_AddAnim(text, ini, doc, 0, 7));
+    Read(text, ini, doc);
+    CHECK(doc.scenes[0].layers.size() == 1 && doc.scenes[0].layers[0].anim == 7);
+    CHECK(text.find("layer0.offset = 310, -20\n") != std::string::npos);
+    CHECK(!Story_AddAnim(text, ini, doc, 5, 7));
     text = "[Info]\nlocalcoord = 1280,720\n\n[Scene 0]\nend.time = 9\n";
     Read(text, ini, doc);
     CHECK(Story_AddText(text, ini, doc, 0));

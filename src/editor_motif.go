@@ -301,6 +301,7 @@ func editorReloadMotif(l *lua.LState, textFile string, keep bool) (err error) {
 	}
 	defer func() {
 		edMotif.keep, edMotif.loading = false, false
+		edBgFrom = nil
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
 		}

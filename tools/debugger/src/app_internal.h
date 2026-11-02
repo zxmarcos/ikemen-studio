@@ -375,6 +375,33 @@ void AnimationWindow();
 bool FieldRefCell(SourceFile &sf, const IniSection &s, const IniField &f, std::string *value);
 void ActionUsersNote(SourceFile &sf, int action); // on the same line: how many fields of the def name that action
 
+// New layers and animations (app_layers.cpp). An animation asked for: images, sprites of the SFF, or an action
+struct NewAnim {
+    std::vector<std::string> files;
+    std::vector<std::pair<int, int>> sprites;
+    int action = -1;
+    int time = 5; // of each frame of a new one
+};
+struct SpriteFile;
+// What makes one, in a popup: true once chosen. listActions: those of the def too.
+bool AnimChooser(SourceFile &sf, SpriteFile *spf, NewAnim *out, bool listActions);
+// The action it shows, -1 none: a new one of the text, with the images in the SFF, which is not saved.
+int MakeAnim(SourceFile &sf, SpriteFile *spf, const NewAnim &a, const std::string &name);
+// After images went in an SFF, so that the game has them; others: it had other sprites not saved, which wait
+void SaveAddedSprites(SpriteFile &sprites, bool others);
+// A def's BGs, by group (ini.h). The edit is made as the next frame starts, since what was parsed is in use
+// until then: it gives the BG to select, -1 none.
+using BgEdit = std::function<int(SourceFile &)>;
+struct BgHost {
+    std::string group = "BG";
+    int selected = -1;                                    // among the group's BGs
+    const char *layers = "Behind the fighters\0In front of the fighters\0";
+    std::function<const IniFile &(SourceFile &)> parsed;  // the text as it is now
+    std::function<void(SourceFile &)> edited;             // the game shows the text
+    std::function<bool(const std::string &)> showsSff;    // saving that SFF has the game read the text too
+};
+void BgToolbar(SourceFile &sf, const IniFile &ini, const BgHost &h, BgEdit &edit);
+
 // Sprites
 // What undo and redo put back in a sprite file (the sprites share their pictures with the file's)
 struct SpriteState {

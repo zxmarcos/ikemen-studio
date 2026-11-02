@@ -339,6 +339,20 @@ bool Story_AddText(std::string &text, const IniFile &ini, const StoryDoc &doc, i
     return true;
 }
 
+bool Story_AddAnim(std::string &text, const IniFile &ini, const StoryDoc &doc, int scene, int action) {
+    if (scene < 0 || scene >= (int)doc.scenes.size()) return false;
+    const StoryScene &sc = doc.scenes[scene];
+    std::string out = text, key = Story_NewLayerKey(sc);
+    if (!Ini_SetField(out, ini.sections[sc.section], (key + ".anim").c_str(), std::to_string(action))) return false;
+    // The next field after the one just added: its lines moved
+    IniFile now;
+    Ini_Parse(out, now);
+    float top[2] = {doc.coord[0] / 2 - sc.layerall[0], -sc.layerall[1]};
+    if (!Ini_SetField(out, now.sections[sc.section], (key + ".offset").c_str(), Ini_Floats(top, 2))) return false;
+    text = out;
+    return true;
+}
+
 bool Story_RemoveKeys(std::string &text, const IniSection &s, const std::string &prefix) {
     std::vector<int> lines;
     for (const IniField &f : s.fields)

@@ -424,21 +424,38 @@ func editorEachAnimation(v reflect.Value, seen map[editorSeen]bool, f func(*Anim
 // editorKeepBgDef: a BGDef loaded again goes on from where the old one was. Its BGs are reset
 // as a screen starting does (velocity, sin from the def; a BGDef just loaded has none), then
 // take the old ones' time, how far they have moved and whether BGCtrls hid them, BG by BG in
-// order.
-func editorKeepBgDef(o, n *BGDef) {
+// order, or as debugBgFrom says when BGs were added, moved or removed (their animations too: true
+// then, nothing else matches them by place).
+func editorKeepBgDef(o, n *BGDef) bool {
 	n.time, n.lastTick = o.time, o.lastTick
 	n.bga.pos, n.bga.sintime, n.bga.sinoffset, n.bga.offset = o.bga.pos, o.bga.sintime, o.bga.sinoffset, o.bga.offset
+	name, ok := edMotif.index.bgdefs[o]
+	if !ok {
+		name = edStoryboard.index.bgdefs[o]
+	}
+	bgFrom, moved := edBgFrom[name]
 	for i, b := range n.bg {
 		if b == nil {
 			continue
 		}
 		b.reset()
-		if i < len(o.bg) && o.bg[i] != nil {
-			ob := o.bg[i]
+		from := i
+		if moved {
+			from = -1
+			if i < len(bgFrom) {
+				from = bgFrom[i]
+			}
+		}
+		if from >= 0 && from < len(o.bg) && o.bg[from] != nil {
+			ob := o.bg[from]
 			b.bga.pos, b.bga.sintime, b.bga.sinoffset, b.bga.offset = ob.bga.pos, ob.bga.sintime, ob.bga.sinoffset, ob.bga.offset
 			b.visible, b.enabled = ob.visible, ob.enabled
+			if moved && b.anim != nil && ob.anim != nil && len(b.anim.frames) > 0 && len(ob.anim.frames) > 0 {
+				b.anim.SetAnimElem(ob.anim.curelem+1, ob.anim.curelemtime)
+			}
 		}
 	}
+	return moved
 }
 
 // editorKeepPlayback walks an old and a new copy of the same structure together: each new
@@ -463,7 +480,9 @@ func editorKeepPlayback(ov, nv reflect.Value, seen map[editorSeen]bool) {
 			return
 		}
 		if nv.Type() == reflect.TypeOf((*BGDef)(nil)) {
-			editorKeepBgDef((*BGDef)(unsafe.Pointer(ov.Pointer())), (*BGDef)(unsafe.Pointer(nv.Pointer())))
+			if editorKeepBgDef((*BGDef)(unsafe.Pointer(ov.Pointer())), (*BGDef)(unsafe.Pointer(nv.Pointer()))) {
+				return
+			}
 		}
 		editorKeepPlayback(ov.Elem(), nv.Elem(), seen)
 	case reflect.Struct:

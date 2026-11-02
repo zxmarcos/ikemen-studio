@@ -350,8 +350,83 @@ static void TestLayers() {
     CHECK(map("[BG X]\nstart = 1\n[BG X]\nstart = 2\n", "[BG X]\nstart = 2\n[BG X]\nstart = 1\n") == "1 0 ");
 }
 
+// A screen's BGs: the same, under the first word of their group
+static void TestBgGroups() {
+    const char *def =
+        "[Title Info]\n"
+        "x = 1\n"
+        "\n"
+        "[TitleBGdef]\n"
+        "bgclearcolor = 0,0,0\n"
+        "\n"
+        "[TitleBG Sky]\n"
+        "type = normal\n"
+        "\n"
+        "[TitleBG Logo]\n"
+        "type = normal\n"
+        "\n"
+        "[Continuebgdef]\n"
+        "\n"
+        "[Select Info]\n"
+        "y = 2\n";
+    IniFile f;
+    Ini_Parse(def, f);
+    CHECK(f.BgsOf("titlebg").size() == 2 && f.BgsOf("TitleBG").size() == 2 && f.StageBgs().empty());
+    CHECK(Ini_BgGroup(f, f.sections[0]).empty());
+    CHECK(Ini_BgGroup(f, f.sections[1]) == "TitleBG");
+    CHECK(Ini_BgGroup(f, f.sections[2]) == "TitleBG");
+    CHECK(Ini_BgGroup(f, f.sections[4]) == "Continuebg");
+    std::vector<std::string> groups = Ini_BgGroups(f);
+    CHECK(groups.size() == 2 && groups[0] == "TitleBG" && groups[1] == "Continuebg");
+
+    std::string t = def;
+    CHECK(Ini_NewBgName(f, "", "TitleBG") == "TitleBG Layer");
+    CHECK(Ini_NewBgName(f, "sky", "TitleBG") == "TitleBG sky 2");
+    CHECK(Ini_AddBg(t, f, 0, "TitleBG New", "type = normal", "TitleBG") == 1);
+    CHECK(t.find("[TitleBG Sky]\ntype = normal\n\n[TitleBG New]\ntype = normal\n\n[TitleBG Logo]") != std::string::npos);
+    // None yet: after its def
+    t = def;
+    CHECK(Ini_AddBg(t, f, -1, "ContinueBG New", "type = normal", "Continuebg") == 0);
+    CHECK(t.find("[Continuebgdef]\n\n[ContinueBG New]\ntype = normal\n\n[Select Info]") != std::string::npos);
+    t = def;
+    CHECK(Ini_DuplicateBg(t, f, 1, "TitleBG") == 2);
+    CHECK(t.find("[TitleBG Logo 2]") != std::string::npos);
+    t = def;
+    CHECK(Ini_CanMoveBg(f, 1, -1, "TitleBG") && !Ini_CanMoveBg(f, 1, 1, "TitleBG"));
+    CHECK(Ini_MoveBg(t, f, 1, -1, "TitleBG") == 0);
+    CHECK(t.find("[TitleBG Logo]") < t.find("[TitleBG Sky]"));
+    IniFile moved;
+    Ini_Parse(t, moved);
+    CHECK(Ini_BgChanges(f, moved, Ini_BgGroups(f)) == "titlebg=1,0");
+    CHECK(Ini_BgChanges(f, f, Ini_BgGroups(f)).empty());
+    t = def;
+    CHECK(Ini_DeleteBg(t, f, 0, "TitleBG"));
+    CHECK(t.find("[TitleBG Sky]") == std::string::npos && t.find("[TitleBG Logo]") != std::string::npos);
+    IniFile less;
+    Ini_Parse(t, less);
+    CHECK(Ini_BgChanges(f, less, Ini_BgGroups(f)) == "titlebg=1");
+
+    // A storyboard: its BGs named by a scene, with or without a def of their own
+    Ini_Parse("[Scene 0]\nbg.name = BG0\n\n[BG0 Logo]\ntype = normal\n\n[Scene 1]\nend.time = 5\n\n[SceneDef]\nspr = a.sff\n", f);
+    CHECK(Ini_BgGroup(f, f.sections[0]) == "BG0");
+    CHECK(Ini_BgGroup(f, f.sections[1]) == "BG0");
+    CHECK(Ini_BgGroup(f, f.sections[2]).empty());
+    CHECK(Ini_BgGroup(f, f.sections[3]).empty());
+    groups = Ini_BgGroups(f);
+    CHECK(groups.size() == 1 && groups[0] == "BG0");
+    // [BG0] alone is one too, as the engine reads it
+    Ini_Parse("[Scene 0]\nbg.name = BG0\n\n[BG0]\ntype = normal\n\n[BG0]\ntype = anim\n", f);
+    CHECK(Ini_BgGroup(f, f.sections[1]) == "BG0");
+    CHECK(f.BgsOf("BG0").size() == 2);
+    CHECK(Ini_NewBgName(f, "", "BG0") == "BG0 Layer");
+    std::string two = "[Scene 0]\nbg.name = BG0\n\n[BG0]\ntype = normal\n\n[BG0]\ntype = anim\n";
+    CHECK(Ini_DuplicateBg(two, f, 0, "BG0") == 1);
+    CHECK(two.find("[BG0 2]\ntype = normal\n") != std::string::npos);
+}
+
 int main() {
     TestLayers();
+    TestBgGroups();
     TestBgTime();
     TestSpritesFile();
     TestRefs();

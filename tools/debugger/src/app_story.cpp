@@ -583,11 +583,22 @@ bool StoryPanel(StoryHost &h) {
     }
     SceneStrip(h);
     // New rows
-    if (ImGui::SmallButton(ICON_PLUS " Animation")) {
-        std::string key = Story_NewLayerKey(sc);
-        SetField(h, g.scene, key + ".anim", "0");
+    if (ImGui::SmallButton(ICON_PLUS " Animation")) ImGui::OpenPopup("newlayer");
+    ImGui::SetItemTooltip("A new layer showing an animation: of images, of a group's sprites, or one the storyboard has");
+    if (ImGui::BeginPopup("newlayer")) {
+        NewAnim a;
+        if (AnimChooser(*h.sf, h.sprites, &a, true) && !g.changed) {
+            bool others = h.sprites && h.sprites->dirty;
+            int no = MakeAnim(*h.sf, h.sprites, a, "");
+            if (no >= 0) {
+                g.changed = Story_AddAnim(h.sf->text, *h.ini, g.doc, g.scene, no);
+                if (!a.files.empty()) SaveAddedSprites(*h.sprites, others);
+                AnimOpenFile(h.sf->path, no, 1, false);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
-    ImGui::SetItemTooltip("A new layer showing action 0; its field picks another");
     ImGui::SameLine();
     if (ImGui::SmallButton(ICON_PLUS " Text") && !g.changed) g.changed = Story_AddText(h.sf->text, *h.ini, g.doc, g.scene);
     ImGui::SetItemTooltip("A new layer of text, in the middle of the picture, with the first font of [SceneDef] (it gets one if it has none); black on a light scene");

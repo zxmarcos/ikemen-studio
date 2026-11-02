@@ -128,6 +128,23 @@ func editorBgCtrlRan(s *Stage, index int) {
 
 var edStage EditorStage
 
+// edBgFrom: for the next reload of a screen, which BG each new one was, by the name of their
+// sections ("titlebg"), for the BGDefs whose BGs were added, moved or removed.
+var edBgFrom map[string][]int
+
+// editorBgList reads "0,-1,1".
+func editorBgList(list string) []int {
+	out := []int{}
+	for _, v := range strings.Split(list, ",") {
+		from, err := strconv.Atoi(v)
+		if err != nil {
+			from = -1
+		}
+		out = append(out, from)
+	}
+	return out
+}
+
 // The camera frames are drawn with: the game's (zoom effects included), or the editor's free
 // camera, which only changes what is drawn (the characters' screen bounds keep the game's).
 type EditorCamera struct {
@@ -496,16 +513,24 @@ func editorStageFunctions(l *lua.LState) {
 		}
 		var bgFrom []int
 		if !nilArg(l, 3) {
-			bgFrom = []int{}
-			for _, v := range strings.Split(strArg(l, 3), ",") {
-				from, err := strconv.Atoi(v)
-				if err != nil {
-					from = -1
-				}
-				bgFrom = append(bgFrom, from)
-			}
+			bgFrom = editorBgList(strArg(l, 3))
 		}
 		return result(l, editorReloadStage(textFile, !nilArg(l, 2) && boolArg(l, 2), bgFrom))
+	})
+	luaRegister(l, "debugBgFrom", func(l *lua.LState) int {
+		/*Say, before debugReloadMotif or debugReloadStoryboard, which BG each new one of a BGDef was.
+		@function debugBgFrom
+		@tparam string groups "titlebg=0,-1,1;selectbg=1,0": -1 none, a BGDef not named keeps its order.*/
+		if !debuggerAttached() {
+			return 0
+		}
+		edBgFrom = make(map[string][]int)
+		for _, group := range strings.Split(strArg(l, 1), ";") {
+			if name, list, ok := strings.Cut(group, "="); ok {
+				edBgFrom[name] = editorBgList(list)
+			}
+		}
+		return 0
 	})
 	luaRegister(l, "debugSwapStage", func(l *lua.LState) int {
 		/*Put another stage in place of the one in use; the match goes on.

@@ -134,11 +134,28 @@ std::vector<std::pair<int, int>> Ini_ActionUsers(const IniFile &ini, int action)
     return out;
 }
 
-std::vector<int> IniFile::StageBgs() const {
+std::vector<int> IniFile::BgsOf(const std::string &group) const {
     std::vector<int> out;
+    std::string word = Lower(group);
     for (size_t i = 0; i < sections.size(); i++)
-        if (FirstWord(sections[i].lower) == "bg") out.push_back((int)i);
+        if (FirstWord(sections[i].lower) == word) out.push_back((int)i);
     return out;
+}
+
+std::string Ini_BgGroup(const IniFile &ini, const IniSection &s) {
+    std::string word = FirstWord(s.lower);
+    if (word == "scene") {
+        const IniField *f = s.Field("bg.name");
+        return f ? f->value : "";
+    }
+    // [BG0] is a BG as [BG0 Sky] is, when something names BG0
+    for (const IniSection &o : ini.sections) {
+        const IniField *f = o.Field("bg.name");
+        if (o.lower == word + "def" || (f && FirstWord(o.lower) == "scene" && Lower(f->value) == word)) return s.name.substr(0, word.size());
+    }
+    if (word == s.lower && word != "scenedef" && word.size() > 3 && word.compare(word.size() - 3, 3, "def") == 0)
+        return s.name.substr(0, s.name.size() - 3);
+    return "";
 }
 
 std::vector<int> IniFile::StageBgCtrls() const {
@@ -190,25 +207,25 @@ static bool BgNameTaken(const IniFile &ini, const std::string &name) {
     return false;
 }
 
-// "BG base n", the first number from n that is free
-static std::string NumberedBg(const IniFile &ini, const std::string &base, int n) {
+// "group base n", the first number from n that is free
+static std::string NumberedBg(const IniFile &ini, const std::string &group, const std::string &base, int n) {
     for (;; n++) {
-        std::string name = "BG " + base + (base.empty() ? "" : " ") + std::to_string(n);
+        std::string name = group + " " + base + (base.empty() ? "" : " ") + std::to_string(n);
         if (!BgNameTaken(ini, name)) return name;
     }
 }
 
-std::string Ini_NewBgName(const IniFile &ini, const std::string &base) {
+std::string Ini_NewBgName(const IniFile &ini, const std::string &base, const std::string &group) {
     std::string name;
     for (char ch : base)
         if (std::string("[];\n").find(ch) == std::string::npos) name += ch;
     name = Trim(name);
     if (name.empty()) name = "Layer";
-    return BgNameTaken(ini, "BG " + name) ? NumberedBg(ini, name, 2) : "BG " + name;
+    return BgNameTaken(ini, group + " " + name) ? NumberedBg(ini, group, name, 2) : group + " " + name;
 }
 
-int Ini_AddBg(std::string &text, const IniFile &ini, int after, const std::string &name, const std::string &body) {
-    std::vector<int> bgs = ini.StageBgs();
+int Ini_AddBg(std::string &text, const IniFile &ini, int after, const std::string &name, const std::string &body, const std::string &group) {
+    std::vector<int> bgs = ini.BgsOf(group);
     std::vector<std::string> lines = SplitLines(text), block = SplitLines("[" + name + "]\n" + body);
     if (after < 0 || after >= (int)bgs.size()) after = (int)bgs.size() - 1;
     if (after >= 0) after = LastFollower(ini, bgs, after);
@@ -216,14 +233,14 @@ int Ini_AddBg(std::string &text, const IniFile &ini, int after, const std::strin
     if (after >= 0) SectionLines(lines, ini.sections[bgs[after]], from, at);
     else
         for (const IniSection &s : ini.sections)
-            if (s.lower == "bgdef") SectionLines(lines, s, from, at);
+            if (s.lower == Lower(group) + "def") SectionLines(lines, s, from, at);
     InsertBlock(lines, at, block);
     text = JoinLines(lines);
     return after + 1;
 }
 
-int Ini_DuplicateBg(std::string &text, const IniFile &ini, int bg) {
-    std::vector<int> bgs = ini.StageBgs();
+int Ini_DuplicateBg(std::string &text, const IniFile &ini, int bg, const std::string &group) {
+    std::vector<int> bgs = ini.BgsOf(group);
     if (bg < 0 || bg >= (int)bgs.size()) return -1;
     std::vector<std::string> lines = SplitLines(text);
     const IniSection &s = ini.sections[bgs[bg]];
@@ -234,7 +251,7 @@ int Ini_DuplicateBg(std::string &text, const IniFile &ini, int bg) {
     std::string base = s.name.find(' ') == std::string::npos ? "" : Trim(s.name.substr(s.name.find(' ')));
     size_t digits = base.find_last_not_of("0123456789") + 1;
     int number = digits < base.size() ? atoi(base.c_str() + digits) : 1;
-    block[0] = "[" + NumberedBg(ini, Trim(base.substr(0, digits)), number + 1) + "]";
+    block[0] = "[" + NumberedBg(ini, group, Trim(base.substr(0, digits)), number + 1) + "]";
     int last = LastFollower(ini, bgs, bg);
     SectionLines(lines, ini.sections[bgs[last]], from, to);
     InsertBlock(lines, to, block);
@@ -265,13 +282,13 @@ static bool MoveRange(const IniFile &ini, const std::vector<int> &bgs, int bg, i
     return true;
 }
 
-bool Ini_CanMoveBg(const IniFile &ini, int bg, int dir) {
+bool Ini_CanMoveBg(const IniFile &ini, int bg, int dir, const std::string &group) {
     int a0, a1, b0, b1;
-    return MoveRange(ini, ini.StageBgs(), bg, dir, a0, a1, b0, b1);
+    return MoveRange(ini, ini.BgsOf(group), bg, dir, a0, a1, b0, b1);
 }
 
-int Ini_MoveBg(std::string &text, const IniFile &ini, int bg, int dir) {
-    std::vector<int> bgs = ini.StageBgs();
+int Ini_MoveBg(std::string &text, const IniFile &ini, int bg, int dir, const std::string &group) {
+    std::vector<int> bgs = ini.BgsOf(group);
     int a0, a1, b0, b1;
     if (!MoveRange(ini, bgs, bg, dir, a0, a1, b0, b1)) return -1;
     int first0 = std::min(a0, b0), first1 = dir > 0 ? a1 : b1, second0 = std::max(a0, b0), second1 = dir > 0 ? b1 : a1;
@@ -291,8 +308,8 @@ int Ini_MoveBg(std::string &text, const IniFile &ini, int bg, int dir) {
     return bg + dir * (b1 - b0 + 1);
 }
 
-bool Ini_DeleteBg(std::string &text, const IniFile &ini, int bg) {
-    std::vector<int> bgs = ini.StageBgs();
+bool Ini_DeleteBg(std::string &text, const IniFile &ini, int bg, const std::string &group) {
+    std::vector<int> bgs = ini.BgsOf(group);
     if (bg < 0 || bg >= (int)bgs.size()) return false;
     std::vector<std::string> lines = SplitLines(text);
     int from, to;
@@ -303,14 +320,14 @@ bool Ini_DeleteBg(std::string &text, const IniFile &ini, int bg) {
     return true;
 }
 
-int Ini_BgFollowers(const IniFile &ini, int bg) {
-    std::vector<int> bgs = ini.StageBgs();
+int Ini_BgFollowers(const IniFile &ini, int bg, const std::string &group) {
+    std::vector<int> bgs = ini.BgsOf(group);
     if (bg < 0 || bg >= (int)bgs.size() || Follows(ini, bgs, bg)) return 0;
     return LastFollower(ini, bgs, bg) - bg;
 }
 
-std::vector<int> Ini_BgMap(const IniFile &was, const IniFile &now) {
-    std::vector<int> a = was.StageBgs(), b = now.StageBgs(), map(b.size(), -1);
+std::vector<int> Ini_BgMap(const IniFile &was, const IniFile &now, const std::string &group) {
+    std::vector<int> a = was.BgsOf(group), b = now.BgsOf(group), map(b.size(), -1);
     std::vector<char> used(a.size());
     auto same = [](const IniSection &x, const IniSection &y) {
         if (x.fields.size() != y.fields.size()) return false;
@@ -330,6 +347,33 @@ std::vector<int> Ini_BgMap(const IniFile &was, const IniFile &now) {
         for (size_t i = 0; i < b.size(); i++)
             if (map[i] < 0 && !used[i]) map[i] = (int)i, used[i] = 1;
     return map;
+}
+
+std::string Ini_BgChanges(const IniFile &was, const IniFile &now, const std::vector<std::string> &groups) {
+    std::string out;
+    for (const std::string &group : groups) {
+        std::vector<int> map = Ini_BgMap(was, now, group);
+        bool same = map.size() == was.BgsOf(group).size();
+        std::string list;
+        for (size_t i = 0; i < map.size(); i++) {
+            list += (i ? "," : "") + std::to_string(map[i]);
+            same = same && map[i] == (int)i;
+        }
+        if (!same) out += (out.empty() ? "" : ";") + Lower(group) + "=" + list;
+    }
+    return out;
+}
+
+std::vector<std::string> Ini_BgGroups(const IniFile &ini) {
+    std::vector<std::string> out;
+    auto add = [&](const std::string &group) {
+        for (const std::string &o : out)
+            if (Lower(o) == Lower(group)) return;
+        if (!group.empty()) out.push_back(group);
+    };
+    for (const IniSection &s : ini.sections)
+        if (FirstWord(s.lower) == "scene" || FirstWord(s.lower) == s.lower) add(Ini_BgGroup(ini, s));
+    return out;
 }
 
 IniBgTime Ini_BgCtrlTime(const IniFile &ini, int section) {

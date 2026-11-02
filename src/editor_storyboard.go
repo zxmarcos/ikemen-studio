@@ -32,6 +32,7 @@ func editorReloadStoryboard(textFile string, keep bool) (err error) {
 	}
 	defer func() {
 		edStoryboard.keep, edStoryboard.loading = false, false
+		edBgFrom = nil
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
 		}

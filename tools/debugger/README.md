@@ -196,6 +196,12 @@ background moves with those that have `positionlink` after it, and everything th
 moves keeps going from where it was. All of it works with the game or without it, and
 Undo takes it back; the def is written with Save.
 
+The Motif and Storyboard windows have the same buttons, for the group of backgrounds of
+the section selected: pick a `[TitleBG ...]` or `[TitleBGdef]`, or a scene with `bg.name`.
+In Scenes, **+ Animation** makes the animation of a new layer the same way, and every
+field naming an action, in any of these windows, has **A new animation** in the menu of
+its thumbnail.
+
 **View > Windows** opens and closes each one (one opened where the workspace
 does not have it goes next to its neighbours). In Stage and Screenpack, Code
 shows that def; in the others it follows the selected player's state.

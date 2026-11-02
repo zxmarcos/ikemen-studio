@@ -102,6 +102,23 @@ static bool ActionCell(SourceFile &sf, int no, SpriteFile *spf, std::string *val
             }
         }
         ImGui::EndChild();
+        // Made here: the text only grows at its end, the field's line stays good
+        if (ImGui::SmallButton(ICON_PLUS " A new animation...")) ImGui::OpenPopup("refnew");
+        if (ImGui::BeginPopup("refnew")) {
+            NewAnim a;
+            if (AnimChooser(sf, spf, &a, false)) {
+                bool others = spf && spf->dirty;
+                int made = MakeAnim(sf, spf, a, "");
+                if (made >= 0) {
+                    *value = std::to_string(made);
+                    chosen = true;
+                    if (!a.files.empty()) SaveAddedSprites(*spf, others);
+                    AnimOpenFile(sf.path, made, 1, false);
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
         if (chosen) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }

@@ -74,4 +74,6 @@ std::string Story_NewLayerKey(const StoryScene &s);     // "layer3": a number th
 // A new layer of text, in the middle of the picture. The game draws no text without a font: the first of
 // [SceneDef], else f-6x9 added there.
 bool Story_AddText(std::string &text, const IniFile &ini, const StoryDoc &doc, int scene);
+// A new layer showing that action, at the top of the middle of the picture, where an image's axis puts it
+bool Story_AddAnim(std::string &text, const IniFile &ini, const StoryDoc &doc, int scene, int action);
 bool Story_RemoveKeys(std::string &text, const IniSection &s, const std::string &prefix); // every field of "layer0."

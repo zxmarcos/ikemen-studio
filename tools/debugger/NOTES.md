@@ -324,6 +324,26 @@ text the game has with the new one (`Ini_BgMap`: same section, then same name,
 then same place) and goes in `debugReloadStage`'s third argument, every reload
 included: by index, a moved BG would take its neighbour's movement.
 
+The same for screens (`app_layers.cpp`, shared with the Stage window; `BgHost`
+says what differs). A group of BGs is the first word of their sections
+(`Ini_BgGroup`): `[TitleBGdef]` and `[TitleBG ...]`, or a storyboard scene's
+`bg.name`, whose sections may have no def (`logo.def`) and no tail (`[BG0]`, which
+the engine reads as a BG too). The Motif and Storyboard windows act on the group of
+the section selected. Their reload takes `debugBgFrom("titlebg=0,-1,1;...")`
+before it, for the groups that changed: `editorKeepBgDef` reads it by the name
+`editorDefIndex` gives the old BGDef, and matches their animations too, since the
+walk that follows goes by place. Tested on the title: swapping the two layers of
+clouds and undoing it leaves the lower one moving at the same 20 px/s, with no jump
+(F5 does not stop a menu: only the shift between frames tells). A section is
+selected by `SectionKey`, "#2" after the name of the second one with that name:
+`system.def` has two `[TitleBG Title LogoShadow]`, and the second could not be
+edited here. `AnimChooser` makes an animation wherever one is asked for: Add
+layer, Scenes' + Animation (`Story_AddAnim`: at the top of the middle, since an
+image's axis is at its top centre) and the menu of a field naming an action, in the
+Fight screen too, whose elements are otherwise the engine's. Not handled: a group
+with its own `spr` in its def, which the sprites window and these buttons do not
+know (`SpritesFileOf` gives the def's); the release's defs do not use it.
+
 Phase 3, screenpacks: begun with the fight screen (`fight.def`). Window
 Fight screen: its sections and fields (`src/ini.cpp`), its elements
 (`editor_fight.go`: each `Layout` drawn, with the section and prefix it was
