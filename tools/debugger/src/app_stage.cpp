@@ -912,7 +912,8 @@ void StageWindow() {
                 ImGui::SameLine();
                 ImGui::TextDisabled("layer %d%s, %.0fx%.0f px", f.layer, f.tiled ? ", tiled" : "", f.rect.z, f.rect.w);
             }
-        ParallaxBgLine(sf, ini, s, selBg);
+        if (BgTypeLine(sf, s)) StageEdited(sf);
+        else ParallaxBgLine(sf, ini, s, selBg);
     }
     if (sf.text == before &&
         ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
@@ -923,24 +924,34 @@ void StageWindow() {
         static std::string editing;
         static int editLine = -1;
         bool changed = false;
+        // What its type asks for, first: the type is just above
+        if (selBg >= 0) changed = BgMissingRows(sf, s);
         for (const IniField &f : s.fields) {
+            if (selBg >= 0 && f.key == "type") continue;
             ImGui::PushID(f.line);
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(f.key.c_str());
-            ImGui::SetItemTooltip("%s", f.key.c_str());
-            ImGui::TableNextColumn();
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            std::string value = editLine == f.line ? editing : f.value;
-            if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
-            if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
-                editLine = -1;
-                if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
+            if (selBg >= 0) {
+                BgKeyCell(s, f);
+            } else {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(f.key.c_str());
+                ImGui::SetItemTooltip("%s", f.key.c_str());
             }
             ImGui::TableNextColumn();
             std::string picked;
-            if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
+            if (selBg < 0 || !BgChoiceCell(f, &picked)) {
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                std::string value = editLine == f.line ? editing : f.value;
+                if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
+                if (ImGui::IsItemDeactivatedAfterEdit() && !changed) {
+                    editLine = -1;
+                    if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
+                }
+            }
+            ImGui::TableNextColumn();
+            FieldRefCell(sf, s, f, &picked);
+            if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
             ImGui::TableNextColumn();
             if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
             ImGui::SetItemTooltip("Remove this line");

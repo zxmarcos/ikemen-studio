@@ -67,6 +67,21 @@ std::vector<std::string> Ini_BgGroups(const IniFile &ini); // all a def has
 // Those whose BGs changed places, for debugBgFrom: "titlebg=0,-1,1;selectbg=1,0"; "" none.
 std::string Ini_BgChanges(const IniFile &was, const IniFile &now, const std::vector<std::string> &groups);
 
+// What a BG is, as readBackGround takes it from the first letter of its type, and what each type
+// reads. The fields of a BG that belong to some types, and not the ones every BG has.
+enum IniBgType { kIniBgNormal, kIniBgAnim, kIniBgParallax, kIniBgVideo, kIniBgDummy, kIniBgTypes };
+struct IniBgKey {
+    const char *key, *hint;
+    bool needed = false; // the BG shows nothing without it
+};
+int Ini_BgType(const IniSection &s); // -1: no type, or one the engine skips
+// Those its type could use and it does not have
+std::vector<IniBgKey> Ini_BgMissingKeys(const IniSection &s);
+// Whether the engine reads a key in this BG: a sprite beside an action is not, for instance
+bool Ini_BgKeyRead(const IniSection &s, const std::string &key);
+// The values a BG's field can have, nullptr when it is free
+const std::vector<const char *> *Ini_BgChoices(const std::string &key);
+
 // When a BGCtrl runs, as the engine reads it: time = start, end, looptime; end left out is start, and
 // the looptime left out is its BGCtrlDef's (-1 none). ownLoop: its time gives one.
 struct IniBgTime {

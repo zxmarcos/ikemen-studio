@@ -194,9 +194,10 @@ ParallaxStop ShownStop() {
 
 // Making a BG a floor, or what a floor can do. True when the text changed.
 bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const ParallaxView &view) {
-    const IniField *type = s.Field("type");
-    bool floor = type && !type->value.empty() && tolower((unsigned char)type->value[0]) == 'p';
+    // A parallax BG without a width is a plain picture: making it a floor gives it one
+    bool floor = Ini_BgType(s) == kIniBgParallax && s.Field("width");
     bool edited = false;
+    if (!floor && Ini_BgType(s) != kIniBgNormal && Ini_BgType(s) != kIniBgParallax) return false;
     if (!floor) {
         if (ImGui::Button(ICON_STAGE " Make it a floor")) {
             int top = (int)std::lround(b.w / b.units);
@@ -249,8 +250,7 @@ bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, 
     const IniSection *s = nullptr;
     std::vector<int> sections = ini.StageBgs();
     if (b && g_stageBg < (int)sections.size()) s = &ini.sections[sections[g_stageBg]];
-    const IniField *type = s ? s->Field("type") : nullptr;
-    if (!type || type->value.empty() || tolower((unsigned char)type->value[0]) != 'p') {
+    if (!s || Ini_BgType(*s) != kIniBgParallax || !s->Field("width")) {
         drag = -1;
         return false;
     }

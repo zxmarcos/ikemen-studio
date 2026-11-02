@@ -4,12 +4,97 @@
 #include "app_internal.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <climits>
+#include <cstring>
 
 #include "imgui_stdlib.h"
 #include "ini.h"
 
 namespace app {
+
+void BgKeyCell(const IniSection &s, const IniField &f) {
+    ImGui::AlignTextToFramePadding();
+    if (Ini_BgKeyRead(s, f.key)) {
+        ImGui::TextUnformatted(f.key.c_str());
+        ImGui::SetItemTooltip("%s", f.key.c_str());
+    } else {
+        ImGui::TextDisabled("%s", f.key.c_str());
+        ImGui::SetItemTooltip("%s: the engine does not read it for this layer, as its type or its other fields are.", f.key.c_str());
+    }
+}
+
+// A list as wide as its names, whatever the width of its field
+static bool ChoiceCombo(const char *id, const std::string &key, const std::string &now, std::string *value, ImGuiComboFlags flags) {
+    float width = 0;
+    const std::vector<const char *> &choices = *Ini_BgChoices(key);
+    for (const char *c : choices) width = std::max(width, ImGui::CalcTextSize(c).x);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width + ImGui::GetFontSize() * 2, 0), ImVec2(FLT_MAX, FLT_MAX));
+    bool picked = false;
+    if (ImGui::BeginCombo(id, now.c_str(), flags)) {
+        for (const char *c : choices)
+            if (ImGui::Selectable(c, _stricmp(c, now.c_str()) == 0)) *value = c, picked = true;
+        ImGui::EndCombo();
+    }
+    return picked;
+}
+
+bool BgChoiceCell(const IniField &f, std::string *value) {
+    if (!Ini_BgChoices(f.key)) return false;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ChoiceCombo("##v", f.key, f.value, value, ImGuiComboFlags_NoArrowButton); // the column is narrow
+    return true;
+}
+
+bool BgTypeLine(SourceFile &sf, const IniSection &s) {
+    const IniField *f = s.Field("type");
+    std::string now = f ? f->value : "", picked;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("type");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool changed = ChoiceCombo("##type", "type", now.empty() ? "none: not drawn" : now, &picked, 0);
+    ImGui::SetItemTooltip("normal: a sprite. anim: an action. parallax: a sprite whose bottom can be wider than its top, for floors.\n"
+                          "video: a video file. dummy: draws nothing, for what follows it with positionlink.\n"
+                          "What the type needs shows in the fields below; what it does not read is dimmed.");
+    return changed && Ini_SetField(sf.text, s, "type", picked);
+}
+
+bool BgMissingRows(SourceFile &sf, const IniSection &s) {
+    static std::map<std::string, std::string> typed; // by key, until it is written
+    bool changed = false;
+    for (const IniBgKey &k : Ini_BgMissingKeys(s)) {
+        ImGui::PushID(k.key);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        if (k.needed) ImGui::TextColored(Ink(kYellow), "%s", k.key);
+        else ImGui::TextDisabled("%s", k.key);
+        ImGui::SetItemTooltip(k.needed ? "%s: this type shows nothing without it" : "%s: this type can use it", k.key);
+        ImGui::TableNextColumn();
+        IniField ghost;
+        ghost.key = k.key;
+        std::string picked;
+        if (!BgChoiceCell(ghost, &picked)) {
+            std::string &value = typed[k.key];
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##v", k.hint, &value);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                picked = value;
+                value.clear();
+            }
+        } else {
+            ImGui::SetItemTooltip("%s", k.hint);
+        }
+        ImGui::TableNextColumn();
+        std::string chosen;
+        if (FieldRefCell(sf, s, ghost, &chosen)) picked = chosen;
+        ImGui::TableNextColumn();
+        if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, k.key, picked);
+        ImGui::PopID();
+    }
+    return changed;
+}
 
 // What a new BG shows: a sprite, as Create > A stage writes them, or an action.
 static std::string BgOfSprite(int group, int number, int layer) {

@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <set>
 
 namespace {
 
@@ -156,6 +158,62 @@ std::string Ini_BgGroup(const IniFile &ini, const IniSection &s) {
     if (word == s.lower && word != "scenedef" && word.size() > 3 && word.compare(word.size() - 3, 3, "def") == 0)
         return s.name.substr(0, s.name.size() - 3);
     return "";
+}
+
+int Ini_BgType(const IniSection &s) {
+    const IniField *f = s.Field("type");
+    if (!f || f->value.empty()) return -1;
+    static const char kLetters[] = "napvd"; // as kIniBgTypes
+    const char *at = strchr(kLetters, tolower((unsigned char)f->value[0]));
+    return at ? (int)(at - kLetters) : -1;
+}
+
+std::vector<IniBgKey> Ini_BgMissingKeys(const IniSection &s) {
+    static const std::vector<IniBgKey> kKeys[kIniBgTypes] = {
+        {{"spriteno", "group, number", true}, {"mask", "1: colour 0 does not show"}, {"tile", "across, down: 1 for ever, n copies"}, {"tilespacing", "across, down"}},
+        {{"actionno", "an action of this def", true}, {"tile", "across, down: 1 for ever, n copies"}, {"tilespacing", "across, down"}},
+        {{"spriteno", "group, number", true}, {"mask", "1: colour 0 does not show"}, {"width", "top, bottom"}, {"yscalestart", "100"}, {"yscaledelta", "0"}, {"tile", "across: 1 for ever, n copies"}},
+        {{"path", "a video file", true}, {"volume", "0 to 100"}, {"loop", "1: it starts over"}, {"scalemode", "how it fills the screen"}, {"scalefilter", "how it is scaled"}},
+        {},
+    };
+    std::vector<IniBgKey> out;
+    int type = Ini_BgType(s);
+    if (type < 0) return out;
+    bool action = s.Field("actionno") != nullptr;
+    for (const IniBgKey &k : kKeys[type])
+        if (!s.Field(k.key) && (action ? strcmp(k.key, "spriteno") != 0 && strcmp(k.key, "mask") != 0 : true)) out.push_back(k);
+    if (type == kIniBgAnim && s.Field("spriteno")) // it shows that sprite, if not what an anim is for
+        for (IniBgKey &k : out) k.needed = false;
+    return out;
+}
+
+bool Ini_BgKeyRead(const IniSection &s, const std::string &key) {
+    static const std::set<std::string> kOwn = {"spriteno", "actionno", "mask", "tile", "tilespacing", "width", "xscale", "yscalestart",
+                                               "yscaledelta", "path", "volume", "loop", "scalemode", "scalefilter"};
+    int type = Ini_BgType(s);
+    if (type < 0 || !kOwn.count(key)) return true;
+    const IniField *spr = s.Field("spriteno");
+    bool sprite = spr && !spr->value.empty(), action = s.Field("actionno") != nullptr;
+    bool tiling = key == "tile" || key == "tilespacing";
+    switch (type) {
+    case kIniBgNormal: return key == "spriteno" || tiling || (key == "actionno" && !sprite) || (key == "mask" && sprite);
+    case kIniBgAnim: return key == "actionno" || tiling || ((key == "spriteno" || key == "mask") && !action);
+    case kIniBgParallax:
+        if (key == "spriteno" || key == "mask") return !action;
+        if (key == "xscale") return !s.Field("width");
+        return key == "actionno" || key == "tile" || key == "width" || key == "yscalestart" || key == "yscaledelta";
+    case kIniBgVideo: return key == "path" || key == "volume" || key == "loop" || key == "scalemode" || key == "scalefilter";
+    default: return false;
+    }
+}
+
+const std::vector<const char *> *Ini_BgChoices(const std::string &key) {
+    static const std::vector<const char *> kTypes = {"normal", "anim", "parallax", "video", "dummy"};
+    static const std::vector<const char *> kTrans = {"default", "none", "add", "add1", "addalpha", "sub", "subadd"};
+    static const std::vector<const char *> kModes = {"none", "stretch", "fit", "fitwidth", "fitheight", "zoomfill"};
+    static const std::vector<const char *> kFilters = {"fastbilinear", "bilinear", "bicubic", "experimental", "neighbor", "area",
+                                                       "bicublin", "gauss", "sinc", "lanczos", "spline"};
+    return key == "type" ? &kTypes : key == "trans" ? &kTrans : key == "scalemode" ? &kModes : key == "scalefilter" ? &kFilters : nullptr;
 }
 
 std::vector<int> IniFile::StageBgCtrls() const {

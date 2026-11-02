@@ -421,27 +421,34 @@ bool ScreenOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::func
 
 // A field's row: its key (without the element's prefix, when it has it), its value edited as text,
 // a button to remove it. True when the text changed.
-static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, size_t strip) {
+static bool FieldRow(SourceFile &sf, const IniSection &s, const IniField &f, size_t strip, bool bg) {
     static std::string editing;
     static int editLine = -1;
     bool changed = false;
     ImGui::PushID(f.line);
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(f.key.c_str() + strip);
-    ImGui::SetItemTooltip("%s", f.key.c_str());
-    ImGui::TableNextColumn();
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    std::string value = editLine == f.line ? editing : f.value;
-    if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        editLine = -1;
-        if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
+    if (bg) {
+        BgKeyCell(s, f);
+    } else {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(f.key.c_str() + strip);
+        ImGui::SetItemTooltip("%s", f.key.c_str());
     }
     ImGui::TableNextColumn();
     std::string picked;
-    if (FieldRefCell(sf, s, f, &picked) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
+    if (!bg || !BgChoiceCell(f, &picked)) {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        std::string value = editLine == f.line ? editing : f.value;
+        if (ImGui::InputText("##v", &value)) editing = value, editLine = f.line;
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            editLine = -1;
+            if (value != f.value && !value.empty()) changed = Ini_SetField(sf.text, s, f.key.c_str(), value);
+        }
+    }
+    ImGui::TableNextColumn();
+    FieldRefCell(sf, s, f, &picked);
+    if (!picked.empty() && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), picked);
     ImGui::TableNextColumn();
     if (IconButton(ICON_XMARK) && !changed) changed = Ini_SetField(sf.text, s, f.key.c_str(), "");
     ImGui::SetItemTooltip("Remove this line");
@@ -665,8 +672,10 @@ static void ScreenWindow(ScreenDef &d) {
     std::string before = sf.text;
     bool changed = false;
     static bool allFields;
-    if (IsBgSection(ini, s))
+    if (IsBgSection(ini, s)) {
         changed = PositionDrag(d, sf, s, "start", "start", "Where the BG is (as a stage's BG).");
+        if (!changed) changed = BgTypeLine(sf, s);
+    }
     if (!d.prefix.empty()) {
         std::string pos = GroupPosKey(&s, d.prefix, d.motif), offset = OffsetKey(&s, d.prefix, d.motif);
         if (pos != offset)
@@ -683,12 +692,15 @@ static void ScreenWindow(ScreenDef &d) {
         ImGui::TableSetupColumn("what");
         ImGui::TableSetupColumn("");
         bool filter = !d.prefix.empty() && !allFields;
+        // What its type asks for, first: the type is just above
+        if (IsBgSection(ini, s)) changed = BgMissingRows(sf, s);
         for (const IniField &f : s.fields) {
             // The element's keys; in a fight screen, those with a selector for it too (p*.bg0.anim),
             // shown whole
             bool own = f.key.compare(0, d.prefix.size(), d.prefix) == 0;
             if (filter && !own && (d.motif || !Ini_KeyApplies(f.key, d.prefix))) continue;
-            if (!changed) changed = FieldRow(sf, s, f, filter && own ? d.prefix.size() : 0);
+            if (f.key == "type" && IsBgSection(ini, s)) continue; // on a line of its own, above
+            if (!changed) changed = FieldRow(sf, s, f, filter && own ? d.prefix.size() : 0, IsBgSection(ini, s));
         }
         // A new field (with the element's prefix to start with)
         static std::string newKey, newValue, keyFor;

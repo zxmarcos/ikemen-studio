@@ -136,6 +136,13 @@ velocity and a sprite's transparent parts, which count as drawn on.
 hides a layer, the target shows it alone, and the lock has a click on the game go through it
 to what is behind. These three last for the session and change nothing in the def.
 
+A layer's **type** is a list under its start, in a stage and in a screen's BGs: normal, anim,
+parallax, video or dummy. The fields below follow it. What the type can use and the layer
+lacks comes first, ready to fill in, yellow when it shows nothing without it, with the
+sprite and action pickers where they apply; what the engine does not read for this type stays
+in the def, dimmed, so going back to the type finds it. `trans`, `scalemode` and `scalefilter`
+are lists too.
+
 **Make it a floor**, under a selected BG, turns it into `type = parallax`, keeping it where
 it is, and **Floor handles** draw its corners and a grid on the game: drag a corner to set
 the width of its top or bottom, and the grid shows where its lines run. **With the

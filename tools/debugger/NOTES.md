@@ -174,6 +174,16 @@ frame and only sent when it changes, or when the game is another: moving or addi
 more. The delta dragged reaches the stage through `g_bgEdit`, as the next frame starts, since `ini` is in
 use until then; each step of a drag is a step of undo. Hidden layers still count in `Parallax_Empty`.
 
+A BG's type (`Ini_BgType`, `Ini_BgMissingKeys`, `Ini_BgKeyRead`, tested; `BgTypeLine`, `BgMissingRows` in
+`app_layers.cpp`, for the Stage and screen windows): the value column is about 40 px wide in the default
+arrangement, which is why a type looked impossible to change, so the type has a line of its own. What
+each type reads comes from `readBackGround`: a normal BG's sprite wins over its action, an action wins
+over the sprite in anim and parallax. Changing type only writes `type`: nothing is removed, and an anim
+with a sprite and no action keeps showing the sprite. All five were gone through on a running match. A
+video's path that is not found is an error in Output and the stage stays as it was. In a test package
+a video did not show on the game, in the def from the start too; not looked into. A parallax BG without
+`width` is a plain picture, so handles need it (`Make it a floor` gives it one).
+
 Floors: a row of a `width` parallax is at `left * rowWidth / topWidth`, so the bottom's corners are the
 top's multiplied by the widening; the grid laid on the engine's trapezoid agrees at the camera's start
 and at its limits, slanted edge included. `Parallax_FloorDelta` is `1 / (1 + (widen - 1) * t)`, t being

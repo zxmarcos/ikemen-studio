@@ -424,9 +424,67 @@ static void TestBgGroups() {
     CHECK(two.find("[BG0 2]\ntype = normal\n") != std::string::npos);
 }
 
+static bool Lacks(const IniSection &s, const char *key, bool needed) {
+    for (const IniBgKey &k : Ini_BgMissingKeys(s))
+        if (strcmp(k.key, key) == 0) return k.needed == needed;
+    return false;
+}
+
+static void TestBgTypes() {
+    IniFile f;
+    Ini_Parse("[BG a]\ntype = Normal\n"
+              "[BG b]\ntype = anim\nspriteno = 1, 0\n"
+              "[BG c]\ntype = parallax\nactionno = 5\nspriteno = 1, 0\nxscale = 1, 2\nwidth = 10, 20\n"
+              "[BG d]\ntype = video\nspriteno = 1, 0\npath = a.webm\n"
+              "[BG e]\ntype = dummy\nspriteno = 1, 0\nstart = 0, 0\n"
+              "[BG f]\ntype = other\n"
+              "[BG g]\nstart = 0, 0\n"
+              "[BG h]\ntype = normal\nspriteno = 1, 0\nactionno = 5\n"
+              "[BG i]\ntype = normal\nactionno = 5\n",
+              f);
+    const auto &s = f.sections;
+    CHECK(Ini_BgType(s[0]) == kIniBgNormal); // by its first letter, as the engine reads it
+    CHECK(Ini_BgType(s[1]) == kIniBgAnim);
+    CHECK(Ini_BgType(s[2]) == kIniBgParallax);
+    CHECK(Ini_BgType(s[3]) == kIniBgVideo);
+    CHECK(Ini_BgType(s[4]) == kIniBgDummy);
+    CHECK(Ini_BgType(s[5]) == -1);
+    CHECK(Ini_BgType(s[6]) == -1);
+
+    CHECK(Lacks(s[0], "spriteno", true));
+    CHECK(Lacks(s[0], "tile", false));
+    CHECK(!Lacks(s[0], "actionno", true));
+    CHECK(Lacks(s[1], "actionno", false)); // with a sprite it still shows something
+    CHECK(!Lacks(s[2], "spriteno", true)); // nor the sprite of one with an action
+    CHECK(Lacks(s[2], "yscalestart", false));
+    CHECK(Lacks(s[3], "volume", false));
+    CHECK(Lacks(s[3], "scalemode", false));
+    CHECK(Ini_BgMissingKeys(s[4]).empty());
+    CHECK(Ini_BgMissingKeys(s[5]).empty());
+
+    CHECK(Ini_BgKeyRead(s[1], "spriteno")); // an anim with no action shows its sprite
+    CHECK(!Ini_BgKeyRead(s[2], "spriteno")); // a parallax BG with one does not
+    CHECK(Ini_BgKeyRead(s[2], "actionno"));
+    CHECK(!Ini_BgKeyRead(s[2], "xscale")); // width goes first
+    CHECK(!Ini_BgKeyRead(s[2], "tilespacing"));
+    CHECK(!Ini_BgKeyRead(s[3], "spriteno"));
+    CHECK(Ini_BgKeyRead(s[3], "path"));
+    CHECK(!Ini_BgKeyRead(s[4], "spriteno"));
+    CHECK(Ini_BgKeyRead(s[4], "start"));
+    CHECK(Ini_BgKeyRead(s[5], "spriteno"));
+    CHECK(!Ini_BgKeyRead(s[7], "actionno")); // a normal BG's sprite goes first
+    CHECK(Ini_BgKeyRead(s[8], "actionno"));
+    CHECK(!Ini_BgKeyRead(s[0], "width"));
+
+    CHECK(Ini_BgChoices("type")->size() == kIniBgTypes);
+    CHECK(Ini_BgChoices("trans") != nullptr);
+    CHECK(Ini_BgChoices("start") == nullptr);
+}
+
 int main() {
     TestLayers();
     TestBgGroups();
+    TestBgTypes();
     TestBgTime();
     TestSpritesFile();
     TestRefs();
