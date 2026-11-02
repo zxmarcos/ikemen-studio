@@ -38,6 +38,7 @@
 #include "snd.h"
 #include "ini.h"
 #include "stagecheck.h"
+#include "parallax.h"
 #include "gltf.h"
 #include "undo.h"
 #include "editor.hpp"
@@ -702,8 +703,9 @@ extern std::vector<FrameBg> g_frameBgs;
 struct StageView {
     bool ok = false, free = false;
     float cam[7] = {}; // x, y, scale, ground level, gameWidth, widthScale, heightScale
-    float lim[13] = {}; // localscl, boundL, boundR, boundH, boundLo, minLeft, maxRight, above, below,
-                        // leftbound, rightbound, camera startx, starty
+    float lim[16] = {}; // localscl, boundL, boundR, boundH, boundLo, minLeft, maxRight, above, below,
+                        // leftbound, rightbound, camera startx, starty, lowest scale, aspect
+                        // correction, zoffset
     std::vector<ImVec2> starts; // P1..P4
     int time = 0, ranAt = 0;    // the stage's time; the stage time of its last step
     struct Ctrl {
@@ -737,6 +739,18 @@ void StageSpritesSaved(const std::string &path); // the stage using that SFF rea
 void StageOpen();                                // another stage is open: nothing of the last one stays selected
 void PlayStage(const std::string &def);          // it becomes the toolbar's stage, and the match's when one is on
 void StageRunFrame();                            // each frame: on the stage's workspace, the game stays on the project
+const SpriteFile *StageSpriteFile(const SourceFile &sf, const IniFile &ini); // the SFF of a stage's def, as Sprites has it
+extern bool g_freeCam;                           // the free camera: the world point in the middle, at the ground line's height, and its scale
+extern float g_freeX, g_freeY, g_freeScale;
+void SendFreeCamera();
+void SetFreeCamera(bool on);
+// The parallax tools (app_parallax.cpp): a section of the Stage window, a line under a BG's start,
+// and what shows nothing on the Game window
+ParallaxView StageParallaxView(const IniFile &ini); // the game's screen and camera when the stage is in the match
+const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniFile &ini, const SffDoc *sff, unsigned sprites);
+void ParallaxSection(const SourceFile &sf, const IniFile &ini);
+void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index);
+void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
 std::string StageNameOf(const std::string &def); // as the toolbar names it: "stage0"
 // A section of a def's checks, each row showing its line in Code. sffRead: else a note that sprites were not checked
 void FindingsSection(const SourceFile &sf, const std::vector<StageFinding> &found, bool sffRead);

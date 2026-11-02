@@ -1,0 +1,227 @@
+// Tests of src/parallax.cpp: stages written here, on sprites made up, against the camera.
+#include "parallax.h"
+
+#include <cmath>
+#include <cstdio>
+#include <string>
+
+#include "air.h"
+#include "ini.h"
+#include "sff.h"
+
+static int g_failed;
+
+#define CHECK(cond)                                                     \
+    do {                                                                \
+        if (!(cond)) {                                                  \
+            printf("%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #cond); \
+            g_failed++;                                                 \
+        }                                                               \
+    } while (0)
+
+#define NEAR(a, b) CHECK(std::fabs((a) - (b)) < 0.01f)
+
+static SffDoc Sprites() {
+    SffDoc doc;
+    auto add = [&](int group, int number, int w, int h, int x, int y) {
+        SffSprite s;
+        s.group = group, s.number = number, s.w = w, s.h = h, s.x = x, s.y = y;
+        doc.sprites.push_back(s);
+    };
+    add(0, 0, 640, 240, 320, 0); // wide, its axis in the middle
+    add(0, 1, 100, 240, 0, 0);   // a narrow one, its axis on its left
+    add(0, 2, 200, 40, 100, 0);  // a floor
+    return doc;
+}
+
+static const char *kCamera = "[StageInfo]\nlocalcoord = 320, 240\nzoffset = 200\n[Camera]\nboundleft = -160\nboundright = 160\n";
+
+struct Parsed {
+    IniFile ini;
+    AirFile air;
+    SffDoc sff = Sprites();
+    std::vector<ParallaxBg> bgs;
+    ParallaxView view;
+    explicit Parsed(const std::string &text) {
+        Ini_Parse(text, ini);
+        Air_Parse(text, air);
+        bgs = Parallax_Bgs(ini, air, sff);
+        view = Parallax_ViewOf(ini);
+    }
+};
+
+static bool Has(const std::vector<StageFinding> &f, StageFinding::Level level, const char *part) {
+    for (const auto &x : f)
+        if (x.level == level && x.text.find(part) != std::string::npos) return true;
+    return false;
+}
+
+static void TestView() {
+    Parsed p(std::string(kCamera) + "zoomout = 0.5\nboundhigh = -40\n");
+    NEAR(p.view.width, 320);
+    NEAR(p.view.height, 240);
+    NEAR(p.view.left, -160);
+    NEAR(p.view.right, 160);
+    NEAR(p.view.high, -40);
+    NEAR(p.view.zoffset, 200);
+    NEAR(p.view.minScale, 0.5f); // 320 / (320 + 320)
+    Parsed q(std::string(kCamera) + "zoomout = 0.25\n");
+    NEAR(q.view.minScale, 0.5f); // no further than the whole stage on screen
+    CHECK(Parsed("[StageInfo]\nlocalcoord = 1280, 720\n").view.zoffset > 590);
+}
+
+static void TestBgs() {
+    Parsed p(std::string(kCamera) +
+             "[BG a]\ntype = normal\nspriteno = 0, 0\nstart = 10, 5\ndelta = .5\n"
+             "[BG b]\ntype = normal\nspriteno = 0, 1\npositionlink = 1\nstart = 3, 4\n"
+             "[BG c]\ntype = dummy\n"
+             "[BG d]\ntype = normal\nspriteno = 9, 9\n"
+             "[BG e]\ntype = anim\nactionno = 5\ntrans = add\n"
+             "[BG f]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 200\nwidth = 300, 900\nyscalestart = 50\n"
+             "[BG g]\ntype = normal\nspriteno = 0, 1\ntile = 1, 0\nscalestart = 2, 1\n"
+             "[Begin Action 5]\n0, 1, 0, 0, 10\n");
+    CHECK(p.bgs.size() == 5); // the dummy and the sprite that is not there are out
+    if (p.bgs.size() != 5) return;
+    const ParallaxBg &a = p.bgs[0], &b = p.bgs[1], &e = p.bgs[2], &f = p.bgs[3], &g = p.bgs[4];
+    CHECK(a.index == 0);
+    NEAR(a.left, 10 - 320);
+    NEAR(a.top, 5);
+    NEAR(a.delta[0], 0.5f);
+    NEAR(a.delta[1], 1); // left out, it keeps its default
+    CHECK(b.linked);
+    NEAR(b.left, 13); // its own start on the one it follows, and that one's delta
+    NEAR(b.top, 9);
+    NEAR(b.delta[0], 0.5f);
+    CHECK(e.index == 4 && !e.solid); // an action's sprite, blended
+    NEAR(e.w, 100);
+    NEAR(f.w, 300);
+    NEAR(f.widen, 3);
+    NEAR(f.left, -150);
+    NEAR(f.h, 80); // yscalestart 50 doubles it
+    CHECK(f.tile[0] == 0);
+    CHECK(g.tile[0] == 1);
+    NEAR(g.w, 200);
+    NEAR(g.step[0], 200);
+}
+
+static void TestCovers() {
+    Parsed p(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\ndelta = 1\n");
+    const ParallaxBg &b = p.bgs[0];
+    ParallaxStop rest{"", 0, 0, 1}, right{"", 160, 0, 1};
+    CHECK(Parallax_Covers(b, p.view, rest, -159, 10));
+    CHECK(Parallax_Covers(b, p.view, rest, 159, 239));
+    CHECK(!Parallax_Covers(b, p.view, rest, 0, 241));
+    CHECK(Parallax_Covers(b, p.view, right, 159, 10)); // it ends at 160 exactly
+    ParallaxStop further{"", 170, 0, 1};
+    CHECK(!Parallax_Covers(b, p.view, further, 155, 10));
+    // Up high a BG with delta 1 comes down, and its top leaves the screen's
+    ParallaxStop high{"", 0, -30, 1};
+    CHECK(!Parallax_Covers(b, p.view, high, 0, 20));
+    CHECK(Parallax_Covers(b, p.view, high, 0, 40));
+
+    // Delta 0 stays where it is, at any scale
+    Parsed q(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 1\nstart = -50, 0\ndelta = 0, 0\n");
+    ParallaxStop zoomed{"", 100, 0, 0.5f};
+    CHECK(Parallax_Covers(q.bgs[0], q.view, zoomed, -49, 10));
+    CHECK(!Parallax_Covers(q.bgs[0], q.view, zoomed, 51, 10));
+    // Delta 1 shrinks with the camera
+    Parsed r(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 1\nstart = -50, 0\n");
+    ParallaxStop half{"", 0, 0, 0.5f};
+    CHECK(Parallax_Covers(r.bgs[0], r.view, half, 24, 150));
+    CHECK(!Parallax_Covers(r.bgs[0], r.view, half, 26, 150));
+
+    // A floor is narrower at its top, and scrolls more at its bottom
+    Parsed f(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 200\nwidth = 200, 600\n");
+    const ParallaxBg &floor = f.bgs[0];
+    CHECK(!Parallax_Covers(floor, f.view, rest, 120, 200));
+    CHECK(Parallax_Covers(floor, f.view, rest, 120, 239));
+    ParallaxStop along{"", 50, 0, 1};
+    CHECK(Parallax_Covers(floor, f.view, along, -149, 200));
+    CHECK(!Parallax_Covers(floor, f.view, along, -151, 200));
+    CHECK(Parallax_Covers(floor, f.view, along, -400, 239.9f));
+    CHECK(!Parallax_Covers(floor, f.view, along, -451, 239.9f));
+
+    // Tiles
+    Parsed t(std::string(kCamera) +
+             "[BG a]\ntype = normal\nspriteno = 0, 1\ntile = 1, 0\n[BG b]\ntype = normal\nspriteno = 0, 1\ntile = 3, 0\ntilespacing = 10, 0\n");
+    CHECK(Parallax_Covers(t.bgs[0], t.view, rest, -5000, 10));
+    CHECK(Parallax_Covers(t.bgs[1], t.view, rest, 319, 10));
+    CHECK(!Parallax_Covers(t.bgs[1], t.view, rest, 321, 10));
+    CHECK(!Parallax_Covers(t.bgs[1], t.view, rest, -1, 10));
+}
+
+static void TestFit() {
+    Parsed p(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\ndelta = 2\n");
+    NEAR(Parallax_FitDelta(p.bgs[0], p.view), 1); // (640 - 320) / 320
+    NEAR(Parallax_WidthFor(p.view, 0.5f), 480);
+    NEAR(Parallax_WidthFor(p.view, 0), 320);
+    // Off centre: the nearer edge says
+    Parsed q(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\nstart = 100, 0\n");
+    NEAR(Parallax_FitDelta(q.bgs[0], q.view), 0.375f); // its left is at -220, 60 past the screen's: 60 / 160
+    // Narrower than the screen: no delta helps
+    Parsed r(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 1\n");
+    CHECK(Parallax_FitDelta(r.bgs[0], r.view) < 0);
+    // A camera that does not move leaves any delta good, which says nothing
+    Parsed s("[BG a]\ntype = normal\nspriteno = 0, 0\n");
+    CHECK(Parallax_FitDelta(s.bgs[0], s.view) < 0);
+}
+
+static void TestStops() {
+    Parsed p(std::string(kCamera) + "boundhigh = -40\nzoomout = 0.5\n");
+    std::vector<ParallaxStop> stops = Parallax_Stops(p.view);
+    CHECK(stops.size() == 7);
+    NEAR(stops[0].x, 0);
+    NEAR(stops[1].x, -160);
+    NEAR(stops[2].x, 160);
+    NEAR(stops[3].y, -40);
+    NEAR(stops[5].scale, 0.5f);
+    NEAR(stops[5].x, 0); // the whole stage is on screen: nowhere to go
+    NEAR(stops[6].x, 0);
+}
+
+static void TestCheck() {
+    // Fits: nothing to say
+    Parsed good(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\n");
+    CHECK(Parallax_Check(good.ini, good.bgs, good.view).empty());
+
+    // Moves too fast: it fills the screen at the start, and not at the limits
+    Parsed fast(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\ndelta = 1.5\n");
+    auto found = Parallax_Check(fast.ini, fast.bgs, fast.view);
+    CHECK(Has(found, StageFinding::Warning, "At the camera's right limit, the right"));
+    CHECK(Has(found, StageFinding::Warning, "At the camera's left limit, the left"));
+    CHECK(Has(found, StageFinding::Note, "[BG a] ends 80 units before"));
+    CHECK(Has(found, StageFinding::Note, "delta 1 would reach"));
+
+    // Another BG behind it: no hole, and the one that ends still says so
+    Parsed covered(std::string(kCamera) + "[BG back]\ntype = normal\nspriteno = 0, 1\ntile = 1, 1\n[BG a]\ntype = normal\nspriteno = 0, 0\ndelta = 1.5\n");
+    found = Parallax_Check(covered.ini, covered.bgs, covered.view);
+    CHECK(!Has(found, StageFinding::Warning, "show no BG"));
+    CHECK(Has(found, StageFinding::Note, "[BG a] ends"));
+
+    // A stage that never filled the screen has no hole because of the camera; a blended BG hides nothing
+    Parsed small(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 1\nstart = -50, 0\ndelta = 0\n");
+    CHECK(Parallax_Check(small.ini, small.bgs, small.view).empty());
+    Parsed glass(std::string(kCamera) + "[BG a]\ntype = normal\nspriteno = 0, 0\ntrans = add\n[BG b]\ntype = normal\nspriteno = 0, 0\ndelta = 1.5\n");
+    found = Parallax_Check(glass.ini, glass.bgs, glass.view);
+    CHECK(Has(found, StageFinding::Warning, "show no BG"));
+
+    // Up high, the top of a BG that moves with the camera comes into the screen
+    Parsed high(std::string(kCamera) + "boundhigh = -40\n[BG a]\ntype = normal\nspriteno = 0, 0\n");
+    found = Parallax_Check(high.ini, high.bgs, high.view);
+    CHECK(Has(found, StageFinding::Warning, "up high, the top 40 units"));
+}
+
+int main() {
+    TestView();
+    TestBgs();
+    TestCovers();
+    TestFit();
+    TestStops();
+    TestCheck();
+    if (g_failed) {
+        printf("parallax-test: %d failed\n", g_failed);
+        return 1;
+    }
+    printf("parallax-test: all passed\n");
+    return 0;
+}

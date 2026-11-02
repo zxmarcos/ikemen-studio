@@ -13,6 +13,7 @@
 
 #include "imgui_stdlib.h"
 #include "ini.h"
+#include "parallax.h"
 #include "sff.h"
 #include "stagecheck.h"
 
@@ -479,6 +480,7 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     }
     SourceFile *sf = StageSource();
     const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
+    if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
     auto corners = [&](const FrameBg &b, ImVec2 &lo, ImVec2 &hi) {
         lo = toScreen(b.rect.x, b.rect.y);
         hi = toScreen(b.rect.x + b.rect.z, b.rect.y + b.rect.w);
@@ -574,24 +576,36 @@ std::string StageFile(const std::string &def, const std::string &name) {
     return "";
 }
 
-// The checks of a stage's def, again when its text or its SFF changes; *sffRead: its SFF was read
-const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini, bool *sffRead = nullptr) {
-    static std::string path, text;
-    static unsigned sffVersion;
-    static std::vector<StageFinding> found;
-    static bool done, read;
-    // The SFF, as the Sprites window has it (its edits count)
+// The SFF, as the Sprites window has it (its edits count)
+const SpriteFile *StageSpriteFile(const SourceFile &sf, const IniFile &ini) {
     const SpriteFile *spr = nullptr;
     for (const IniSection &s : ini.sections)
         if (s.lower == "bgdef")
             if (const IniField *f = s.Field("spr"))
                 if (std::string p = StageFile(sf.path, f->value); !p.empty()) spr = &SpriteFileAt(p);
+    return spr;
+}
+
+// The checks of a stage's def, again when its text, its SFF or the camera changes; *sffRead: its SFF
+// was read
+const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini, bool *sffRead = nullptr) {
+    static std::string path, text;
+    static unsigned sffVersion;
+    static ParallaxView camera;
+    static std::vector<StageFinding> found;
+    static bool done, read;
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
-    if (!done || path != sf.path || text != sf.text || sffVersion != (spr ? spr->version : 0)) {
+    ParallaxView view = StageParallaxView(ini);
+    if (!done || path != sf.path || text != sf.text || sffVersion != (spr ? spr->version : 0) || memcmp(&camera, &view, sizeof(view)) != 0) {
         path = sf.path;
         text = sf.text;
         sffVersion = spr ? spr->version : 0;
+        camera = view;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
+        std::vector<StageFinding> holes = Parallax_Check(ini, StageParallaxBgs(sf, ini, sff, sffVersion), view);
+        found.insert(found.end(), holes.begin(), holes.end());
+        std::stable_sort(found.begin(), found.end(), [](const StageFinding &a, const StageFinding &b) { return a.level < b.level; });
         done = true;
         read = sff != nullptr;
     }
@@ -769,6 +783,7 @@ void StageWindow() {
         if (s.lower == "bgdef" && s.Field("model")) hasModel = true; // [BGdef] model = x.glb
     ModelSection(hasModel);
     ChecksSection(sf, ini);
+    ParallaxSection(sf, ini);
 
     if (g_stageBg != selBg) {
         selBg = g_stageBg;
@@ -885,6 +900,7 @@ void StageWindow() {
                 ImGui::SameLine();
                 ImGui::TextDisabled("layer %d%s, %.0fx%.0f px", f.layer, f.tiled ? ", tiled" : "", f.rect.z, f.rect.w);
             }
+        ParallaxBgLine(sf, ini, s, selBg);
     }
     if (sf.text == before &&
         ImGui::BeginTable("fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {

@@ -190,7 +190,7 @@ void PollFrames() {
     sv.ok = !stage["cam"].isNull();
     sv.free = stage["free"].truthy();
     for (size_t n = 0; n < 7; n++) sv.cam[n] = (float)stage["cam"][n].num();
-    for (size_t n = 0; n < 13; n++) sv.lim[n] = (float)stage["lim"][n].num();
+    for (size_t n = 0; n < 16; n++) sv.lim[n] = n < stage["lim"].items.size() ? (float)stage["lim"][n].num() : 0;
     sv.starts.clear();
     for (const auto &p : stage["start"].items) sv.starts.push_back(ImVec2((float)p[size_t(0)].num(), (float)p[1].num()));
     sv.time = stage["time"].i();

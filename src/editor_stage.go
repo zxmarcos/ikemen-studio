@@ -233,7 +233,7 @@ func editorSpriteDrawn(a *Animation, rp *RenderParams, xcs, ycs float32, reflect
 //	    (Y * s - y + gl) * heightScale,
 //	  "lim": in the world: [stage localscl, camera boundL, boundR, boundH, boundLo, minLeft,
 //	    maxRight, above and below the ground on screen, players' leftbound, rightbound, camera
-//	    startx, starty],
+//	    startx, starty, the lowest scale it zooms out to, its aspect correction, zoffset],
 //	  "start": [[x, y], ...] P1, P2, P3, P4 starting positions in the world,
 //	  "time": the stage's time, "ranAt": the stage time of its last step,
 //	  "bgc": [[ran on that step, starttime, endtime, looptime, [BG indices]], ...] the BGCtrls
@@ -274,9 +274,13 @@ func editorStageGeometry(b []byte) []byte {
 	nums(cx, cy, cs, c.GroundLevel(), sys.gameWidth, sys.widthScale, sys.heightScale)
 	l := s.localscl
 	above := c.zoff - c.aspectcorrection
+	lowest := float32(1)
+	if c.zoomEnabled() {
+		lowest = c.MinScale
+	}
 	b = append(b, `,"lim":`...)
 	nums(l, c.boundL, c.boundR, c.boundH, c.boundLo, c.minLeft, c.maxRight, above, sys.gameHeight-above,
-		s.leftbound*l, s.rightbound*l, float32(c.startx)*l, float32(c.starty)*l)
+		s.leftbound*l, s.rightbound*l, float32(c.startx)*l, float32(c.starty)*l, lowest, c.aspectcorrection, float32(c.zoffset)*l)
 	b = append(b, `,"start":[`...)
 	for i := 0; i < 4 && i < len(s.p); i++ {
 		if i > 0 {

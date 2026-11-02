@@ -55,6 +55,7 @@ add_executable(ikemen-debugger WIN32
   src/app_anim.cpp
   src/app_sprites.cpp
   src/app_sheet.cpp
+  src/app_parallax.cpp
   src/sheet.cpp
   src/app_sounds.cpp
   src/app_code.cpp
@@ -91,6 +92,7 @@ add_executable(ikemen-debugger WIN32
   src/cns.cpp
   src/make.cpp
   src/stagecheck.cpp
+  src/parallax.cpp
   src/bridge.cpp
   src/frame.cpp
   src/editor.cpp
@@ -149,6 +151,9 @@ target_include_directories(make-test PRIVATE src)
 add_executable(stagecheck-test tests/stagecheck_test.cpp src/stagecheck.cpp src/ini.cpp src/air.cpp src/sff.cpp)
 target_include_directories(stagecheck-test PRIVATE src)
 target_link_libraries(stagecheck-test PRIVATE lodepng)
+add_executable(parallax-test tests/parallax_test.cpp src/parallax.cpp src/ini.cpp src/air.cpp src/sff.cpp)
+target_include_directories(parallax-test PRIVATE src)
+target_link_libraries(parallax-test PRIVATE lodepng)
 add_executable(gif-test tests/gif_test.cpp src/gif.cpp)
 target_include_directories(gif-test PRIVATE src)
 add_executable(palfile-test tests/palfile_test.cpp src/palfile.cpp src/sff.cpp)

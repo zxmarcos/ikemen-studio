@@ -121,6 +121,16 @@ Go to and the choice of what to select are not shown there, and opening another 
 puts it in the game's place. A game already running in a match or a menu starts again
 when you come to this workspace; going to another one leaves it as it is, until Restart.
 
+The Stage window's **Camera sweep** takes the camera along its limits, for the layers'
+parallax: **Sweep** goes from one limit to the other and back, the sliders put it anywhere,
+and the buttons go to where it shows the most (each limit, up high, zoomed out), red with
+how much of the screen stays empty there. On the game that part is marked in red. The
+Checks say the same, and name a BG that fills the screen at the start and ends before its
+edge at a limit. Under a selected BG's start, **Use delta** sets the largest delta that
+keeps it over the screen from one limit to the other, and the line beside it says how wide
+it should be for the delta it has. The sums follow the engine, and leave out BGCtrls,
+velocity and a sprite's transparent parts, which count as drawn on.
+
 **File > Package** makes a zip of the project and says what it holds, what the def
 names that is missing, and what is not saved; Show in folder opens it. **Help** has the
 start page, the first steps, the keyboard shortcuts and the words used here.

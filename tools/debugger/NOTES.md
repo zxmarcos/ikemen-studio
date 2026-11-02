@@ -154,6 +154,19 @@ Settings' "Show the game's own window" starts it as before. With no link to its 
 they come. `test_ui.ps1` finds the window by its class now, as a `Process` only gives shown windows, and
 no longer places it: `SWP_SHOWWINDOW` there would have shown it.
 
+**Parallax** (`src/parallax.cpp`, tested; `app_parallax.cpp`): a BG's place at any camera, from
+`drawTransformed`: x is `(left - camX * delta) * zoomX` from the middle of the screen, y
+`zoomY * (top - camY * deltaY) + zoffset * (1 - zoomY) - aspect correction` from its top, and zoomX is
+`scale + (1 - scale) * (1 - delta)`, so a BG at delta 0 does not shrink. `type = parallax` with `width` is
+a trapezoid centred on its start, whose rows scroll and widen together: a row's x is multiplied by its
+width over the top's. The free camera goes through the same `Stage.draw`, so moving it is enough to see
+the parallax: the sweep is that, and `Parallax_Empty` was checked against the game's picture at the left
+and right limits, up high and zoomed out: the red ends where the sprite does. With `zoomout` the engine
+widens `boundL`/`boundR` (`Camera.Reset`), which is why a zoomed stage's limits at scale 1 are past its
+def's bounds; `lim` now sends that, the lowest scale, the aspect correction and zoffset, and from disk
+`Parallax_ViewOf` works from the def alone. `Parallax_Check` reports a stop only when it is emptier than
+the camera's start, since a stage that never filled the screen (4:3 with `bgclearcolor`) is not a hole.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.
@@ -693,6 +706,8 @@ tools/debugger/
   src/ini.cpp/.h         def files (stages, fight screens, motifs): sections and fields with their lines; text edits
   src/cns.cpp/.h         state files (CNS and ZSS): statedefs, controllers, lines of code (Analysis)
   src/stagecheck.cpp/.h  a stage def's checks (Stage window): files, sprites, actions, ids, bounds, keys
+  src/parallax.cpp/.h    a stage's BGs against its camera: what each covers, what stays empty, the delta that fits
+  src/app_parallax.cpp   the Stage window's Camera sweep, Use delta, what shows nothing marked on the game
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
   src/app_create.cpp     File > New: a dialog for a move, a character, a stage of PNGs
   src/app_model.cpp      Model window: the stage's 3D model (the match's, or read from disk), its placement, its nodes on the Game window
