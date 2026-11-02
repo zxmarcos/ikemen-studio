@@ -410,9 +410,9 @@ std::vector<std::string> PickFiles(const char *filter, bool multi);
 std::string PickSaveFile(const char *filter, const char *ext, const std::string &name);
 void SpritesChanged(SpriteFile &sf);
 void SaveSprites(SpriteFile &sf);
-// An image as a new sprite, in a group of its own, its axis at its top centre as a stage's layers have it:
-// false when it could not be read
-bool AddSpriteOfImage(SpriteFile &sf, const std::string &file, int *group, int *number);
+// Images as new sprites, numbered from 0 in a group of their own, each axis at its top centre as a stage's
+// layers have it: false when none could be read. numbers: the group and number of each one made
+bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, std::vector<std::pair<int, int>> &numbers);
 extern const char kImageFilter[];
 std::vector<int> SelectedSprites(const SpriteFile &sf); // those selected, else the one shown
 // Undo and redo as two small buttons, with Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while the window has the

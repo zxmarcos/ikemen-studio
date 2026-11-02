@@ -451,25 +451,48 @@ static std::string BgOfAction(int action, int layer) {
            "\nstart = 0, 0\ndelta = 1, 1";
 }
 
-// A new BG showing an image: a sprite of the stage's SFF, saved so that the game has it (with other
-// sprites not saved yet, those stay as they are and the BG waits for Save in Sprites).
-static int AddBgOfImage(SourceFile &sf, SpriteFile &sprites, const std::string &file, std::string name, int layer) {
+// A new action of the def, an element for each sprite, and a BG showing it.
+static std::string BgOfNewAction(SourceFile &sf, const std::string &name, std::vector<std::pair<int, int>> frames, int time, int layer) {
+    const AirFile &air = AirOf(sf);
+    int no = 0;
+    while (air.actions.count(no)) no++;
+    std::vector<AirNewElem> elems;
+    for (const auto &f : frames) {
+        AirNewElem e;
+        e.group = f.first, e.image = f.second, e.time = time;
+        elems.push_back(e);
+    }
+    Air_NewAction(sf.text, no, name, elems);
+    return BgOfAction(no, layer);
+}
+
+// A new section, after the selected BG: returns its index.
+static int AddBg(SourceFile &sf, const std::string &name, const std::string &body) {
+    const IniFile &ini = StageIni(sf);
+    return Ini_AddBg(sf.text, ini, g_stageBg, Ini_NewBgName(ini, name), body);
+}
+
+// A new BG showing images: sprites of the stage's SFF, saved so that the game has them (with other
+// sprites not saved yet, those stay as they are and the BG waits for Save in Sprites). time: the
+// ticks of each element of a new action; 0, the first image as a sprite.
+static int AddBgOfImages(SourceFile &sf, SpriteFile &sprites, std::vector<std::string> files, std::string name, int layer, int time) {
     bool others = sprites.dirty;
-    int group, number;
-    if (!AddSpriteOfImage(sprites, file, &group, &number)) return g_stageBg;
+    // frame9 before frame10
+    std::sort(files.begin(), files.end(), [](const std::string &a, const std::string &b) { return a.size() != b.size() ? a.size() < b.size() : a < b; });
+    std::vector<std::pair<int, int>> made;
+    if (!AddSpritesOfImages(sprites, files, made)) return g_stageBg;
     if (name.empty()) {
-        name = file.substr(file.find_last_of("/\\") + 1);
+        name = files[0].substr(files[0].find_last_of("/\\") + 1);
         name = name.substr(0, name.find_last_of('.'));
     }
-    const IniFile &ini = StageIni(sf);
-    int bg = Ini_AddBg(sf.text, ini, g_stageBg, Ini_NewBgName(ini, name), BgOfSprite(group, number, layer));
+    int bg = AddBg(sf, name, time > 0 ? BgOfNewAction(sf, name, made, time, layer) : BgOfSprite(made[0].first, made[0].second, layer));
     if (others) {
-        Log(LogLine::Info, "Sprite " + std::to_string(group) + ", 0 is not on disk yet: save the Sprites window to see it in the game.");
+        Log(LogLine::Info, "Sprite group " + std::to_string(made[0].first) + " is not on disk yet: save the Sprites window to see it in the game.");
         StageEdited(sf);
         return bg;
     }
     bool theGames = NormPath(g_stageSff) == NormPath(sprites.path);
-    SaveSprites(sprites); // the stage is read again with it
+    SaveSprites(sprites); // the stage is read again with them
     if (theGames) sf.version++;
     else StageEdited(sf);
     return bg;
@@ -484,7 +507,7 @@ static void AddBgPopup(SourceFile &sf) {
     if (!ImGui::BeginPopup("addbg")) return;
     float em = ImGui::GetFontSize();
     static std::string name;
-    static int front, group;
+    static int front, group, ticks = 5;
     if (ImGui::IsWindowAppearing()) {
         name.clear();
         group = INT_MAX;
@@ -496,29 +519,27 @@ static void AddBgPopup(SourceFile &sf) {
     ImGui::SetNextItemWidth(em * 12);
     ImGui::Combo("Drawn", &front, "Behind the fighters\0In front of the fighters\0");
     ImGui::SetItemTooltip("Its layerno. Among those on the same side, the list's order decides: lower in the list is in front.");
-    ImGui::BeginDisabled(!spf);
-    if (ImGui::Button(ICON_FOLDER_OPEN " From an image...")) {
-        std::vector<std::string> files = PickFiles(kImageFilter, false);
-        if (!files.empty()) {
-            std::string file = files[0], chosen = name;
-            int layer = front;
-            g_bgEdit = [=](SourceFile &s) { return AddBgOfImage(s, SpriteFileAt(sff), file, chosen, layer); };
+    std::string chosen = name;
+    int layer = front;
+    // Images into the SFF, for a sprite (time 0) or an action
+    auto fromImages = [&](const char *label, bool multi, int time, const std::string &tip) {
+        ImGui::BeginDisabled(!spf);
+        if (ImGui::Button(label)) {
+            std::vector<std::string> files = PickFiles(kImageFilter, multi);
+            if (!files.empty()) g_bgEdit = [=](SourceFile &s) { return AddBgOfImages(s, SpriteFileAt(sff), files, chosen, layer, time); };
+            ImGui::CloseCurrentPopup();
         }
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndDisabled();
-    if (spf) ImGui::SetItemTooltip("Becomes a sprite of %s, saved at once: the game needs it there.", sff.c_str());
-    else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("The def names no SFF ([BGdef] spr).");
-    const AirFile &air = AirOf(sf);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", spf ? (tip + " They go in " + sff + ", saved at once: the game needs them there.").c_str() : "The def names no SFF ([BGdef] spr).");
+    };
     if (ImGui::BeginTabBar("shows")) {
         if (ImGui::BeginTabItem("A sprite")) {
+            fromImages(ICON_FOLDER_OPEN " From an image...", false, 0, "The image becomes a sprite.");
             int g, n;
             if (SpriteGrid(spf, group, -1, -1, &g, &n)) {
-                std::string chosen = name;
-                int layer = front;
                 g_bgEdit = [=](SourceFile &s) {
-                    const IniFile &ini = StageIni(s);
-                    int bg = Ini_AddBg(s.text, ini, g_stageBg, Ini_NewBgName(ini, chosen), BgOfSprite(g, n, layer));
+                    int bg = AddBg(s, chosen, BgOfSprite(g, n, layer));
                     StageEdited(s);
                     return bg;
                 };
@@ -526,25 +547,52 @@ static void AddBgPopup(SourceFile &sf) {
             }
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("An action")) {
-            float rows = std::min<float>(air.actions.size(), 12) * ImGui::GetTextLineHeightWithSpacing() + 2;
-            if (air.actions.empty()) ImGui::TextDisabled("The def has no [Begin Action].");
-            if (ImGui::BeginChild("##actions", ImVec2(0, rows))) {
-                for (const auto &[no, a] : air.actions) {
-                    std::string row = std::to_string(no) + "  " + a.name + "##" + std::to_string(no);
-                    if (!ImGui::Selectable(row.c_str())) continue;
-                    std::string chosen = name;
-                    int action = no, layer = front;
-                    g_bgEdit = [=](SourceFile &s) {
-                        const IniFile &ini = StageIni(s);
-                        int bg = Ini_AddBg(s.text, ini, g_stageBg, Ini_NewBgName(ini, chosen), BgOfAction(action, layer));
-                        StageEdited(s);
-                        return bg;
-                    };
-                    ImGui::CloseCurrentPopup();
-                }
+        if (ImGui::BeginTabItem("An animation")) {
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::InputInt("Ticks per frame", &ticks);
+            ticks = std::max(ticks, 1);
+            ImGui::SetItemTooltip("60 ticks are a second. Each frame can be changed afterwards in Animation.");
+            int time = ticks;
+            fromImages(ICON_FOLDER_OPEN " From images...", true, time, "Choose several: a frame each, in the order of their names.");
+            ImGui::SetNextItemWidth(em * 6);
+            ImGui::InputInt("Group##frames", &group);
+            std::vector<std::pair<int, int>> frames;
+            for (size_t i = 0; spf && i < spf->doc.sprites.size(); i++)
+                if (spf->doc.sprites[i].group == group) frames.push_back({group, spf->doc.sprites[i].number});
+            std::sort(frames.begin(), frames.end());
+            char label[64];
+            snprintf(label, sizeof(label), ICON_IMAGE " From its %zu sprites", frames.size());
+            ImGui::SameLine();
+            ImGui::BeginDisabled(frames.empty());
+            if (ImGui::Button(label)) {
+                g_bgEdit = [=](SourceFile &s) {
+                    int bg = AddBg(s, chosen, BgOfNewAction(s, chosen, frames, time, layer));
+                    StageEdited(s);
+                    return bg;
+                };
+                ImGui::CloseCurrentPopup();
             }
-            ImGui::EndChild();
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("A new action of this def, a frame for each sprite of the group, in the order of their numbers.");
+            const AirFile &air = AirOf(sf);
+            if (!air.actions.empty()) {
+                ImGui::SeparatorText("Or one the def has");
+                float rows = std::min<float>(air.actions.size(), 12) * ImGui::GetTextLineHeightWithSpacing() + 2;
+                if (ImGui::BeginChild("##actions", ImVec2(0, rows))) {
+                    for (const auto &[no, a] : air.actions) {
+                        std::string row = std::to_string(no) + "  " + a.name + "##" + std::to_string(no);
+                        if (!ImGui::Selectable(row.c_str())) continue;
+                        int action = no;
+                        g_bgEdit = [=](SourceFile &s) {
+                            int bg = AddBg(s, chosen, BgOfAction(action, layer));
+                            StageEdited(s);
+                            return bg;
+                        };
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndChild();
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

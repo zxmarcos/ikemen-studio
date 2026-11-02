@@ -186,9 +186,11 @@ In the Stage window, a BGCtrl or BGCtrlDef shows each BGCtrl's time on a bar, wi
 game or without it: drag the bar, its edges (`time`'s start and end) or the light line
 (its looptime). A click on a BGCtrlDef's bar opens that BGCtrl.
 
-**Add layer**, above its list, makes a new background from an image (it becomes a
-sprite of the stage's SFF, saved at once), a sprite or an action, behind the fighters
-or in front of them. It goes after the selected one. The buttons beside it duplicate,
+**Add layer**, above its list, makes a new background behind the fighters or in front
+of them, after the selected one. It shows a sprite, or an image that becomes one, or an
+animation: from several images, one frame each in the order of their names, from the
+sprites of a group, or one the stage has. An animation made here is a new action of the
+def, which Animation then opens; images go in the stage's SFF, saved at once. The buttons beside it duplicate,
 move and delete the selected one: lower in the list is drawn later, so in front. A
 background moves with those that have `positionlink` after it, and everything that
 moves keeps going from where it was. All of it works with the game or without it, and

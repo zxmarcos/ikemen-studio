@@ -311,10 +311,13 @@ from ~510 ms to under 1 ms), and the stage goes on from where it was
 without it, undo included. The order of the sections is the order they are drawn
 in, within a `layerno`. New BGs go after the selected one, and never between a BG
 and those with `positionlink` after it (they would follow the new one); moving a
-BG takes them along and passes another BG with its own. Add layer takes a sprite,
-an action, or an image, which becomes a sprite in a group of its own and is saved
-in the SFF at once, since the game reads no other (`AddBgOfImage`; with other
-sprites not saved, the SFF waits for Save in Sprites and the Output says so). The
+BG takes them along and passes another BG with its own. Add layer takes a sprite
+or an animation; a def with no action starts one there: from images, or from a
+group's sprites (`BgOfNewAction`: the first free number, at the end of the def).
+Images become sprites in a group of their own, saved in the SFF at once, since the
+game reads no other (`AddBgOfImages`; with other sprites not saved, the SFF waits
+for Save in Sprites and the Output says so: until then the engine warns of missing
+sprites and does not draw the BG, the match goes on). The
 edit runs as the next frame starts (`g_bgEdit`): what the window parsed is in use
 until the frame ends. Which BG is which after a reload comes from comparing the
 text the game has with the new one (`Ini_BgMap`: same section, then same name,

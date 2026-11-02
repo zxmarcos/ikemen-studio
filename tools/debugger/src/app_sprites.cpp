@@ -286,21 +286,26 @@ static void AddSprites(SpriteFile &sf, const std::vector<std::string> &files, co
     SpritesChanged(sf);
 }
 
-bool AddSpriteOfImage(SpriteFile &sf, const std::string &file, int *group, int *number) {
+bool AddSpritesOfImages(SpriteFile &sf, const std::vector<std::string> &files, std::vector<std::pair<int, int>> &numbers) {
     Sff_SetImageReader(DecodeImage);
-    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, {file}, SFF_PAL_OWN, SpriteLog);
+    std::vector<SffSprite> made = Sff_SpritesOfPngs(sf.doc, files, SFF_PAL_OWN, SpriteLog);
     if (made.empty()) return false;
+    std::set<int> groups;
     int g = 0;
-    for (const SffSprite &s : sf.doc.sprites)
+    for (const SffSprite &s : sf.doc.sprites) {
+        groups.insert(s.group);
         if (s.group < 9000) g = std::max(g, s.group + 1); // 9000 and up are portraits
-    while (Sff_FindSprite(sf.doc, g, 0) >= 0) g++;
-    SffSprite &s = made[0];
-    s.group = g, s.number = 0;
-    s.x = s.w / 2, s.y = 0;
-    sf.doc.sprites.push_back(s);
+    }
+    while (groups.count(g)) g++;
+    for (size_t k = 0; k < made.size(); k++) {
+        SffSprite &s = made[k];
+        s.group = g, s.number = (int)k;
+        s.x = s.w / 2, s.y = 0;
+        sf.doc.sprites.push_back(s);
+        numbers.push_back({s.group, s.number});
+    }
     sf.sel = (int)sf.doc.sprites.size() - 1;
     sf.picks.clear();
-    *group = g, *number = 0;
     SpritesChanged(sf);
     return true;
 }
