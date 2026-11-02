@@ -590,7 +590,7 @@ void CodeWindow() {
                 if (r.t == g_selTick) row = &r;
     }
 
-    // Follow the selected entity's state, but not while its file is being edited
+    // Follow the selected entity's state, when it is the project's, but not while its file is being edited
     static int followedSrc;
     SourceFile *shown = g_codeFile.empty() ? nullptr : &LoadSource(g_codeFile);
     bool editing = shown && dbg::Editor_IsFocused(shown->ed);
@@ -599,7 +599,7 @@ void CodeWindow() {
         followedSrc = stateSrc;
         g_codeHold = false;
     }
-    if (follow && g_canTrace && stateSrc != followedSrc && !editing) {
+    if (follow && g_canTrace && stateSrc != followedSrc && !editing && SelectedOfProject()) {
         followedSrc = stateSrc;
         JumpTo(stateSrc);
     }

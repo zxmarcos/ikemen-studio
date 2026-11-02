@@ -399,6 +399,20 @@ void AskWorkspace(int n) {
     else g_spaceAsked = n;
 }
 
+ProjectKind CurrentProject() {
+    CodeFile code = g_spaces[g_spaceAsked >= 0 ? g_spaceAsked : g_space].code;
+    return code == kStageDef ? kProjectStage : code == kFightDef ? kProjectScreenpack : kProjectCharacter;
+}
+
+void AskProjectWorkspace(ProjectKind kind) {
+    if (CurrentProject() == kind) return;
+    for (int n = 0; n < IM_ARRAYSIZE(g_spaces); n++) {
+        const Workspace &w = g_spaces[n];
+        bool fits = kind == kProjectStage ? w.code == kStageDef : kind == kProjectScreenpack ? w.code == kFightDef : strcmp(w.name, "Character") == 0;
+        if (fits) AskWorkspace(n);
+    }
+}
+
 // The bar at the bottom: what the game is doing (its colour too, as an IDE's while debugging) and
 // the player selected; at the right, the file shown in Code and its cursor, the changes not
 // saved, the workspace.

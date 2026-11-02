@@ -161,10 +161,13 @@ void SoundsWindow() {
     static bool shown = false;
     static int seenSel = -2, seenSelPicked = 0, seenShown = 0;
     static std::string seenWork;
-    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, shown = false;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) {
+        seenSel = g_selId, seenSelPicked = g_selPicked;
+        if (SelectedOfProject()) shown = false;
+    }
     if (std::string work = WorkDef(); work != seenWork) seenWork = work, shown = false;
     if (g_soundsShownN != seenShown) seenShown = g_soundsShownN, shown = true;
-    int pn = shown ? 0 : WorkPn(); // the selected player's character, or one picked in Explorer
+    int pn = shown ? 0 : WorkPn(); // the project's character
     SoundFile *sp = shown ? g_soundsShown : pn > 0 ? SoundsOf(pn) : nullptr;
     if (!sp) {
         ImGui::TextDisabled(!pn ? "Pick a player in the game, or a character in Explorer. An SND file in Explorer opens here too."

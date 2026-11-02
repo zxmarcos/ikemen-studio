@@ -109,6 +109,8 @@ void Toolbar() {
         if (ImGui::GetContentRegionAvail().x < width) ImGui::NewLine();
     };
 
+    ProjectBar();
+    flow(em * 18);
     if (ImGui::Button(running ? ICON_RESTART " Restart" : ICON_PLAY " Launch (F5)")) Launch();
     ImGui::SetItemTooltip(running ? "Starts the game again with the match beside (Ctrl+Shift+F5)."
                                   : "Starts the game with the match beside (F5).");
@@ -154,7 +156,7 @@ void Toolbar() {
         ImGui::SetNextItemWidth(em * 12);
         NameCombo("##stage", s.stage.empty() ? "the game's choice" : s.stage, stages, s.stage, "the game's choice");
         ImGui::TextDisabled("Nobody on both sides starts at the title screen.");
-        ImGui::TextDisabled("With the game stopped, a click in Explorer sets P1 and the stage.");
+        ImGui::TextDisabled("Opening a project sets P1 or the stage.");
         ImGui::Separator();
         if (ImGui::TreeNode(ICON_BOOKMARKS " Saved matches")) {
             MatchesPopup();

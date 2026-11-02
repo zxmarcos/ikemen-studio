@@ -588,6 +588,7 @@ void SettingsLine(ImGuiContext *, ImGuiSettingsHandler *, void *, const char *li
         LayoutSettingsLine(key, value);
         ThemeSettingsLine(key, value);
     StartSettingsLine(key, value);
+        ProjectSettingsLine(key, value);
         CodeSettingsLine(key, value);
         MatchSettingsLine(key, value);
     }
@@ -609,6 +610,7 @@ void SettingsWrite(ImGuiContext *, ImGuiSettingsHandler *handler, ImGuiTextBuffe
     LayoutSettingsWrite(buf);
     ThemeSettingsWrite(buf);
     StartSettingsWrite(buf);
+    ProjectSettingsWrite(buf);
     CodeSettingsWrite(buf);
     MatchSettingsWrite(buf);
     buf->append("\n");

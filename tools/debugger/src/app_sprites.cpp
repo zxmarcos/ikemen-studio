@@ -981,7 +981,10 @@ void SpritesWindow() {
     enum { Player, Screen, Shown };
     static int mode = Player;
     static int seenSel = -2, seenSelPicked = 0, seenPicked = 0, seenShown = 0;
-    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, mode = Player;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) {
+        seenSel = g_selId, seenSelPicked = g_selPicked;
+        if (SelectedOfProject()) mode = Player;
+    }
     static std::string seenWork;
     if (std::string work = WorkDef(); work != seenWork) seenWork = work, mode = Player;
     bool picked = g_screenPicked != seenPicked, scroll = g_spritesScroll;
@@ -996,11 +999,11 @@ void SpritesWindow() {
     if (spf && shows >= 0) spf->sel = shows, scroll = true;
     int pn = 0; // the character whose sprites they are
     if (!spf) {
-        // The character worked on; a player showing another's animation (a custom state): that one's
+        // The project; in a mirror match, a player showing the other's animation: that one's palettes
         pn = WorkPn();
         const Entity *e = FindEntity(g_selId);
         const FrameEntity *fe = FindFrameEntity(g_selId);
-        if (e && e->pn == pn && fe && fe->animPn > 0) pn = fe->animPn;
+        if (e && e->pn == pn && fe && OfProject(fe->animPn)) pn = fe->animPn;
         spf = pn > 0 ? SpritesOf(pn) : !pn ? WorkspaceSprites(&screen) : nullptr;
         if (!spf) {
             if (!pn) EmptyNote("Pick a fighter or a character in Explorer, or an element of a stage or a screen.");

@@ -87,7 +87,7 @@ const std::vector<std::string> &Chars() {
 }
 
 void MoveDialog() {
-    // The character worked on: a player picked in the match, or one from disk
+    // The project's character; picking another here leaves the match as it is, until the button below
     int pn = WorkPn();
     std::string def = pn ? CharFile(pn, "def") : "";
     float em = ImGui::GetFontSize();
@@ -96,7 +96,7 @@ void MoveDialog() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(em * 15);
     std::string picked;
-    if (NameCombo("##for", def.empty() ? "Pick a character" : def, Chars(), picked)) WorkOn(CharDefOf(picked));
+    if (NameCombo("##for", def.empty() ? "Pick a character" : def, Chars(), picked)) ProjectOpen(kProjectCharacter, CharDefOf(picked), false);
     const std::vector<std::string> *st = nullptr;
     if (const auto *files = pn ? FilesFor(pn) : nullptr)
         if (auto f = files->find("st"); f != files->end() && !f->second.empty()) st = &f->second;
@@ -577,8 +577,8 @@ void CreateCharacter(CharForm &c) {
         (c.load == 0 ? g_settings.p1 : g_settings.p2) = c.folder;
         c.status += ", P" + std::to_string(c.load + 1) + " of the next match";
     }
-    // The character worked on (Animation, Sprites, New > A move...), in the match or not
-    WorkOn(to + c.folder + ".def");
+    // The project, in the match or not: what the form asked for is done above
+    ProjectOpen(kProjectCharacter, to + c.folder + ".def", false);
     Log(LogLine::Info, c.status);
     c.folder.clear(), c.name.clear();
 }

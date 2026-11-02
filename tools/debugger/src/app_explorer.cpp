@@ -249,14 +249,12 @@ std::vector<DefEntry> CommonFiles() {
 }
 
 // ---------------------------------------------------------------------------
-// The character the windows work on: the player selected in the game, or the character picked
-// in Explorer since. One not in the match is read from disk, as player kDiskPn: its files as the
-// engine lists them (editorCharFiles: the [Files] keys in order, st0..st9 as "st"; config.ini's
-// common states, AIR and CMD), so CharFile, the model of Analysis, SndOf, SpritesOf work on it.
+// The character the windows work on: the project. One not in the match is read from disk, as
+// player kDiskPn: its files as the engine lists them (editorCharFiles: the [Files] keys in order,
+// st0..st9 as "st"; config.ini's common states, AIR and CMD), so CharFile, the model of Analysis,
+// SndOf, SpritesOf work on it.
 // ---------------------------------------------------------------------------
 
-std::string g_workDef;   // picked in Explorer ("": the player selected)
-int g_workSelPicked = -1; // a player picked in the game since takes it back
 std::map<std::string, std::vector<std::string>> g_diskFiles;
 std::string g_diskFor;
 double g_diskRead = -100;
@@ -297,9 +295,8 @@ std::string CharNameOf(const std::string &def) {
 }
 
 void PlayCharacter(const std::string &def) {
-    g_settings.p1 = CharNameOf(def);
-    if (Connected()) SwapChar(1, g_settings.p1);
-    else Launch();
+    ProjectOpen(kProjectCharacter, def);
+    if (!Connected()) Launch();
 }
 
 bool NameCombo(const char *id, const std::string &shown, const std::vector<std::string> &names, std::string &picked, const char *none) {
@@ -318,9 +315,6 @@ bool NameCombo(const char *id, const std::string &shown, const std::vector<std::
     return done;
 }
 
-namespace {
-
-// The player a character's def is in the match as, 0 none
 int PlayerOf(const std::string &def) {
     for (const auto &[pn, files] : g_charFiles) {
         auto f = files.find("def");
@@ -328,6 +322,8 @@ int PlayerOf(const std::string &def) {
     }
     return 0;
 }
+
+namespace {
 
 std::string g_rowChar; // the character whose files the tree is drawing
 std::set<std::string> g_rowUnsaved; // the files with changes not saved, by NormPath
@@ -464,7 +460,7 @@ void FileMenuItems(const std::string &path, const std::string &pal) {
     if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open")) OpenPath(path, true, pal);
     // A character's AIR file: its actions drawn and edited (the character is the one worked on)
     if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
-        WorkOn(g_rowChar);
+        ProjectOpen(kProjectCharacter, g_rowChar);
         AnimOpenFile("");
     }
     // Actions of their own: a stage's or a screen's def, an AIR file no character uses
@@ -527,7 +523,7 @@ void FileRow(const std::string &path, const char *key, bool exists, const std::s
     bool expanded = ImGui::TreeNodeEx(label.c_str(), flags);
     if (!exists) ImGui::PopStyleColor();
     bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen();
-    if (clicked && !g_rowChar.empty()) WorkOn(g_rowChar);
+    if (clicked && !g_rowChar.empty()) ProjectOpen(kProjectCharacter, g_rowChar);
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) OpenPath(path, true, pal);
     else if (clicked) OpenPath(path, false, pal);
     ImGui::SetItemTooltip("%s%s", path.c_str(), exists ? "" : "\nnot found");
@@ -557,16 +553,13 @@ void CharNode(const Project &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
-    // The character the windows work on: selected
+    // The project: selected
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
-    if (NormPath(WorkDef()) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
+    if (CurrentProject() == kProjectCharacter && NormPath(ProjectDef(kProjectCharacter)) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.name.c_str(), flags);
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
-        WorkOn(p.def);
-        if (!Connected()) g_settings.p1 = CharNameOf(p.def); // what Launch starts
-    }
-    ImGui::SetItemTooltip(Connected() ? "%s\nA click: the windows work on it (from disk when it is not in the match). A right click puts it there."
-                                      : "%s\nA click: the windows work on it, and Launch starts with it as P1.", p.def.c_str());
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ProjectOpen(kProjectCharacter, p.def);
+    ImGui::SetItemTooltip(Connected() ? "%s\nA click opens it as the project. Not in the match, it takes P1's place and the match starts again."
+                                      : "%s\nA click opens it as the project, and Launch starts with it as P1.", p.def.c_str());
     std::string players = PlayersOf(p.def);
     if (!players.empty()) RowNote(players.c_str(), ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
@@ -603,9 +596,9 @@ void StageNode(const Project &p) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
     if (shown && NormPath(shown->path) == NormPath(p.def)) flags |= ImGuiTreeNodeFlags_Selected;
     bool open = ImGui::TreeNodeEx(p.def.c_str(), flags, "%s", p.name.c_str());
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) PlayStage(p.def);
-    ImGui::SetItemTooltip(Connected() ? "%s\nA click: it takes the match's place (the match goes on) and the Stage window shows it."
-                                      : "%s\nA click: the Stage window shows it, and Launch starts on it.", p.def.c_str());
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ProjectOpen(kProjectStage, p.def);
+    ImGui::SetItemTooltip(Connected() ? "%s\nA click opens it as the project: it takes the match's place, and the match goes on."
+                                      : "%s\nA click opens it as the project, and Launch starts on it.", p.def.c_str());
     bool playing = NormPath(p.def) == NormPath(g_stageDef);
     if (playing) RowNote("playing", ImGui::GetColorU32(Ink(kGreen)), p.name);
     if (ImGui::BeginPopupContextItem()) {
@@ -739,24 +732,19 @@ std::string SelectDef() {
     return "";
 }
 
-void WorkOn(const std::string &def) {
-    g_workDef = def;
-    g_workSelPicked = g_selPicked;
-    if (!def.empty()) AddRecent(false, def);
-}
-
 int WorkPn() {
-    if (!g_workDef.empty() && g_selPicked != g_workSelPicked) g_workDef.clear();
-    std::string def = g_workDef;
-    if (def.empty()) {
-        // On a stage or a screen nobody chose one: the player selected by itself is not what is worked on
-        bool stageOrScreen = g_stagePick || g_screenPick;
-        if (const Entity *e = stageOrScreen ? nullptr : FindEntity(g_selId)) return e->pn;
-        if (Connected() || stageOrScreen) return 0;
-        def = CharDefOf(g_settings.p1); // the game not running: the character its match starts with
+    if (CurrentProject() != kProjectCharacter) return 0;
+    // Who is in the match, asked until the game has told; one going in may be the project
+    if (Connected()) {
+        for (const Entity &e : g_ents)
+            if (!e.helper) AirPath(e.pn);
+        for (const auto &kv : g_swapWanted) AirPath(kv.first);
     }
+    std::string def = ProjectDef(kProjectCharacter);
+    if (def.empty()) return 0;
+    // On both sides: the one selected
+    if (const Entity *e = FindEntity(g_selId); e && OfProject(e->pn)) return e->pn;
     if (int pn = PlayerOf(def)) return pn;
-    for (const auto &kv : g_swapWanted) AirPath(kv.first); // it may be the one going in: asks who is there now
     if (!GameFileExists(def)) return 0;
     ReadDiskChar(def);
     return kDiskPn;

@@ -155,10 +155,13 @@ AnimTarget GetAnimTarget() {
     if (work == kDiskPn) {
         // A character picked in Explorer, not in the match: its AIR file from disk
         t.pn = kDiskPn;
-    } else if (work || (!g_stagePick && !g_screenPick)) { // on a stage or a screen, only a character chosen
-        t.e = FindEntity(g_selId);
-        t.fe = FindFrameEntity(g_selId);
-        t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : t.e ? t.e->pn : 0;
+    } else if (work) {
+        int id = ProjectFighter(work);
+        t.e = FindEntity(id);
+        t.fe = FindFrameEntity(id);
+        // In a state of another's, showing its animation: not the project's, so nothing to follow
+        if (t.fe && t.fe->action >= 0 && !OfProject(t.fe->animPn)) t.fe = nullptr;
+        t.pn = t.fe && t.fe->action >= 0 ? t.fe->animPn : work;
     }
     if (t.pn <= 0) return t;
     std::string path = AirPath(t.pn);
@@ -190,16 +193,16 @@ bool AnimShowLine(const std::string &path, int line) {
         for (const auto &kv : g_charFiles)
             if (uses(kv.first)) pn = kv.first;
         if (pn) {
-            WorkOn(CharFile(pn, "def"));
+            ProjectOpen(kProjectCharacter, CharFile(pn, "def"), false);
         } else {
             std::string dir = path.substr(0, path.find_last_of("/\\") + 1);
             std::error_code ec;
             for (const auto &de : std::filesystem::directory_iterator(GamePath(dir), ec)) {
                 std::string name = de.path().filename().string();
                 if (name.size() < 5 || _stricmp(name.c_str() + name.size() - 4, ".def") != 0) continue;
-                WorkOn(dir + name);
-                if (uses(WorkPn())) break;
-                WorkOn("");
+                if (NormPath(DefFile(dir + name, "anim")) != NormPath(path)) continue;
+                ProjectOpen(kProjectCharacter, dir + name, false);
+                break;
             }
         }
     }
@@ -1433,7 +1436,10 @@ void AnimationWindow() {
     static int source = Player;
     static int seenSel = -2, seenSelPicked = 0, seenPicked = 0, seenFile = 0;
     static std::string seenWork;
-    if (g_selId != seenSel || g_selPicked != seenSelPicked) seenSel = g_selId, seenSelPicked = g_selPicked, source = Player;
+    if (g_selId != seenSel || g_selPicked != seenSelPicked) {
+        seenSel = g_selId, seenSelPicked = g_selPicked;
+        if (SelectedOfProject()) source = Player;
+    }
     if (std::string work = WorkDef(); work != seenWork) seenWork = work, source = Player;
     if (g_screenAnimPicked != seenPicked) seenPicked = g_screenAnimPicked, source = Element, g_animFollow = true;
     if (g_animFileN != seenFile) seenFile = g_animFileN, source = File;

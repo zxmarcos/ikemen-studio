@@ -81,6 +81,7 @@ add_executable(ikemen-debugger WIN32
   src/app_paint.cpp
   src/app_palette.cpp
   src/app_start.cpp
+  src/app_project.cpp
   src/app_unsaved.cpp
   src/app_navigate.cpp
   src/app_problems.cpp

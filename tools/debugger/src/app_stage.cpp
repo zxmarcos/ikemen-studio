@@ -131,7 +131,6 @@ std::string StageNameOf(const std::string &def) {
 
 void PlayStage(const std::string &def) {
     StageOpen(def);
-    AddRecent(true, def);
     g_settings.stage = StageNameOf(def);
     if (Connected() && g_canTrace && NormPath(def) != NormPath(g_stageDef))
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");

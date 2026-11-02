@@ -559,14 +559,35 @@ bool DefNamesFile(const std::string &def, const std::string &name); // the file 
 std::string SpritesFileOf(const std::string &file); // the SFF of a def, or of an AIR file by itself; "" none
 std::string DefFile(const std::string &def, const char *key); // the file a def's key names, found; "" none
 void ExplorerWindow();
-// The character the windows work on (Analysis, Sounds, Commands, Sprites): the player selected in
-// the game, or the character picked in Explorer since (with the game not running: the toolbar's
-// P1). Its player number; one not in the match is read from disk as kDiskPn. 0: none.
+// The project (app_project.cpp): what is being worked on, one def at a time. Each kind keeps its own
+// and the workspace says which is in use: Test, Code and Character a character's, Stage and
+// Screenpack theirs. Nothing opened: what the match uses.
+enum ProjectKind { kProjectCharacter, kProjectStage, kProjectScreenpack, kProjectKinds };
+struct ProjectRecent {
+    ProjectKind kind;
+    std::string def;
+};
+ProjectKind CurrentProject();                           // the workspace's (app_layout.cpp)
+void AskProjectWorkspace(ProjectKind kind);             // a workspace of that kind, unless one is shown
+std::string ProjectDef(ProjectKind kind);               // "" none
+std::string ProjectName(ProjectKind kind, const std::string &def); // as the toolbar shows it
+// It becomes the project; enter: the match's too (at once, or from the next Launch)
+void ProjectOpen(ProjectKind kind, const std::string &def, bool enter = true);
+bool OfProject(int pn);                                 // that player is the character open
+bool SelectedOfProject();                               // the fighter selected is it, or shows its animation
+int ProjectFighter(int pn);                             // its fighter: the one selected, else the player's root; -1 none
+const std::vector<ProjectRecent> &ProjectRecents();     // the last ones, for going back to them
+void ProjectBar();                                      // on the toolbar: its name, where it is, others to open
+void ProjectSettingsLine(const std::string &key, const std::string &value);
+void ProjectSettingsWrite(ImGuiTextBuffer *buf);
+// The character the windows work on (Analysis, Sounds, Commands, Sprites): the project, when the
+// workspace is a character's. Its player number; one not in the match is read from disk as kDiskPn.
+// 0: none.
 const int kDiskPn = 1000;
 int WorkPn();
 std::string WorkDef();          // its def, "" none
 std::string WorkLabel(int pn);  // "P1", "from disk"
-void WorkOn(const std::string &def);
+int PlayerOf(const std::string &def); // the player a character's def is in the match as, 0 none
 std::string CharDefOf(const std::string &name); // a character as ListDefs names it ("kfm", "kfm/kfm720.def"): its def
 std::string CharNameOf(const std::string &def); // and the other way
 std::string PackageTarget();                    // the def File > Package takes, "" none
@@ -625,8 +646,7 @@ void PaletteFrame();
 
 // app_start.cpp
 void AskStartPage();
-void AddRecent(bool stage, const std::string &def); // on the start page, for going back to it
-void AskTour();                         // the first steps, in a corner of the window
+void AskTour();                        // the first steps, in a corner of the window
 void StartPageFrame();
 void EmptyNote(const char *text);       // an empty window: what goes there
 void StartSettingsLine(const std::string &key, const std::string &value);

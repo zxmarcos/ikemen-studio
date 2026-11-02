@@ -438,9 +438,17 @@ static void SelectionLine(bool focused) {
         ImGui::TextDisabled("Click a part of the 3D model to select it.");
     } else if (const Entity *e = FindEntity(g_selId)) {
         ImGui::Text("%s  %s  state %d, anim %d", Who(e->pn, e->helper, e->id).c_str(), e->name.c_str(), e->st, e->anim);
-        action(ICON_ANIM " Animation", "Animation");
-        action(ICON_IMAGE " Sprites", "Sprites");
-        action(ICON_CODE " Code", "Code");
+        std::string def = CharFile(e->pn, "def");
+        if (CurrentProject() == kProjectCharacter && SelectedOfProject()) {
+            action(ICON_ANIM " Animation", "Animation");
+            action(ICON_IMAGE " Sprites", "Sprites");
+            action(ICON_CODE " Code", "Code");
+        } else if (!def.empty()) {
+            // Another's: the editors stay on the project until asked
+            ImGui::SameLine();
+            if (ImGui::SmallButton((ICON_FOLDER_OPEN " Open " + CharNameOf(def)).c_str())) ProjectOpen(kProjectCharacter, def);
+            ImGui::SetItemTooltip("Makes it the project: the editors work on it from now on.");
+        }
     } else {
         ImGui::TextDisabled("Click a fighter to select it, drag to move it.");
     }
