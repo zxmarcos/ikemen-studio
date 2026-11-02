@@ -485,6 +485,7 @@ bool StageOverlay(ImDrawList *draw, bool hovered, bool clicked, const std::funct
     const IniFile *ini = sf ? &StageIni(*sf) : nullptr;
     SendHiddenBgs(ini);
     if (ini) ParallaxOverlay(draw, *sf, *ini, toScreen);
+    ScaleOverlay(draw, toScreen);
     if (ini && FloorOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, *sf, *ini, toScreen)) return true;
     // The limits' handles first
     if (LimitsOverlay(draw, hovered && dragBg < 0, clicked && dragBg < 0, toScreen)) {
@@ -754,6 +755,10 @@ void StageWindow() {
     ImGui::Checkbox("Limits", &g_stageLimits);
     ImGui::SetItemTooltip("On the Game window: how far the camera goes (orange), the players' bounds (red), the floor,\n"
                           "the starting positions. In pick mode their handles can be dragged.");
+    flow("Scale", box);
+    ImGui::Checkbox("Scale", &g_stageScale);
+    ImGui::SetItemTooltip("On the Game window: P1 standing at the players' bounds, and the highest its head gets in a jump,\n"
+                          "to judge the stage's proportions and where the sky has to reach.");
     flow("Free camera", box);
     bool free = g_freeCam;
     if (ImGui::Checkbox("Free camera", &free)) SetFreeCamera(free);

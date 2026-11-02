@@ -184,6 +184,11 @@ video's path that is not found is an error in Output and the stage stays as it w
 a video did not show on the game, in the def from the start too; not looked into. A parallax BG without
 `width` is a plain picture, so handles need it (`Make it a floor` gives it one).
 
+Scale (`ScaleOverlay`): `leftbound` and `rightbound` are -1000 and 1000 unless a def says otherwise, so
+the silhouettes stand where the screen's edge stops a player with the camera at its limit, 15 units in.
+They are seen with Fit the stage or the sweep. The jump is `jump.neu`'s y squared over twice `yaccel`, from
+the character's constants, plus the height of its sprite 0,0 from its axis.
+
 Floors: a row of a `width` parallax is at `left * rowWidth / topWidth`, so the bottom's corners are the
 top's multiplied by the widening; the grid laid on the engine's trapezoid agrees at the camera's start
 and at its limits, slanted edge included. `Parallax_FloorDelta` is `1 / (1 + (widen - 1) * t)`, t being

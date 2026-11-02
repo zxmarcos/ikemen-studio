@@ -143,6 +143,9 @@ sprite and action pickers where they apply; what the engine does not read for th
 in the def, dimmed, so going back to the type finds it. `trans`, `scalemode` and `scalefilter`
 are lists too.
 
+**Scale**, beside Limits, stands P1 at the players' bounds and draws a line where its head
+gets in a jump, to judge the stage's proportions and how high the sky has to go.
+
 **Make it a floor**, under a selected BG, turns it into `type = parallax`, keeping it where
 it is, and **Floor handles** draw its corners and a grid on the game: drag a corner to set
 the width of its top or bottom, and the grid shows where its lines run. **With the

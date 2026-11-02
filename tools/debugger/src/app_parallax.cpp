@@ -357,6 +357,73 @@ void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini,
 }
 
 // ---------------------------------------------------------------------------
+// The scale: P1's standing sprite where the players' bounds stop it, and how high a jump takes it
+// ---------------------------------------------------------------------------
+
+bool g_stageScale;
+
+namespace {
+
+// A character's jump, from its constants: how far up its feet go and how tall it stands, in its
+// AIR units. Read once for each file.
+float JumpHeight(const std::string &cns) {
+    static std::map<std::string, float> known;
+    auto it = known.find(cns);
+    if (it != known.end()) return it->second;
+    IniFile ini;
+    Ini_Parse(ReadWholeFile(GamePath(cns)), ini);
+    float jump[2] = {0, 0}, gravity = 0;
+    bool found[2] = {};
+    for (const IniSection &s : ini.sections) {
+        if (s.lower == "velocity") found[0] = s.Floats("jump.neu", jump, 2);
+        if (s.lower == "movement") found[1] = s.Floats("yaccel", &gravity, 1);
+    }
+    float height = found[0] && found[1] && gravity > 0 ? jump[1] * jump[1] / (2 * gravity) : 0;
+    return known[cns] = height;
+}
+
+} // namespace
+
+void ScaleOverlay(ImDrawList *draw, const std::function<ImVec2(float, float)> &toScreen) {
+    const StageView &v = g_stageView;
+    if (!g_stageScale || !v.ok) return;
+    const FrameEntity *fe = nullptr;
+    for (const FrameEntity &e : g_frameEnts)
+        if (e.pn == 1 && !e.helper) fe = &e;
+    std::string path = CharFile(1, "sprite");
+    if (path.empty()) AirPath(1); // asks the game
+    if (!fe || path.empty() || fe->k.y == 0) return;
+    SpriteFile &spr = SpriteFileAt(path);
+    int stand = Sff_FindSprite(spr.doc, 0, 0);
+    if (stand < 0) return;
+    const SffSprite &s = spr.doc.sprites[stand];
+    GLuint tex = SpriteTexture(spr, stand);
+    float kx = fabsf(fe->k.x), ky = fabsf(fe->k.y);
+    auto screen = [&](float x, float y) {
+        ImVec2 p = v.ToPicture(x, y);
+        return p;
+    };
+    // leftbound and rightbound are far out by default: there, the screen's edge at the camera's limit
+    // stops a player first, a little inside it
+    float margin = 15 * v.lim[0];
+    for (float bound : {std::max(v.lim[9], v.lim[5] + margin), std::min(v.lim[10], v.lim[6] - margin)}) {
+        ImVec2 feet = screen(bound, 0);
+        ImVec2 a = toScreen(feet.x - s.x * kx, feet.y - s.y * ky), b = toScreen(feet.x + (s.w - s.x) * kx, feet.y + (s.h - s.y) * ky);
+        draw->AddImage(TexRef(tex), a, b, ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 120));
+    }
+    std::string cns = CharFile(1, "cns");
+    float jump = cns.empty() ? 0 : JumpHeight(cns);
+    if (jump <= 0) return;
+    // The top of the head at the top of a jump
+    ImVec2 left = screen(v.lim[5], 0), right = screen(v.lim[6], 0);
+    float y = left.y - (jump + s.y) * ky;
+    ImVec2 from = toScreen(left.x, y), to = toScreen(right.x, y);
+    ImU32 ink = IM_COL32(120, 255, 200, 200);
+    draw->AddLine(from, to, ink);
+    draw->AddText(ImVec2(std::max(from.x, draw->GetClipRectMin().x) + 4, from.y + 2), ink, "highest head in a jump");
+}
+
+// ---------------------------------------------------------------------------
 // The layers: hidden, alone and locked are this session's, not the def's. A BG goes by its section's
 // name and place among those of the name, so that moving or adding BGs does not move them.
 // ---------------------------------------------------------------------------
