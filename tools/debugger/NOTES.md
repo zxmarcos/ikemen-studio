@@ -603,6 +603,11 @@ rewrite all of this history at every sync.
   and runs the unit tests. It pushes nothing; a failed run is the warning that
   upstream changed something `editor_*.go` uses, which is a compile error and
   not a conflict.
+- `.github/workflows/build.yml` makes the whole package for Windows: the engine, the
+  debugger and `Ikemen-GO-Screenpack`'s folders, as upstream's `releases.yml` puts them
+  together, with `LICENSES.txt` and FFmpeg's source. By hand (Actions > Build > Run workflow)
+  it stays with the run; a tag `v*` publishes a release. A file of the fork's own here must be
+  named in `sync_upstream.ps1`, or the next merge removes it.
 - The upstream diff is what can conflict: `git diff upstream/develop main --
   src external ":!src/editor_*.go" ":!src/script_debugger.go"`. Calls stay on
   lines of their own, next to upstream's. Still edited in place: the model call

@@ -1,5 +1,8 @@
 # Ikemen GO debugger
 
+To get it with the engine and a screenpack, ready to run: **Actions > Build > Run workflow** on
+GitHub, then the package among that run's artifacts, or a release, made by a tag `v*`.
+
 A debugger for Ikemen GO characters. It is a separate program
 (`ikemen-debugger.exe`, Dear ImGui, Windows) that starts the game and talks to
 a Lua mod (`mod/ikdbg.lua`) through the game's stdin and stdout.
