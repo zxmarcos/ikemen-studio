@@ -412,9 +412,9 @@ void CmdFileView(int pn, const std::string &path, const FrameEntity *fe, float e
 void CommandsWindow() {
     UpdateInputs();
     if (!BeginTool("Commands")) return;
-    int pn = WorkPn(); // the selected player's character, or one picked in Explorer
+    int pn = WorkPn(); // the project's character
     if (!pn) {
-        ImGui::TextDisabled("Pick a player in the game, or a character in Explorer.");
+        ImGui::TextDisabled("Open a character, at the left of the toolbar or in Explorer.");
         ImGui::End();
         return;
     }

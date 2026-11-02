@@ -651,7 +651,7 @@ void StageWindow() {
     SourceFile *sfp = StageSource();
     if (!sfp) {
         if (g_bridge.Running()) ImGui::TextDisabled("Needs the game's frames (patched Ikemen GO), in a match.");
-        else EmptyNote("Pick a stage in Explorer, or start the game: the stage of the match is edited here.");
+        else EmptyNote("Open a stage, at the left of the toolbar or in Explorer.");
         ImGui::End();
         return;
     }

@@ -714,7 +714,7 @@ void CodeWindow() {
     if (!shown) {
         ImGui::TextDisabled(g_canTrace ? "Pick a controller on the left, or a file in Explorer (Ctrl+P)."
                                        : "Open a file from Explorer (Ctrl+P). With the game running, Code follows "
-                                         "the selected player's state.");
+                                         "the state of the selected fighter, when it is the project's.");
         ImGui::End();
         return;
     }

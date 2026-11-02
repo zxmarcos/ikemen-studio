@@ -32,15 +32,15 @@ struct ToolWindow {
 // and each has one job; a panel's tabs are its rows with its name in `panel`.
 ToolWindow g_windows[] = {
     {"Game", "Game", ""},
-    {"Project", "Files", "Fighters|Testing"},
-    {"Explorer", "", "", false, "Project"},
-    {"Outline", "", "", false, "Project"},
+    {"Files", "Files", "Fighters|Testing"},
+    {"Explorer", "", "", false, "Files"},
+    {"Outline", "", "", false, "Files"},
     {"Code", "Files", "Output|Testing"},
     {"Output", "Files", "Testing|Code"},
     {"Problems", "", "", false, "Output"},
     {"Search", "", "", false, "Output"},
     {"Console", "", "", true, "Output"},
-    {"Fighters", "Testing", "Project|Inspector"},
+    {"Fighters", "Testing", "Files|Inspector"},
     {"Players", "", "", false, "Fighters"},
     {"Watch", "", "", true, "Fighters"},
     {"Breakpoints", "", "", true, "Fighters"},
@@ -81,15 +81,15 @@ struct Workspace {
 
 Workspace g_spaces[] = {
     {"Test", ICON_LAB, "A fight tick by tick: the fighters, their states, what ran, the code.",
-     "X0.14(L:Fighters,Project)(X0.68(Y0.68(L:Game)(L:Testing,Output,Code))(L:Inspector))", kFollow},
+     "X0.14(L:Fighters,Files)(X0.68(Y0.68(L:Game)(L:Testing,Output,Code))(L:Inspector))", kFollow},
     {"Code", ICON_CODE, "Writing a character: the files and the outline, the editor in the middle, the game beside it.",
-     "X0.16(L:Project)(X0.68(Y0.72(L:Code)(L:Output))(L:Game))", kFollow},
+     "X0.16(L:Files)(X0.68(Y0.72(L:Code)(L:Output))(L:Game))", kFollow},
     {"Character", ICON_PERSON, "A character's animations, sprites, sounds and commands.",
-     "X0.15(L:Project,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets)))", kFollow},
+     "X0.15(L:Files,Fighters)(X0.62(L:Animation,Code,Output)(Y0.4(L:Game)(L:Assets)))", kFollow},
     {"Stage", ICON_STAGE, "The stage on the game, its def's sections and fields, its animations, sprites, checks and 3D model.",
-     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
+     "X0.15(L:Files)(X0.62(Y0.52(L:Game)(L:Animation,Code,Output))(Y0.5(L:Stage editor)(L:Assets)))", kStageDef},
     {"Screenpack", ICON_DISPLAY, "The fight screen, the motif's screens, storyboards, their animations and sprites, the roster and fonts.",
-     "X0.15(L:Project)(X0.62(Y0.52(L:Game)(L:Animation,Scenes,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
+     "X0.15(L:Files)(X0.62(Y0.52(L:Game)(L:Animation,Scenes,Code,Output))(Y0.5(L:Screenpack)(L:Assets)))", kFightDef},
 };
 // Saved with the settings; an older layout (or none) is replaced by the workspace's own.
 const int kLayoutVersion = 8;
@@ -98,6 +98,7 @@ bool g_advanced;          // the advanced tools are shown
 int g_space;              // the workspace shown
 int g_spaceAsked = -1;    // picked: shown from the start of the next frame
 bool g_restoreAsked;
+bool g_panelRenamed;      // a saved arrangement named a panel by its old name
 bool g_entered;           // the first frame has set the windows up
 ImGuiID g_dock;
 std::vector<const char *> g_front; // windows whose tab goes to the front
@@ -107,7 +108,7 @@ std::map<std::string, int> g_tabOrder; // each tab's place in the arrangement bu
 // The icon of a window, in the Windows menu
 const char *WindowIcon(const char *name) {
     static const std::map<std::string, const char *> icons = {
-        {"Project", ICON_EXPLORER}, {"Output", ICON_CONSOLE}, {"Fighters", ICON_PLAYERS}, {"Testing", ICON_LAB},
+        {"Files", ICON_EXPLORER}, {"Output", ICON_CONSOLE}, {"Fighters", ICON_PLAYERS}, {"Testing", ICON_LAB},
         {"Assets", ICON_IMAGE}, {"Stage editor", ICON_STAGE}, {"Screenpack", ICON_DISPLAY},
         {"Game", ICON_GAME}, {"Explorer", ICON_EXPLORER}, {"Code", ICON_CODE}, {"Outline", ICON_OUTLINE},
         {"Search", ICON_SEARCH}, {"Problems", ICON_WARNING}, {"Players", ICON_PLAYERS}, {"Breakpoints", ICON_BREAKPOINT},
@@ -678,6 +679,7 @@ void LayoutFrame() {
             for (Workspace &old : g_spaces) old.saved.clear();
         const Workspace &w = g_spaces[g_space];
         if (g_firstRun || w.saved.empty()) Enter(w.layout, size);
+        else if (g_panelRenamed) Enter(w.saved, size);
         else OpenFrom(w.saved);
         PickFor(w);
         g_entered = true;
@@ -739,6 +741,9 @@ void LayoutSettingsLine(const std::string &key, const std::string &value) {
         size_t bar = value.find('|');
         for (Workspace &w : g_spaces)
             if (value.compare(0, bar, w.name) == 0 && bar == strlen(w.name)) w.saved = value.substr(bar + 1);
+        // The panel Files was named Project: ImGui's own settings dock a window that is gone
+        for (Workspace &w : g_spaces)
+            for (size_t at; (at = w.saved.find("Project")) != std::string::npos;) w.saved.replace(at, 7, "Files"), g_panelRenamed = true;
     }
 }
 

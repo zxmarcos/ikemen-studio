@@ -190,10 +190,10 @@ std::vector<DefEntry> DefFilesOnce(const std::string &def) {
 // The projects: the folders' characters and stages, the screenpack
 // ---------------------------------------------------------------------------
 
-struct Project {
+struct Entry {
     std::string name, def;
 };
-std::vector<Project> g_chars, g_stages;
+std::vector<Entry> g_chars, g_stages;
 double g_scanned = -100;
 
 void Scan(bool now) {
@@ -458,7 +458,7 @@ void ShowInFolder(const std::string &path) { ShowFullPathInFolder(GamePath(path)
 
 void FileMenuItems(const std::string &path, const std::string &pal) {
     if (ImGui::MenuItem(ICON_FOLDER_OPEN " Open")) OpenPath(path, true, pal);
-    // A character's AIR file: its actions drawn and edited (the character is the one worked on)
+    // A character's AIR file: its actions drawn and edited (the character becomes the project)
     if (ExtOf(path) == "air" && !g_rowChar.empty() && ImGui::MenuItem("Open in Animation")) {
         ProjectOpen(kProjectCharacter, g_rowChar);
         AnimOpenFile("");
@@ -549,7 +549,7 @@ std::string PlayersOf(const std::string &def) {
     return out;
 }
 
-void CharNode(const Project &p) {
+void CharNode(const Entry &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
@@ -588,7 +588,7 @@ void CharNode(const Project &p) {
     ImGui::TreePop();
 }
 
-void StageNode(const Project &p) {
+void StageNode(const Entry &p) {
     bool all = Passes(p.name);
     if (!AnyPasses(p.def, all)) return;
     if (g_filter.IsActive()) ImGui::SetNextItemOpen(true);
@@ -663,7 +663,7 @@ std::vector<std::pair<std::string, std::string>> StoryboardFiles() {
         }
     };
     add(MotifPath(), "");
-    for (const Project &p : g_chars) add(p.def, p.name + " ");
+    for (const Entry &p : g_chars) add(p.def, p.name + " ");
     return out;
 }
 
@@ -789,7 +789,7 @@ void OpenPath(const std::string &path, bool keep, const std::string &pal) {
 
 std::string StageDefOfModel(const std::string &model) {
     Scan(false);
-    for (const Project &p : g_stages)
+    for (const Entry &p : g_stages)
         for (const DefEntry &f : DefFiles(p.def))
             if (f.key == "model" && NormPath(f.path) == NormPath(model)) return p.def;
     return "";
@@ -809,8 +809,8 @@ void ProjectFiles(std::vector<std::string> &out) {
             else add(f.path);
         }
     };
-    for (const Project &p : g_chars) addDef(p.def, 1, addDef);
-    for (const Project &p : g_stages) addDef(p.def, 1, addDef);
+    for (const Entry &p : g_chars) addDef(p.def, 1, addDef);
+    for (const Entry &p : g_stages) addDef(p.def, 1, addDef);
     addDef(MotifPath(), 0, addDef);
     add("save/config.ini");
     for (const DefEntry &f : CommonFiles())
@@ -863,11 +863,11 @@ void ExplorerWindow() {
     }
     if (ImGui::BeginChild("tree")) {
         if (Group("Characters", g_chars.size())) {
-            for (const Project &p : g_chars) CharNode(p);
+            for (const Entry &p : g_chars) CharNode(p);
             ImGui::TreePop();
         }
         if (Group("Stages", g_stages.size())) {
-            for (const Project &p : g_stages) StageNode(p);
+            for (const Entry &p : g_stages) StageNode(p);
             ImGui::TreePop();
         }
         if (Group("Screenpack", 1)) {

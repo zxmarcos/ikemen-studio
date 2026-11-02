@@ -1,4 +1,4 @@
-// Problems: what is wrong, from every source in one list: the Lint of the character worked on,
+// Problems: what is wrong, from every source in one list: the Lint of the project's character,
 // the checks of the stage (the match's, or the toolbar's), the last Apply that failed, and the
 // warnings and errors the engine logs ("WARNING: Kung Fu Man's state 1027 in kfm.cns, line
 // 1476: ..."); a row clicked shows its line in Code. Their count is on the status bar.
@@ -112,9 +112,9 @@ void ProblemsWindow() {
     if (ImGui::SmallButton("Clear the engine's")) ClearEngineProblems();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    HelpMarker("Lint: the character worked on (Analysis). Stage: the checks of the stage in the match, or of the "
-               "toolbar's. Apply: the last one that failed. Engine: the warnings and errors it logged since it "
-               "started. A row clicked shows its line in Code.");
+    HelpMarker("Lint: the project's character (Analysis). Stage: the checks of the stage project. Apply: the last "
+               "one that failed. Engine: the warnings and errors it logged since it started. A row clicked shows "
+               "its line in Code.");
     float em = ImGui::GetFontSize();
     ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;

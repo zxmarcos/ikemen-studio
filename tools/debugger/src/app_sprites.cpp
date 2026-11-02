@@ -1,4 +1,4 @@
-// Sprites: the selected player's SFF file.
+// Sprites: the project's SFF file.
 #include "app_internal.h"
 
 #include <commdlg.h>
@@ -971,7 +971,7 @@ static SpriteFile *WorkspaceSprites(const char **what) {
 
 void SpritesWindow() {
     if (!BeginTool("Sprites")) return;
-    // Whose: the selected player's, the SFF of the screen whose element was picked last, or the
+    // Whose: the project's, the SFF of the screen whose element was picked last, or the
     // file another window showed here (a font's), whichever came last
     enum { Player, Screen, Shown };
     static int mode = Player;
@@ -1001,7 +1001,7 @@ void SpritesWindow() {
         if (e && e->pn == pn && fe && OfProject(fe->animPn)) pn = fe->animPn;
         spf = pn > 0 ? SpritesOf(pn) : !pn ? WorkspaceSprites(&screen) : nullptr;
         if (!spf) {
-            if (!pn) EmptyNote("Pick a fighter or a character in Explorer, or an element of a stage or a screen.");
+            if (!pn) EmptyNote("Open a project at the left of the toolbar, or pick an element of a stage or a screen.");
             else ImGui::TextDisabled(g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
             ImGui::End();
             return;

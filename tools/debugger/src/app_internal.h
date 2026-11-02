@@ -361,7 +361,7 @@ void ApplyAnims(SourceFile &sf);
 // AIR file (pn > 0) or in that file of actions; shown in Animation
 bool AnimFromSprites(int pn, const std::string &file, int no, int time, const std::vector<std::pair<int, int>> &sprites, bool append);
 // Animation shows a file of actions by itself: a def's, an AIR file no character uses; "": the
-// character worked on. action -1: its first one. show: its window comes to the front.
+// project's character. action -1: its first one. show: its window comes to the front.
 void AnimOpenFile(const std::string &path, int action = -1, int elem = 1, bool show = true);
 void AnimFollowFile();                                 // and goes on showing what the game shows of it
 // A sprite as the game draws it: flip (which mirrors the offset too), scale and angle around its axis,
@@ -636,7 +636,7 @@ struct Problem {
 void EngineLine(const std::string &text); // a line of the engine's log: kept when a warning or an error
 void ToolError(const std::string &text);  // an error of the debugger's own, also in Problems
 void ClearEngineProblems();
-void LintProblems(std::vector<Problem> &out);  // app_check.cpp: the character worked on
+void LintProblems(std::vector<Problem> &out);  // app_check.cpp: the project's character
 void StageProblems(std::vector<Problem> &out); // app_stage.cpp: the match's stage, or the toolbar's
 void ProblemCounts(int count[3]);              // errors, warnings, notes
 void ProblemsWindow();

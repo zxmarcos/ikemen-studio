@@ -1,4 +1,4 @@
-// Animation: the selected player's AIR element, its boxes edited here and on the game; the action
+// Animation: the project's AIR element, its boxes edited here and on the game; the action
 // a screen's element shows (fight screen, motif, storyboard: [Begin Action] in their def); or any
 // file of actions by itself (a stage's or a screen's def, an AIR file no character uses).
 #include "app_internal.h"
@@ -15,7 +15,7 @@
 
 namespace app {
 
-bool g_boxEdit = true;    // the selected player's boxes can be dragged on the Game window
+bool g_boxEdit = true;    // the project's boxes can be dragged on the Game window
 bool g_followSel = true;  // a zoomed Game window keeps the selected player in view
 int g_animDrag = 0;       // what a drag on the selected player changes: 0 its boxes, 1 the sprite's offset
 bool g_onion = true;      // the onion skin: the elements around are drawn too, faint: their boxes
@@ -153,7 +153,7 @@ AnimTarget GetAnimTarget() {
     AnimTarget t;
     int work = WorkPn();
     if (work == kDiskPn) {
-        // A character picked in Explorer, not in the match: its AIR file from disk
+        // The project, not in the match: its AIR file from disk
         t.pn = kDiskPn;
     } else if (work) {
         int id = ProjectFighter(work);
@@ -182,11 +182,11 @@ AnimTarget GetAnimTarget() {
 }
 
 // The action and element a line of an AIR file belongs to (the action before it when the line is between
-// two), shown in Animation, with the character that uses the file worked on. False: not an AIR file in use.
+// two), shown in Animation, with the character that uses the file open as the project. False: not an AIR file in use.
 bool AnimShowLine(const std::string &path, int line) {
     auto uses = [&](int pn) { return pn > 0 && NormPath(AirPath(pn)) == NormPath(path); };
     bool isAir = path.size() > 4 && _stricmp(path.c_str() + path.size() - 4, ".air") == 0;
-    // The character worked on, else a player in the match, else a character from disk whose def is
+    // The project, else a player in the match, else a character from disk whose def is
     // next to the file (the game not running)
     if (isAir && !uses(WorkPn())) {
         int pn = 0;
@@ -1430,7 +1430,7 @@ std::string AnimFileOfSprites(const std::string &sff) {
 
 void AnimationWindow() {
     if (!BeginTool("Animation")) return;
-    // What it shows: the selected player's animation, that of the screen's element picked last, or
+    // What it shows: the project's animation, that of the screen's element picked last, or
     // a file by itself, whichever came last
     enum { Player, Element, File };
     static int source = Player;
@@ -1632,8 +1632,8 @@ void AnimationWindow() {
     } else {
         HelpMarker(screen ? "The animations of a def ([Begin Action]) or of an AIR file. Every change to a def the game is "
                             "using goes to it at once (the def is loaded again); Save writes the file, which its window edits too."
-                          : "A character picked in Explorer that is not in the match: its AIR file edited from disk, the "
-                            "action drawn below. Save writes it; put the character in the match to see it on the game.");
+                          : "The project is not in the match: its AIR file edited from disk, the action drawn below. Save "
+                            "writes it; put the character in the match to see it on the game.");
     }
     // A def's fields naming the action
     if (screen && sf.path.size() > 4 && _stricmp(sf.path.c_str() + sf.path.size() - 4, ".def") == 0) ActionUsersNote(sf, g_animAction);

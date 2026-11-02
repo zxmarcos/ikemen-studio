@@ -391,7 +391,7 @@ std::string StatedefFile(int pn, int no) {
 
 namespace {
 
-// The model of a character with that file (state, AIR or CMD file): the one worked on first,
+// The model of a character with that file (state, AIR or CMD file): the project's first,
 // then the players in the match; its player in *pn
 Model *ModelWith(const std::string &file, int *pn) {
     std::vector<int> pns = {WorkPn()};
@@ -551,7 +551,7 @@ bool GoToDefinition(const std::string &file, size_t at, bool references) {
     const std::string &text = LoadSource(file).text;
     Spot s = SpotAt(text, at);
     if (!m) {
-        Log(LogLine::Info, "Go to definition: " + file + " is not a file of the character worked on or of a player.");
+        Log(LogLine::Info, "Go to definition: " + file + " is not a file of the project or of a player.");
         return false;
     }
     // A statedef's header: the places changing to it
@@ -1219,12 +1219,12 @@ void AnalysisSettingsWrite(ImGuiTextBuffer *buf) {
 
 void AnalysisWindow() {
     if (!BeginTool("Analysis")) return;
-    // The character worked on: a player's (its files as the game lists them, patched Ikemen), or
+    // The project's character: a player's (its files as the game lists them, patched Ikemen), or
     // one read from disk
     int pn = WorkPn();
     if (!pn || (pn != kDiskPn && !g_canTrace)) {
         ImGui::TextDisabled(pn ? "Needs an Ikemen GO with the debugger patch."
-                               : "Pick a player in the game, or a character in Explorer.");
+                               : "Open a character, at the left of the toolbar or in Explorer.");
         ImGui::End();
         return;
     }

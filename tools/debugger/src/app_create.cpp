@@ -621,7 +621,7 @@ void CharacterDialog() {
     ImGui::RadioButton("nowhere", &c.load, 2);
     ImGui::SameLine();
     HelpMarker("With the game running, the match starts again with it there; without, the match the game starts "
-               "with (F5) has it. Either way it becomes the character worked on, as if picked in Explorer.");
+               "with (F5) has it. Either way it becomes the project.");
     ImGui::Separator();
     if (ImGui::Button(ICON_WAND " Create the character")) {
         CreateCharacter(c);
@@ -752,7 +752,7 @@ void CreateStage(StageForm &f) {
     if (f.use && Connected() && g_canTrace) {
         Exec("local ok, err = debugSwapStage(" + LuaQuote(def) + ") if not ok then error(err, 0) end");
         g_settings.stage = f.file;
-        f.status += ", in the match (and the Session's stage)";
+        f.status += ", in the match (and the toolbar's stage)";
     } else if (f.use) {
         g_settings.stage = f.file;
         f.status += ", the stage of the next match";
@@ -919,7 +919,7 @@ void CreateAsk(int what) { g_asked = what; }
 
 void CreateMenu() {
     if (ImGui::MenuItem(ICON_BOLT " A move...")) CreateAsk(kNewMove);
-    ImGui::SetItemTooltip("An attack's state for the selected player's character, and the command that starts it.");
+    ImGui::SetItemTooltip("An attack's state for the project's character, and the command that starts it.");
     if (ImGui::MenuItem(ICON_PERSON " A character...")) CreateAsk(kNewCharacter);
     ImGui::SetItemTooltip("A new character from another one: its basics, or a full copy.");
     if (ImGui::MenuItem(ICON_STAGE " A stage...")) CreateAsk(kNewStage);

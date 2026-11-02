@@ -1,4 +1,4 @@
-// Sounds: the SND file of the character worked on (the selected player's, or one picked in Explorer),
+// Sounds: the SND file of the project's character,
 // or any other a window showed here (a screen's, common.snd).
 #include "app_internal.h"
 
@@ -157,7 +157,7 @@ static void SoundsStep(SoundFile &sf, int step) {
 
 void SoundsWindow() {
     if (!BeginTool("Sounds")) return;
-    // Whose: the character worked on, or the file another window showed here, whichever came last
+    // Whose: the project's character, or the file another window showed here, whichever came last
     static bool shown = false;
     static int seenSel = -2, seenSelPicked = 0, seenShown = 0;
     static std::string seenWork;
@@ -170,7 +170,7 @@ void SoundsWindow() {
     int pn = shown ? 0 : WorkPn(); // the project's character
     SoundFile *sp = shown ? g_soundsShown : pn > 0 ? SoundsOf(pn) : nullptr;
     if (!sp) {
-        ImGui::TextDisabled(!pn ? "Pick a player in the game, or a character in Explorer. An SND file in Explorer opens here too."
+        ImGui::TextDisabled(!pn ? "Open a character, at the left of the toolbar or in Explorer. An SND file in Explorer opens here too."
                             : g_canTrace ? "Waiting for the files of P%d..." : "Needs the patched Ikemen GO.", pn);
         ImGui::End();
         return;

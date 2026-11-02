@@ -67,7 +67,7 @@ static void TourFrame() {
     static const struct {
         const char *title, *text;
     } steps[] = {
-        {"Start a match", "Press Launch at the top left, or F5. The game runs inside this window."},
+        {"Start a match", "Press Launch on the toolbar, or F5. The game runs inside this window."},
         {"", ""}, // what the workspace picks
         {"Change something", "Drag it on the game, or use the button on that line and change a value. Each editor says whether the game has it yet."},
         {"That's all", "Ctrl+S saves. The Select choices on the game pick fighters, stages and screens the same way, and the bar at "
@@ -261,6 +261,7 @@ void HelpDialog() {
         {"Ctrl+W", "Close the tab"},
     }, words[] = {
         {"Character / fighter", "The files of chars/<name>/. P1 and P2 are the two sides of the match"},
+        {"Project", "The character, stage or screenpack open, named at the left of the toolbar: what the editors work on"},
         {"Action", "An animation, numbered, in the AIR file: [Begin Action n]"},
         {"Element", "One picture of an action, shown for some ticks"},
         {"Tick", "1/60 of a second: the game's unit of time"},

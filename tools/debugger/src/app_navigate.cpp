@@ -1,4 +1,4 @@
-// Search: text found in the files of the character worked on, of every project or of the files
+// Search: text found in the files of the character open, of all of Explorer or of the files
 // open (Ctrl+Shift+F), and the places a state is named from (Shift+F12 in Code); a result
 // clicked shows its line in Code. Outline: the sections of the file shown in Code (a state
 // file's statedefs and functions, an AIR file's actions, a def's sections), with the comment
@@ -57,7 +57,7 @@ std::string g_title;                // what the results are
 std::vector<Result> g_results;
 std::string g_query;
 bool g_case, g_word;
-int g_scope; // 0 the character worked on, 1 every project, 2 the files open
+int g_scope; // 0 the character open, 1 all of Explorer, 2 the files open
 bool g_focusQuery;
 
 void Run() {
@@ -132,11 +132,10 @@ void SearchWindow() {
     ImGui::Checkbox("Word", &g_word);
     ImGui::SetItemTooltip("Whole words only");
     ImGui::SameLine();
-    const char *scopes[] = {"The character worked on", "Every project", "The files open"};
+    const char *scopes[] = {"The character open", "All of Explorer", "The files open"};
     ImGui::SetNextItemWidth(em * 11);
     ImGui::Combo("##scope", &g_scope, scopes, IM_ARRAYSIZE(scopes));
-    ImGui::SetItemTooltip("The character worked on: its files (the selected player's, or picked in Explorer). Every "
-                          "project: the files Explorer lists.");
+    ImGui::SetItemTooltip("The character open: the project's files. All of Explorer: every file it lists.");
     if (go && !g_query.empty()) Run();
     if (!g_title.empty()) ImGui::TextDisabled("%s", g_title.c_str());
 

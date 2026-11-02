@@ -281,7 +281,7 @@ int TriggerValue(int tick, int src) {
     return v == it->second.begin() || (v - 1)->first != src ? -1 : (v - 1)->second;
 }
 
-// The selected player's boxes on the Game window, with handles: drag an edge, a corner or the
+// The project's boxes on the Game window, with handles: drag an edge, a corner or the
 // inside. Returns true while it has the mouse (the Game window then neither selects nor moves).
 static BoxDrag g_boxDrag;
 
@@ -588,7 +588,7 @@ void GameWindow() {
         return ImVec2(((q.x - p0.x) / s + view.x - g_frameVp.x) / fx, ((q.y - p0.y) / s + view.y - g_frameVp.y) / fy);
     };
 
-    // The selected player's boxes, editable (Animation window); they take the mouse first
+    // The project's boxes, editable (Animation window); they take the mouse first
     ImDrawList *draw = ImGui::GetWindowDrawList();
     draw->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
     draw->ChannelsSplit(2);

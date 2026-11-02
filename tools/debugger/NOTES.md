@@ -36,7 +36,6 @@ found it functional but intimidating). It is organized by task, not by tool:
 - The first steps are about seeing a change live: not for who pressed New character, New
   stage or Write code (they covered the form's button). Their pick step follows the
   workspace (fighter, background, lifebar or text), which is what a click there selects.
-  Offline, a stage or a screen shows no character nobody chose (`WorkPn`).
 - Advanced tools (`ToolWindow::advanced`): tabs hidden until View > Advanced
   tools is on or `ShowWindow` asks for one. Lab and Frame data are not advanced:
   testing a move is a character maker's work.
@@ -115,6 +114,25 @@ test can save for real. To see a first run, set `FirstRun = 1` in `save/config.i
 clears it; `ikdbg.lua` keeps the box from a game going somewhere). A model's nodes can be changed with
 `lua:debugModelNodeTRS(...)`; hiding one is a view, not a change. That folder is not a clean PC: this
 machine's GPU drivers and runtime stay, and Windows Home has no Sandbox to try one.
+
+**The project** (2026-11-02; decided with the user): one def at a time is what the editors work on,
+named at the left of the toolbar. `app_project.cpp` keeps one per kind, saved with the settings, and
+the workspace says which is in use (`CurrentProject`): Test, Code and Character the character's.
+`ProjectOpen` is the only way in; `enter = false` leaves the match alone (a dialog that has its own
+button for that, a place in code that only navigates). Nothing opened: `ProjectDef` gives what the
+match uses, so a plain debugging session works as it did. `WorkPn` reads it, which is why the windows
+that call it did not change. The fighter selected now reaches only what is about the match: `GetAnimTarget`
+takes `ProjectFighter`, and Sprites, Sounds and Code ask `SelectedOfProject`. The Select choice on the
+Game window says what a click picks, not what is worked on: new code asks `CurrentProject`, not `g_stagePick`.
+
+The Stage window can now show a stage that is not the match's, and this is what to watch: anything that
+sends to the game asks `StageInMatch`, or `g_stageDef` against the file (`ReloadStage`, since Code can
+reach it with the match's def while the project is another). `StageOverlay` stops there too, because
+the game's BG numbers mean other BGs in another def. A screenpack has no such gap: the slot is the
+session's `-r`, the game's motif wins while it runs, and another one takes starting the game again
+(`debugReloadMotif` only reads the same one again). A character swap is asked once while it goes in, or
+a double click in Explorer starts the match twice. The panel was renamed from Project to Files; a saved
+arrangement is translated as it is read and laid out again, since ImGui docks windows by name.
 
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
@@ -591,6 +609,7 @@ tools/debugger/
   src/app_layout.cpp     the menu bar, the workspaces (their arrangements, kept and restored), BeginTool, the status bar
   src/app_explorer.cpp   Explorer window: the projects' files from disk; OpenPath (a file to the window that edits it)
   src/app_start.cpp      the start page, the first steps, EmptyNote
+  src/app_project.cpp    the project: what the editors work on, its toolbar button, the recents
   src/app_unsaved.cpp    what has changes not saved, of every kind; the dialog about them
   src/app_palette.cpp    the palette (Ctrl+P, Ctrl+Shift+P, Ctrl+G, Ctrl+Shift+O) and the File menu
   src/app_navigate.cpp   Search (find in files, a state's references) and Outline windows
