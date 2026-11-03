@@ -800,7 +800,8 @@ void MoveFightTo(ModelForm &m, const float point[3]) {
     MeasureModel(m);
 }
 
-// Read, its nodes where the game will have them, the fight in the middle of its lowest floor
+// Read, its nodes where the game will have them, the fight on the surface at its origin, else in the
+// middle of its floor
 void OpenModel(StageForm &f, const std::string &path) {
     ModelForm &m = f.model;
     unsigned version = m.version;
@@ -822,8 +823,9 @@ void OpenModel(StageForm &f, const std::string &path) {
     Gltf_BakeMatrices(m.doc);
     MeasureModel(m);
     const ModelFit &fit = m.fit;
-    float point[3] = {(fit.lo[0] + fit.hi[0]) / 2, fit.lo[1], (fit.lo[2] + fit.hi[2]) / 2};
-    Model_FloorAt(m.doc, m.world, point[0], point[2], &point[1]);
+    float point[3] = {(fit.lo[0] + fit.hi[0]) / 2, fit.lo[1], (fit.lo[2] + fit.hi[2]) / 2}, onOrigin;
+    if (Model_FloorAtOrigin(m.doc, m.world, &onOrigin)) point[0] = point[2] = 0, point[1] = onOrigin;
+    else Model_FloorAt(m.doc, m.world, point[0], point[2], &point[1]);
     MoveFightTo(m, point);
     m.fit.width = kStageSizes[f.size][0], m.fit.height = kStageSizes[f.size][1];
     m.fit.fighter = Model_GuessFighter(m.fit);

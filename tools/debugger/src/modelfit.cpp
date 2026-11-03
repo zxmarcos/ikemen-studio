@@ -54,10 +54,9 @@ void Model_Fit(ModelFit &f) {
     float deepest = 1 + scale * std::max(0.0f, -f.loAll[2]);
     p.zNear = 0.01f;
     p.zFar = std::max(10.0f, deepest * 1.5f);
-    // Where the back of the box stays across the whole screen, at most a screen each way
-    float back = 1 + scale * std::max(0.0f, -f.lo[2]);
-    float half = HalfView(f.fov) * f.width / f.height * back;
-    auto limit = [&](float side) { return std::clamp((scale * side - half) / posMul, 0.0f, (float)f.width); };
+    // Until the model's edge reaches the screen's, where the fighters are, at most a screen each way.
+    // Further back a model is often wider than its box says; Check the limits sees what shows there.
+    auto limit = [&](float side) { return std::clamp(side * units - f.width / 2.0f, 0.0f, (float)f.width); };
     f.right = (int)limit(f.hi[0]);
     f.left = -(int)limit(-f.lo[0]);
     f.high = -f.height * 3 / 10;
@@ -68,13 +67,24 @@ float Model_GuessFighter(const ModelFit &f) {
     return width > 0 ? kFighterShare * f.height * width / (f.width * 2.2f) : 1.8f;
 }
 
+bool Model_FloorAtOrigin(const GltfDoc &doc, const std::vector<GltfMat> &world, float *y) {
+    float lo[3], hi[3], hit[3];
+    if (!Gltf_Bounds(doc, world, lo, hi)) return false;
+    float reach = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]}) * 0.02f;
+    float from[3] = {0, reach, 0}, towards[3] = {0, -reach, 0};
+    if (Gltf_Cast(doc, world, std::vector<char>(), from, towards, hit) < 0) return false;
+    *y = hit[1];
+    return true;
+}
+
 bool Model_FloorAt(const GltfDoc &doc, const std::vector<GltfMat> &world, float x, float z, float *y) {
-    float lo[3], hi[3];
+    float lo[3], hi[3], hit[3];
     if (!Gltf_Bounds(doc, world, lo, hi)) return false;
     float pad = std::max(1e-3f, hi[1] - lo[1]);
-    // From under it: a roof is not the floor
-    float from[3] = {x, lo[1] - pad, z}, towards[3] = {x, hi[1] + pad, z}, hit[3];
-    if (Gltf_Cast(doc, world, std::vector<char>(), from, towards, hit) < 0) return false;
+    float middle[3] = {x, (lo[1] + hi[1]) / 2, z}, under[3] = {x, lo[1] - pad, z}, over[3] = {x, hi[1] + pad, z};
+    if (Gltf_Cast(doc, world, std::vector<char>(), middle, under, hit) < 0 &&
+        Gltf_Cast(doc, world, std::vector<char>(), under, over, hit) < 0)
+        return false;
     *y = hit[1];
     return true;
 }

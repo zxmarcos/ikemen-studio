@@ -35,8 +35,10 @@ struct ModelFit {
 void Model_Fit(ModelFit &f);
 // How tall a fighter is taken to stand when the model's scale is not known: its floor about two screens wide
 float Model_GuessFighter(const ModelFit &f);
-// The model's lowest surface under a point of the floor, the height of the model's box where there
-// is none: where a new stage's floor goes. False: no surface there.
+// The surface at the model's origin, when there is one: a model made for a stage has the fight there
+bool Model_FloorAtOrigin(const GltfDoc &doc, const std::vector<GltfMat> &world, float *y);
+// The floor at a point: the first surface going down from the middle of the model's box, which
+// leaves out a roof above and a dome or a sea around it; else its lowest surface there. False: none.
 bool Model_FloorAt(const GltfDoc &doc, const std::vector<GltfMat> &world, float x, float z, float *y);
 
 struct ModelCheckIn {

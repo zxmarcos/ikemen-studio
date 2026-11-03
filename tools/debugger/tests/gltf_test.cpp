@@ -116,6 +116,7 @@ static void TestArena() {
     float y = 0;
     CHECK(Model_FloorAt(doc, world, 5, 0, &y) && Near(y, 3));
     CHECK(!Model_FloorAt(doc, world, 60, 0, &y));
+    CHECK(!Model_FloorAtOrigin(doc, world, &y)); // the floor is 3 up: nothing at the origin
 
     float from[3] = {5, 20, 2}, to[3] = {5, -20, 2}, hit[3];
     CHECK(Gltf_Cast(doc, world, {}, from, to, hit) == 0);
@@ -133,6 +134,7 @@ static void TestArena() {
     Gltf_Pose(back, none, world);
     CHECK(Gltf_Bounds(back, world, lo, hi));
     CHECK(Near(lo[0], -20) && Near(hi[0], 20) && Near(lo[1], 0));
+    CHECK(Model_FloorAtOrigin(back, world, &y) && Near(y, 0));
 
     ModelFit fit;
     memcpy(fit.lo, lo, sizeof(lo)), memcpy(fit.hi, hi, sizeof(hi));
@@ -232,6 +234,14 @@ int main() {
     int picked = Gltf_Pick(doc, rest, std::vector<char>(doc.nodes.size(), 1), from, towards);
     printf("picked from above node 2's middle: %d\n", picked);
     CHECK(picked >= 0);
+
+    // A model made for a stage: the fight stays at its origin, on the platform, not on what is under it
+    float floorY = 100, plain = 100, lowest[3], highest[3];
+    CHECK(Model_FloorAtOrigin(doc, rest, &floorY));
+    CHECK(Model_FloorAt(doc, rest, 0, 0, &plain));
+    CHECK(Gltf_Bounds(doc, rest, lowest, highest));
+    printf("floor at the origin %.3f, going down from the middle %.3f, the box from y %.3f to %.3f\n", floorY, plain, lowest[1], highest[1]);
+    CHECK(std::fabs(floorY) < 0.5f);
 
     // Saved into a copy, read back
     std::string tmp = std::string(getenv("TEMP") ? getenv("TEMP") : ".") + "\\gltf_test.glb";
