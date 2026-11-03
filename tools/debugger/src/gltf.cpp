@@ -239,6 +239,14 @@ void ReadFloatsInto(const Json &a, float *out, int count) {
 // An extra's string, as model.go compares it ("0", "false")
 bool ExtraIs(const Json &v, const char *a, const char *b) { return v.type == Json::String && (v.s == a || v.s == b); }
 
+const char *const kShadowKeys[7] = {"shadowMapNear", "shadowMapFar", "shadowMapBottom", "shadowMapTop", "shadowMapLeft", "shadowMapRight", "shadowMapBias"};
+
+Json &ListAt(Json &obj, const char *key) {
+    Json &list = obj.at(key);
+    if (list.type != Json::Array) list = Json(), list.type = Json::Array;
+    return list;
+}
+
 // What an image file is, and its size where its head says it
 void ImageFormat(const std::string &b, GltfImage &img) {
     auto u8 = [&](size_t at) { return at < b.size() ? (unsigned char)b[at] : 0u; };
@@ -479,6 +487,7 @@ bool Gltf_Load(GltfDoc &doc, const std::string &path, const GltfDecoder &decode)
         light.range = (float)l["range"].num(-1);
         light.inner = (float)l["spot"]["innerConeAngle"].num(0);
         light.outer = (float)l["spot"]["outerConeAngle"].num(0.785398);
+        for (int k = 0; k < 7; k++) light.shadow[k] = (float)l["extras"][kShadowKeys[k]].num(0);
         doc.lights.push_back(light);
     }
     return true;
@@ -681,6 +690,87 @@ bool Gltf_Bounds(const GltfDoc &doc, const std::vector<GltfMat> &world, float lo
         for (int a = 0; a < 3; a++) lo[a] = std::min(lo[a], b.lo[a]), hi[a] = std::max(hi[a], b.hi[a]);
     }
     return lo[0] <= hi[0];
+}
+
+void Gltf_AddLight(GltfDoc &doc, int type, const float t[3], const float r[4], float intensity, float box) {
+    Json &j = doc.json;
+    bool used = false;
+    for (const Json &u : j["extensionsUsed"].items) used = used || u.str() == "KHR_lights_punctual";
+    if (!used) ListAt(j, "extensionsUsed").items.push_back(Json::Str("KHR_lights_punctual"));
+    Json &lights = ListAt(j.at("extensions").at("KHR_lights_punctual"), "lights");
+    static const char *const names[3] = {"Sun", "Lamp", "Spot"}, *const types[3] = {"directional", "point", "spot"};
+    Json light = Json::EmptyObject();
+    light.at("name") = Json::Str(names[type]);
+    light.at("type") = Json::Str(types[type]);
+    light.at("intensity") = Json::Float(intensity);
+    if (type == 2) {
+        light.at("spot").at("innerConeAngle") = Json::Float(0.4f);
+        light.at("spot").at("outerConeAngle") = Json::Float(0.8f);
+    }
+    // A shadow's box as big as the model: the game's own is 20 units each way, whatever the model's are
+    if (type != 1) {
+        Json &x = light.at("extras");
+        if (type == 0) x.at("shadowMapNear") = Json::Float(-box * 2);
+        x.at("shadowMapFar") = Json::Float(box * 2);
+        x.at("shadowMapBottom") = Json::Float(-box), x.at("shadowMapTop") = Json::Float(box);
+        x.at("shadowMapLeft") = Json::Float(-box), x.at("shadowMapRight") = Json::Float(box);
+    }
+    lights.items.push_back(light);
+
+    Json node = Json::EmptyObject();
+    node.at("name") = Json::Str(names[type]);
+    node.at("translation") = Json::Floats(t, 3);
+    node.at("rotation") = Json::Floats(r, 4);
+    node.at("extensions").at("KHR_lights_punctual").at("light") = Json::Num((double)lights.items.size() - 1);
+    Json &nodes = ListAt(j, "nodes");
+    nodes.items.push_back(node);
+    // The game takes a scene's lights from its nodes: in each, or what is in the others stays dark
+    for (Json &s : j.at("scenes").items) ListAt(s, "nodes").items.push_back(Json::Num((double)nodes.items.size() - 1));
+}
+
+bool Gltf_RemoveLight(GltfDoc &doc, int light) {
+    Json &j = doc.json;
+    for (const Json &a : j["animations"].items)
+        for (const Json &c : a["channels"].items)
+            if (c["target"]["extensions"]["KHR_animation_pointer"]["pointer"].str().find("KHR_lights_punctual") != std::string::npos) return false;
+    Json &lights = j.at("extensions").at("KHR_lights_punctual").at("lights");
+    if (light < 0 || light >= (int)lights.items.size()) return false;
+    lights.items.erase(lights.items.begin() + light);
+    Json &nodes = j.at("nodes");
+    for (int i = 0; i < (int)nodes.items.size(); i++) {
+        Json &n = nodes.items[i];
+        const Json &ext = n["extensions"]["KHR_lights_punctual"];
+        if (ext.isNull()) continue;
+        int at = ext["light"].i(-1);
+        if (at > light) {
+            n.at("extensions").at("KHR_lights_punctual").at("light") = Json::Num(at - 1);
+        } else if (at == light) {
+            n.at("extensions").erase("KHR_lights_punctual");
+            if (n["extensions"].fields.empty()) n.erase("extensions");
+            // A node for the light alone goes out of the scenes, and is left with nothing
+            if (!n["mesh"].isNull() || n["children"].size()) continue;
+            auto without = [&](Json &list) {
+                for (size_t k = 0; k < list.items.size(); k++)
+                    if (list.items[k].i(-1) == i) list.items.erase(list.items.begin() + k--);
+            };
+            for (Json &s : j.at("scenes").items) without(s.at("nodes"));
+            for (Json &p : nodes.items)
+                if (p.has("children")) without(p.at("children"));
+        }
+    }
+    return true;
+}
+
+void Gltf_SetNodeId(GltfDoc &doc, int node, int id) {
+    if (node < 0 || node >= (int)doc.json["nodes"].size()) return;
+    doc.json.at("nodes").items[node].at("extras").at("id") = Json::Num(id);
+    if (node < (int)doc.nodes.size()) doc.nodes[node].id = id;
+}
+
+void Gltf_SetAnimId(GltfDoc &doc, int anim, int id) {
+    if (anim < 0 || anim >= (int)doc.json["animations"].size()) return;
+    doc.json.at("animations").items[anim].at("extras").at("id") = Json::Num(id);
+    if (anim < (int)doc.anims.size()) doc.anims[anim].id = id;
 }
 
 std::vector<std::string> Gltf_Files(const GltfDoc &doc) {
@@ -897,6 +987,9 @@ bool Gltf_Save(GltfDoc &doc, std::string *error, bool backup) {
             spot.at("innerConeAngle") = Json::Float(g.inner);
             spot.at("outerConeAngle") = Json::Float(g.outer);
         }
+        Json &x = l.at("extras");
+        for (int k = 0; k < 7; k++) SetOrErase(x, kShadowKeys[k], g.shadow[k] != 0, Json::Float(g.shadow[k]));
+        if (x.fields.empty()) l.erase("extras");
     }
     // Animations' keys: each sampler changed, from a channel using it
     std::map<int, int> uses;

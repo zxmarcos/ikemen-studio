@@ -174,6 +174,42 @@ frame and only sent when it changes, or when the game is another: moving or addi
 more. The delta dragged reaches the stage through `g_bgEdit`, as the next frame starts, since `ini` is in
 use until then; each step of a drag is a step of undo. Hidden layers still count in `Parallax_Empty`.
 
+**3D stages** (`src/modelfit.cpp`, tested in `gltf_test`; `app_model.cpp`, `app_create.cpp`). What decides
+the rest: with a `[Model]`, `loadStage` works zoffset out from `offset[1]`, so the fighters' feet are always
+on the model's origin, and neither the offset nor `[StageInfo] zoffset` changes what they stand on: the
+offset moves both on the screen. Only moving the model does, so Put the fight on moves its scene roots
+(`PutFightAt`, undoable, through `SendTRS`), and New stage moves them before writing its copy. `posMul`
+is the camera's units of one unit of the stage at the origin, and scale and distance only count together:
+`Model_Fit` keeps the distance at 1 and works the scale out from how tall a fighter is in the model's
+units (100 of 240 of the screen's height). Its limits are where the back of the box still fills the
+screen, at most a screen each way. The pick now keeps where it met the model (`hit`), and `vp`, `w` and `h`
+come with every frame, for the floor's grid.
+
+What shows nothing: `Parallax_Empty` knows only sprites, so on a model's stage `ParallaxOverlay` and
+`Parallax_Check` stand aside and the game paints it, through the def's own `debugbg`
+(`debugStageEmpty`, sent again while on: a stage read again has its def's). Check the limits counts that
+magenta in `g_frame` at each stop, 0.4 s after going there; the lifebars count as drawn on.
+
+`Model_Check` reads the file as the game will (`CheckedModelOf`, no pixels, again when its time changes;
+rays wait for the mouse to let go). `image.Decode` in `loadglTFModel` only has PNG, JPEG and DDS without
+compression, and it fails the whole stage; a texture without `source` (webp, basis) is a nil dereference
+there. A node's `matrix` is not read, so `GltfNode.hasMatrix` keeps it apart from what the game uses:
+`Gltf_BakeMatrices` makes it t, r, s, and New stage does that by itself. `loadEnvironment` decodes any
+image but fills its textures only from an `.hdr`, hence that error in `Stage_Check`.
+
+What changes the file itself (a light added or deleted, an id for a BGCtrl3D, the matrices of the match's
+model) goes through `EditModelFile`: read, changed, saved, `ReloadStage`; the model's mtime makes the game
+read it again. It waits for unsaved changes. A light's `shadowMap*` are the light's extras (a node's win),
+0 meaning the game's own, 20 model units each way, which is why a new light takes a box as big as the
+model. Lights are per scene (`scene.lightNodes`), so a new one goes in every scene; the game uses 4.
+`Gltf_RemoveLight` refuses when an animation points at lights, since it renumbers them. On a timer writes
+`[BGCtrlDef Timer N]` and two `[BGCtrl3D Timer N on|off]`: `ctrlid` has to be in the BGCtrl3D, as the def's
+is for BGs, and id 0 would be every node without one. `value` of an `Anim` there turns it on or off.
+
+A fight's aspect is set when it starts (`applyFightAspect`), and `localscl` from it: a stage of another
+aspect swapped in draws a model at `scaleCorrection` (0.75 from 4:3 to 16:9). On the stage's workspace
+`PlayStage` starts the match again in that case; elsewhere the swap stays as it was.
+
 A BG's type (`Ini_BgType`, `Ini_BgMissingKeys`, `Ini_BgKeyRead`, tested; `BgTypeLine`, `BgFieldsTable` in
 `app_layers.cpp`, for the Stage and screen windows): the value column was about 40 px wide in the old
 arrangement, which is why a type looked impossible to change, so the type has a line of its own. What
@@ -759,10 +795,11 @@ tools/debugger/
   src/parallax.cpp/.h    a stage's BGs against its camera: what each covers, what stays empty, the delta that fits
   src/app_parallax.cpp   the Stage window's Camera sweep, Use delta, what shows nothing marked on the game
   src/make.cpp/.h        text written for new things: a ChangeState in [Statedef -1], a move's statedef (CNS or ZSS); a new character's states, actions, CMD
-  src/app_create.cpp     File > New: a dialog for a move, a character, a stage of PNGs
-  src/app_model.cpp      Model window: the stage's 3D model (the match's, or read from disk), its placement, its nodes on the Game window
+  src/app_create.cpp     File > New: a dialog for a move, a character, a stage of PNGs or around a 3D model
+  src/app_model.cpp      Model window: the stage's 3D model (the match's, or read from disk), its placement, lights, timers, its nodes on the Game window
   src/app_modelview.cpp  the Model window's preview: a glTF drawn by OpenGL's fixed pipeline into a framebuffer, textures by WIC
-  src/gltf.cpp/.h        a glTF or glb read as model.go reads it, posed, picked, written back (its JSON edited)
+  src/gltf.cpp/.h        a glTF or glb read as model.go reads it, posed, picked, measured, written back (its JSON edited)
+  src/modelfit.cpp/.h    a model as a stage: where [Model] puts it, a new stage's camera, what the game will make of it
   third_party/lodepng    lodepng (commit e584a849, zlib licence) for PNG
   tests/                 air, sff, snd, cmd, ini, roster, fnt, cns, make, stagecheck, gltf _test.cpp (scripts/build.ps1 test)
   src/json.h             small JSON parser for the protocol

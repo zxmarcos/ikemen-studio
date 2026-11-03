@@ -61,7 +61,7 @@ type editorModelState struct {
 	drawn     bool
 	sel       int
 	hover     int
-	picked    int // bumped when a node is picked on the game
+	picked    int       // bumped when a node is picked on the game
 	hit       *mgl.Vec3 // where the last pick met it, in the model's space
 	trs       map[int]bool
 	props     map[int]bool
@@ -71,6 +71,13 @@ type editorModelState struct {
 }
 
 var edModel = editorModelState{sel: -1, hover: -1}
+
+// The extras of a light's shadow, and its fields in that order
+var editorShadowKeys = []string{"shadowMapNear", "shadowMapFar", "shadowMapBottom", "shadowMapTop", "shadowMapLeft", "shadowMapRight", "shadowMapBias"}
+
+func editorLightShadow(l *GLTFLight) []*GLTFAnimatableProperty {
+	return []*GLTFAnimatableProperty{&l.shadowMapNear, &l.shadowMapFar, &l.shadowMapBottom, &l.shadowMapTop, &l.shadowMapLeft, &l.shadowMapRight, &l.shadowMapBias}
+}
 
 // editorModelRead runs when a model file is read (not when a reload keeps it): nothing changed.
 func editorModelRead() {
@@ -669,6 +676,23 @@ func editorModelSave() error {
 				outer, _ := ml.outerConeAngle.restValue.(float32)
 				l["spot"] = map[string]interface{}{"innerConeAngle": inner, "outerConeAngle": outer}
 			}
+			// Its shadow's box, as loadglTFModel reads it: 0 is the game's own
+			extras, _ := l["extras"].(map[string]interface{})
+			if extras == nil {
+				extras = map[string]interface{}{}
+			}
+			for k, v := range editorLightShadow(ml) {
+				if f, _ := v.restValue.(float32); f != 0 {
+					extras[editorShadowKeys[k]] = f
+				} else {
+					delete(extras, editorShadowKeys[k])
+				}
+			}
+			if len(extras) > 0 {
+				l["extras"] = extras
+			} else {
+				delete(l, "extras")
+			}
 		}
 		out, err := json.Marshal(ext)
 		if err != nil {
@@ -835,6 +859,7 @@ func editorModelFunctions(l *lua.LState) {
 		for i, n := range m.nodes {
 			nt := l.NewTable()
 			nt.RawSetString("name", name(names.nodes, i))
+			nt.RawSetString("id", lua.LNumber(n.id))
 			nt.RawSetString("visible", lua.LBool(n.visible))
 			mesh, light := -1, -1
 			if n.meshIndex != nil {
@@ -937,6 +962,11 @@ func editorModelFunctions(l *lua.LState) {
 			lt.RawSetString("inner", lua.LNumber(f32(lg.innerConeAngle)))
 			lt.RawSetString("outer", lua.LNumber(f32(lg.outerConeAngle)))
 			lt.RawSetString("animated", lua.LBool(lg.color.isAnimated || lg.intensity.isAnimated || lg.lightRange.isAnimated))
+			shadow := array()
+			for _, v := range editorLightShadow(lg) {
+				shadow.Append(lua.LNumber(f32(*v)))
+			}
+			lt.RawSetString("shadow", shadow)
 			lights.Append(lt)
 		}
 		t.RawSetString("lights", lights)
@@ -1192,6 +1222,28 @@ func editorModelFunctions(l *lua.LState) {
 		}
 		mm.doubleSided, mm.unlit = boolArg(l, 14), boolArg(l, 15)
 		edModel.materials[i] = true
+		return 0
+	})
+	luaRegister(l, "debugModelLightShadow", func(l *lua.LState) int {
+		/*Change the box a light of the stage's model casts its shadows in: 0 is the game's own.
+		@function debugModelLightShadow
+		@tparam int32 index 0-based.
+		@tparam float32 near
+		@tparam float32 far
+		@tparam float32 bottom
+		@tparam float32 top
+		@tparam float32 left
+		@tparam float32 right
+		@tparam float32 bias*/
+		m, _ := editorStageModelNow()
+		i := int(numArg(l, 1))
+		if m == nil || !debuggerAttached() || i < 0 || i >= len(m.lights) {
+			return 0
+		}
+		for k, v := range editorLightShadow(&m.lights[i]) {
+			v.restAt(float32(numArg(l, 2+k)))
+		}
+		edModel.lights[i] = true
 		return 0
 	})
 	luaRegister(l, "debugModelLight", func(l *lua.LState) int {

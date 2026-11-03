@@ -89,6 +89,7 @@ struct GltfLight {
     std::string name;
     int type = 0; // 0 directional, 1 point, 2 spot
     float rgb[3] = {1, 1, 1}, intensity = 1, range = -1, inner = 0, outer = 0.785398f;
+    float shadow[7] = {}; // its extras: near, far, bottom, top, left, right, bias; 0 is the game's own
 };
 
 struct GltfScene {
@@ -142,6 +143,13 @@ void Gltf_MoveRoots(GltfDoc &doc, const float by[3]);
 // The nodes given by a matrix take what it says as their translation, rotation and scale, to be
 // saved: the engine would leave them at their origin. How many there were.
 int Gltf_BakeMatrices(GltfDoc &doc);
+// A light on a node of its own, in every scene, or one taken away (false: an animation names it). Both
+// change the document's JSON only, for a Gltf_Save and a new read.
+void Gltf_AddLight(GltfDoc &doc, int type, const float t[3], const float r[4], float intensity, float box);
+bool Gltf_RemoveLight(GltfDoc &doc, int light);
+// What a BGCtrl3D's ctrlid will name: a node's or an animation's, in the JSON too
+void Gltf_SetNodeId(GltfDoc &doc, int node, int id);
+void Gltf_SetAnimId(GltfDoc &doc, int anim, int id);
 // The files a .gltf names, next to it: its buffers and images
 std::vector<std::string> Gltf_Files(const GltfDoc &doc);
 // A channel's value at a time (3 numbers, or 4 for a rotation)

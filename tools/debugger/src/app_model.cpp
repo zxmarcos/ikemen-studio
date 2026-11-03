@@ -11,6 +11,7 @@
 
 #include "imgui_stdlib.h"
 #include "ini.h"
+#include "make.h"
 #include "modelfit.h"
 
 namespace app {
@@ -38,7 +39,7 @@ struct ModelView {
         std::vector<int> children;
         bool visible = true, animated = false, shadow = true, ztest = true, zwrite = true, hasLayer = false;
         float t[3] = {0, 0, 0}, r[4] = {0, 0, 0, 1}, s[3] = {1, 1, 1}, outline = 0;
-        int trans = 0, layer = 0;
+        int trans = 0, layer = 0, id = 0;
     };
     struct Prim {
         int material = -1, vertices = 0, indices = 0, mode = 4;
@@ -57,6 +58,7 @@ struct ModelView {
         std::string name;
         int type = 0;
         float rgb[3] = {1, 1, 1}, intensity = 1, range = -1, inner = 0, outer = 0.785f;
+        float shadow[7] = {}; // near, far, bottom, top, left, right, bias; 0 is the game's own
         bool animated = false;
     };
     std::vector<Scene> scenes;
@@ -230,6 +232,11 @@ void EulerToQuat(const float e[3], float q[4]) {
     q[3] = cx * cy * cz + sx * sy * sz;
 }
 
+bool g_fileBusy;        // changes not saved: what changes the file itself waits
+void AddLight(int type);
+void DeleteLight(int light);
+void TimerRow(bool node, int i, float lw);
+
 // ---------------------------------------------------------------------------
 // Animations' keys: of the model from disk, its document's channels; of the match's, asked from
 // the game for each animation shown (debugModelAnimKeys). Channels sharing a sampler share its keys.
@@ -345,7 +352,7 @@ bool Same(EditKind k, const Values &a, const Values &b) {
     if (k == eKeys) return a.keys.interp == b.keys.interp && a.keys.in == b.keys.in && a.keys.out == b.keys.out;
     const auto &x = a.light, &y = b.light;
     return !memcmp(x.rgb, y.rgb, sizeof(x.rgb)) && x.intensity == y.intensity && x.range == y.range && x.inner == y.inner &&
-           x.outer == y.outer;
+           x.outer == y.outer && !memcmp(x.shadow, y.shadow, sizeof(x.shadow));
 }
 
 bool IsOpen(const History &h, EditKind k, int i, int j) {
@@ -1033,12 +1040,16 @@ void SendLight(int i) {
         GltfLight &d = g_disk.doc.lights[i];
         memcpy(d.rgb, l.rgb, sizeof(d.rgb));
         d.intensity = l.intensity, d.range = l.range, d.inner = l.inner, d.outer = l.outer;
+        memcpy(d.shadow, l.shadow, sizeof(d.shadow));
         g_disk.doc.lightsChanged.insert(i);
         return;
     }
     char lua[220];
     snprintf(lua, sizeof(lua), "debugModelLight(%d, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g)", i, l.rgb[0], l.rgb[1], l.rgb[2],
              l.intensity, l.range, l.inner, l.outer);
+    SendRaw(lua);
+    snprintf(lua, sizeof(lua), "debugModelLightShadow(%d, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g, %.9g)", i, l.shadow[0], l.shadow[1], l.shadow[2],
+             l.shadow[3], l.shadow[4], l.shadow[5], l.shadow[6]);
     SendRaw(lua);
     g_modelAsked = ImGui::GetTime();
 }
@@ -1590,10 +1601,22 @@ void AnimationsTab() {
 
 void LightsTab() {
     ModelView &m = View();
+    ImGui::BeginDisabled(g_fileBusy);
+    const char *const kinds[3] = {ICON_PLUS " Sun", ICON_PLUS " Lamp", ICON_PLUS " Spot"};
+    const char *const tips[3] = {"Light from far away, in one direction: the sky's.", "Light from a point, all around.", "Light from a point, in a cone."};
+    for (int k = 0; k < 3; k++) {
+        if (k) ImGui::SameLine();
+        if (ImGui::Button(kinds[k])) AddLight(k);
+        ImGui::SetItemTooltip("%s\n%s", tips[k], g_fileBusy ? "Save the model first: the file itself changes." : "Added to the model's file (a .bak of it the first time).");
+    }
+    ImGui::EndDisabled();
     if (m.lights.empty()) {
-        ImGui::TextDisabled("None (KHR_lights_punctual).");
+        ImGui::TextDisabled("None: the game draws the colours as they are.");
         return;
     }
+    int nodes = 0;
+    for (const auto &n : m.nodes) nodes += n.light >= 0;
+    if (nodes > 4) ImGui::TextColored(Ink(kYellow), "The game uses the first 4 of a scene.");
     for (int i = 0; i < (int)m.lights.size(); i++) {
         ImGui::PushID(i);
         const auto &l = m.lights[i];
@@ -1639,6 +1662,22 @@ void LightEditor(int i, float lw) {
         }
         ImGui::SetItemTooltip("Inner and outer angles of the spot's cone");
     }
+    if (ImGui::CollapsingHeader("Its shadow")) {
+        // 0 is the game's own, and it is 20 units of the model each way: too little for a big one
+        float *s = l.shadow;
+        const char *fmt = "%.2f";
+        float speed = std::max(0.01f, std::fabs(s[3]) * 0.01f);
+        Row("left, right", lw);
+        changed |= ImGui::DragFloat2("##lr", &s[4], speed, -FLT_MAX, FLT_MAX, fmt);
+        ImGui::SetItemTooltip("How far the shadow's box goes each way from the light, in the model's units; 0: 20.");
+        Row("bottom, top", lw);
+        changed |= ImGui::DragFloat2("##bt", &s[2], speed, -FLT_MAX, FLT_MAX, fmt);
+        Row("near, far", lw);
+        changed |= ImGui::DragFloat2("##nf", &s[0], speed, -FLT_MAX, FLT_MAX, fmt);
+        Row("bias", lw);
+        changed |= ImGui::DragFloat("##bias", &s[6], 0.001f, 0, FLT_MAX, s[6] == 0 ? "the game's" : "%.3f");
+        ImGui::SetItemTooltip("Raises the shadow off the surface casting it: more when a surface shadows itself in stripes.");
+    }
     if (changed) SendLight(i);
     ImGui::PopID();
     ImGui::PopID();
@@ -1663,6 +1702,7 @@ void NodeInspector(int i, float lw) {
         ImGui::SameLine();
         if (ImGui::Button(n.visible ? "Hide with its children" : "Show with its children")) SetVisible(i, !n.visible, true);
     }
+    TimerRow(true, i, lw);
 
     ImGui::SeparatorText("Transform");
     if (n.animated)
@@ -1820,6 +1860,11 @@ void LightInspector(int i, float lw) {
     ImGui::Text("%s", LightName(i).c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("light %d", i);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(g_fileBusy);
+    if (ImGui::Button(ICON_TRASH " Delete")) DeleteLight(i);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(g_fileBusy ? "Save the model first: the file itself changes." : "Takes the light out of the model's file (a .bak of it the first time).");
     LightEditor(i, lw);
     for (int n = 0; n < (int)View().nodes.size(); n++)
         if (View().nodes[n].light == i) {
@@ -1862,6 +1907,23 @@ void ReadFloats(const IniFile &ini, const char *section, const char *key, float 
     float v[4];
     for (const IniSection &s : ini.sections)
         if (s.lower == section && s.Floats(key, v, count)) std::copy(v, v + count, out);
+}
+
+// How a def names a file picked: by its name next to the def, from the game's folder inside it;
+// from outside, the file is copied next to the def. "" when it could not be.
+std::string NameFromDef(const std::string &def, const std::string &file) {
+    std::string name = file.substr(file.find_last_of("\\/") + 1), dir = def.substr(0, def.find_last_of("\\/") + 1);
+    std::string base = NormPath(GamePath("")), low = NormPath(file);
+    if (low.compare(0, base.size(), base) == 0) {
+        std::string inside = file.substr(base.size());
+        std::replace(inside.begin(), inside.end(), '\\', '/');
+        return NormPath(inside) == NormPath(dir + name) ? name : inside;
+    }
+    if (!CopyFileA(file.c_str(), GamePath(dir + name).c_str(), TRUE) && GetLastError() != ERROR_FILE_EXISTS) {
+        Log(LogLine::Error, "Could not copy " + file + " next to " + def);
+        return "";
+    }
+    return name;
 }
 
 ModelPlace PlaceOf(const IniFile &ini) {
@@ -1950,17 +2012,39 @@ void PlacementSection(SourceFile *sf, float lw) {
         changed = SetDefField(*sf, "camera", "far", rounded(&nearFar[1], 1, 0.001f)) && changed;
     }
     ImGui::SetItemTooltip("[Camera] near and far: what is nearer or farther is not drawn");
+    std::string environment;
+    float intensity = 1;
+    ReadFloats(ini, "model", "environmentintensity", &intensity, 1);
     for (const IniSection &s : ini.sections)
         if (s.lower == "model")
-            if (const IniField *env = s.Field("environment")) {
-                float intensity = 1;
-                s.Floats("environmentintensity", &intensity, 1);
-                Row("environment", lw);
-                ImGui::TextDisabled("%s", env->value.c_str());
-                Row("its intensity", lw);
-                if (ImGui::DragFloat("##envi", &intensity, 0.01f, 0, FLT_MAX, "%.2f"))
-                    changed = SetDefField(*sf, "model", "environmentintensity", rounded(&intensity, 1, 0.01f));
-            }
+            if (const IniField *env = s.Field("environment")) environment = env->value;
+    float buttons = ImGui::CalcTextSize("Browse...").x + ImGui::GetStyle().FramePadding.x * 2 + (environment.empty() ? 0 : ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
+    Row("environment", lw);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - buttons - ImGui::GetStyle().ItemSpacing.x);
+    ImGui::BeginDisabled();
+    ImGui::InputTextWithHint("##env", "none", &environment, ImGuiInputTextFlags_ReadOnly);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+        std::vector<std::string> picked = PickFiles("Radiance HDR images (*.hdr)\0*.hdr\0", false);
+        if (!picked.empty()) {
+            std::string name = NameFromDef(sf->path, picked[0]);
+            if (!name.empty()) changed = SetDefField(*sf, "model", "environment", name);
+        }
+    }
+    ImGui::SetItemTooltip("[Model] environment: an equirectangular .hdr, which lights the model and shows in what shines.\n"
+                          "One from outside the game's folder is copied next to the def.");
+    if (!environment.empty()) {
+        ImGui::SameLine();
+        if (IconButton(ICON_XMARK "##noenv")) {
+            changed = SetDefField(*sf, "model", "environment", "");
+            changed = SetDefField(*sf, "model", "environmentintensity", "") && changed;
+        }
+        ImGui::SetItemTooltip("No environment map");
+        Row("its intensity", lw);
+        if (ImGui::DragFloat("##envi", &intensity, 0.01f, 0, FLT_MAX, "%.2f"))
+            changed = SetDefField(*sf, "model", "environmentintensity", rounded(&intensity, 1, 0.01f)) || changed;
+    }
     if (changed && g_isLive) StageEdited(*sf);
     else if (changed) sf->version++;
 }
@@ -2016,6 +2100,7 @@ void OnModel(const Json &j) {
     for (const auto &n : j["nodes"].items) {
         ModelView::Node v;
         v.name = n["name"].str();
+        v.id = n["id"].i();
         v.visible = n["visible"].truthy();
         v.mesh = n["mesh"].i(-1);
         v.light = n["light"].i(-1);
@@ -2069,6 +2154,7 @@ void OnModel(const Json &j) {
         v.range = (float)l["range"].num(-1);
         v.inner = (float)l["inner"].num(0);
         v.outer = (float)l["outer"].num(0.785);
+        floats(l["shadow"], v.shadow, 7);
         v.animated = l["animated"].truthy();
         m.lights.push_back(v);
     }
@@ -2297,7 +2383,7 @@ void FillDiskView() {
     for (const GltfScene &s : d.scenes) v.scenes.push_back({s.name, s.roots});
     for (const GltfNode &n : d.nodes) {
         ModelView::Node o;
-        o.name = n.name, o.mesh = n.mesh, o.light = n.light, o.parent = n.parent, o.children = n.children;
+        o.name = n.name, o.mesh = n.mesh, o.light = n.light, o.parent = n.parent, o.children = n.children, o.id = n.id;
         memcpy(o.t, n.t, sizeof(o.t)), memcpy(o.r, n.r, sizeof(o.r)), memcpy(o.s, n.s, sizeof(o.s));
         o.trans = n.trans, o.hasLayer = n.hasLayer, o.layer = n.layer;
         o.shadow = n.shadow, o.ztest = n.ztest, o.zwrite = n.zwrite, o.outline = n.outline;
@@ -2321,11 +2407,12 @@ void FillDiskView() {
         ModelView::Light o;
         o.name = l.name, o.type = l.type, o.intensity = l.intensity, o.range = l.range, o.inner = l.inner, o.outer = l.outer;
         memcpy(o.rgb, l.rgb, sizeof(o.rgb));
+        memcpy(o.shadow, l.shadow, sizeof(o.shadow));
         v.lights.push_back(o);
     }
     for (const GltfAnim &a : d.anims) {
         ModelView::Anim o;
-        o.name = a.name, o.duration = a.duration, o.enabled = true, o.channels = (int)a.channels.size();
+        o.name = a.name, o.duration = a.duration, o.enabled = true, o.channels = (int)a.channels.size(), o.id = a.id;
         v.anims.push_back(o);
     }
 }
@@ -2392,6 +2479,119 @@ bool EditModelFile(SourceFile *sf, const std::function<bool(GltfDoc &)> &edit) {
         DiskLoad(g_disk.path, g_disk.def);
     }
     return true;
+}
+
+SourceFile *g_placing; // the def placing the model shown, as the window found it
+
+void AddLight(int type) {
+    EditModelFile(g_placing, [type](GltfDoc &d) {
+        std::vector<GltfMat> world;
+        Gltf_Pose(d, std::vector<float>(), world);
+        float lo[3] = {-10, 0, -10}, hi[3] = {10, 10, 10};
+        Gltf_Bounds(d, world, lo, hi);
+        float size = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-3f});
+        float at[3] = {(lo[0] + hi[0]) / 2, hi[1], (lo[2] + hi[2]) / 2};
+        // Looking down: the sun a little towards the back of the stage. Its strength is at the floor.
+        float angle = (type == 0 ? -50.0f : -90.0f) / kDeg / 2, turn[4] = {sinf(angle), 0, 0, cosf(angle)};
+        float height = std::max(1e-3f, hi[1]);
+        Gltf_AddLight(d, type, at, turn, type == 0 ? 3 : 3 * height * height, size);
+        return true;
+    });
+}
+
+void DeleteLight(int light) {
+    bool done = EditModelFile(g_placing, [light](GltfDoc &d) {
+        if (Gltf_RemoveLight(d, light)) return true;
+        Log(LogLine::Error, "An animation changes the model's lights: they keep their numbers, and this one stays.");
+        return false;
+    });
+    if (done) g_selKind = kNone, g_sel = -1;
+}
+
+// ---------------------------------------------------------------------------
+// On a timer: a node shown and hidden, an animation played and stopped, by BGCtrl3Ds at the end of
+// the def. They act on an id in the model's file: 0 would be every node that has none.
+// ---------------------------------------------------------------------------
+
+std::string TimerName(int id) { return "Timer " + std::to_string(id); }
+
+bool HasTimer(const std::string &text, int id) {
+    IniFile ini;
+    Ini_Parse(text, ini);
+    std::string name = "bgctrldef timer " + std::to_string(id);
+    for (const IniSection &s : ini.sections)
+        if (s.lower == name) return true;
+    return false;
+}
+
+std::string WithoutTimer(std::string text, int id) {
+    std::string name = "timer " + std::to_string(id);
+    for (const std::string &section : {"bgctrldef " + name, "bgctrl3d " + name + " on", "bgctrl3d " + name + " off"})
+        text = Make_RemoveSection(text, section.c_str());
+    return text;
+}
+
+void TimerRow(bool node, int i, float lw) {
+    SourceFile *sf = g_placing;
+    if (!sf) return;
+    ModelView &m = View();
+    float em = ImGui::GetFontSize();
+    int id = node ? m.nodes[i].id : m.anims[i].id;
+    bool has = id > 0 && HasTimer(sf->text, id);
+    static int on = 30, off = 30, last = -1;
+    // An animation plays to its end, then waits
+    if (last != (node ? i : 1000000 + i)) {
+        last = node ? i : 1000000 + i;
+        on = node ? 30 : std::max(1, (int)(m.anims[i].duration * 60)), off = node ? 30 : 60;
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("On a timer");
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(em * 3.5f);
+    ImGui::InputInt("##on", &on, 0);
+    ImGui::SetItemTooltip(node ? "Ticks it stays shown (60 are a second)" : "Ticks it plays (60 are a second)");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(em * 3.5f);
+    ImGui::InputInt("##off", &off, 0);
+    ImGui::SetItemTooltip(node ? "Ticks it stays hidden" : "Ticks it waits, stopped");
+    on = std::max(1, on), off = std::max(1, off);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(g_fileBusy && id <= 0);
+    bool start = ImGui::Button(has ? ICON_CHECK "##timer" : ICON_PLAY "##timer");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(g_fileBusy && id <= 0 ? "Save the model first: its file gets an id for this." : has ? "Change the timer" : "Writes two BGCtrl3D at the end of the def");
+    if (has) {
+        ImGui::SameLine();
+        if (IconButton(ICON_STOP "##notimer")) {
+            sf->text = WithoutTimer(sf->text, id);
+            if (g_isLive) StageEdited(*sf);
+            else sf->version++;
+        }
+        ImGui::SetItemTooltip("Takes the BGCtrl3D away");
+    }
+    if (!start) return;
+    int use = id;
+    if (use <= 0) {
+        use = 1;
+        for (const auto &n : m.nodes) use = std::max(use, n.id + 1);
+        for (const auto &a : m.anims) use = std::max(use, a.id + 1);
+    }
+    std::string name = TimerName(use), kind = node ? "Visible" : "Anim", ctrl = "ctrlid = " + std::to_string(use) + "\ntype = " + kind;
+    std::string text = WithoutTimer(sf->text, use);
+    if (!text.empty() && text.back() != '\n') text += "\n";
+    text += "\n[BGCtrlDef " + name + "]\nlooptime = " + std::to_string(on + off) + "\n\n[BGCtrl3D " + name + " on]\n" + ctrl +
+            "\ntime = 0\nvalue = 1\n\n[BGCtrl3D " + name + " off]\n" + ctrl + "\ntime = " + std::to_string(on) + "\nvalue = 0\n";
+    sf->text = text;
+    if (id > 0) {
+        if (g_isLive) StageEdited(*sf);
+        else sf->version++;
+    } else {
+        EditModelFile(sf, [=](GltfDoc &d) {
+            if (node) Gltf_SetNodeId(d, i, use);
+            else Gltf_SetAnimId(d, i, use);
+            return true;
+        });
+    }
 }
 
 // The model read again when its file changed on disk (and nothing was changed here)
@@ -2661,6 +2861,7 @@ void ListsAndInspector(float lw) {
             ImGui::Text("Keys of %s", AnimName(g_keysAnim).c_str());
             ImGui::SameLine();
             ImGui::TextDisabled("%.2f / %.2f s", m.anims[g_keysAnim].time, m.anims[g_keysAnim].duration);
+            TimerRow(false, g_keysAnim, lw);
             KeysPanel(g_keysAnim, lw);
         } else if (g_selKind == kNode && g_sel >= 0 && g_sel < (int)m.nodes.size()) NodeInspector(g_sel, lw);
         else if (g_selKind == kMaterial && g_sel >= 0 && g_sel < (int)m.materials.size()) MaterialInspector(g_sel, lw);
@@ -2733,6 +2934,26 @@ void ModelChecks(const SourceFile &sf, const IniFile &ini, std::vector<StageFind
         f.line = line;
         out.push_back(f);
     }
+    // What the BGCtrl3Ds name: an id in the model's extras. Their types are the def's checks'.
+    std::set<int> ids;
+    for (const GltfNode &n : c->doc.nodes) ids.insert(n.id);
+    for (const GltfAnim &a : c->doc.anims) ids.insert(a.id);
+    for (const IniSection &s : ini.sections) {
+        if (s.lower.compare(0, 8, "bgctrl3d") != 0) continue;
+        const IniField *ctrl = s.Field("ctrlid");
+        if (!ctrl) {
+            out.push_back({StageFinding::Warning, s.line, "[" + s.name + "] has no ctrlid: it acts on nothing"});
+            continue;
+        }
+        const char *p = ctrl->value.c_str();
+        for (char *end;; p = *end ? end + 1 : end) {
+            long id = strtol(p, &end, 10);
+            if (end == p) break;
+            if (id > 0 && !ids.count((int)id))
+                out.push_back({StageFinding::Warning, ctrl->line, "[" + s.name + "]: no node or animation of the model has id " + std::to_string(id)});
+            if (!*end) break;
+        }
+    }
 }
 
 // In the Stage window: what the model is, and the way to the Model window
@@ -2740,10 +2961,10 @@ void ModelSection(bool stageHasModel) {
     if (!stageHasModel && !g_mframe.ok) return;
     ImGui::AlignTextToFramePadding();
     if (g_live.known && g_live.has)
-        ImGui::TextDisabled("3D model: %s, %zu nodes", g_live.file.c_str(), g_live.nodes.size());
+        ImGui::TextDisabled("%s, %zu nodes", g_live.file.substr(g_live.file.find_last_of("/\\") + 1).c_str(), g_live.nodes.size());
     else
         ImGui::TextDisabled("3D model");
-    ImGui::SameLine();
+    SameLineFits(ImGui::CalcTextSize("Open the Model window").x + ImGui::GetStyle().FramePadding.x * 2);
     if (ImGui::Button("Open the Model window")) {
         g_wanted.clear();
         ShowWindow("Model");
@@ -2812,6 +3033,7 @@ void ModelWindow() {
     SourceFile *sf = live ? StageSource() : g_disk.def.empty() ? nullptr : &LoadSource(g_disk.def);
     bool dirty = live ? (g_mframe.ok ? g_mframe.dirty : m.dirty) : g_disk.doc.Dirty();
     bool defDirty = sf && sf->Dirty();
+    g_fileBusy = dirty, g_placing = sf;
 
     // Header: the file, where it comes from, Save, Revert, pick
     std::string name = m.file.substr(m.file.find_last_of("/\\") + 1);

@@ -206,6 +206,14 @@ std::vector<StageFinding> Stage_Check(const std::string &text, const SffDoc *sff
         file(bgdef, "model", StageFinding::Error);
     }
     file(section("model"), "environment", StageFinding::Warning);
+    // loadEnvironment decodes any image, and fills its textures only from an .hdr
+    if (const IniField *env = section("model") ? section("model")->Field("environment") : nullptr) {
+        std::string lower = env->value;
+        for (char &c : lower) c = (char)tolower((unsigned char)c);
+        size_t dot = lower.find_last_of('.');
+        if (!lower.empty() && (dot == std::string::npos || lower.compare(dot, 4, ".hdr") != 0))
+            add(StageFinding::Error, env->line, "environment: " + env->value + " is not an .hdr: the game shows no model with it");
+    }
     if (const IniSection *info = section("info"))
         for (const IniField &f : info->fields)
             if ((f.key.compare(0, 12, "attachedchar") == 0 || std::regex_match(f.key, std::regex(R"(round\d+def)"))) &&
@@ -272,9 +280,10 @@ std::vector<StageFinding> Stage_Check(const std::string &text, const SffDoc *sff
                                                     "remappal", "shaderset", "sinx", "siny", "velset", "veladd"};
     for (const IniSection &s : ini.sections) {
         std::string first = First(s.lower);
-        if (first != "bgctrldef" && first != "bgctrl") continue;
+        if (first != "bgctrldef" && first != "bgctrl" && first != "bgctrl3d") continue;
         std::string what = "[" + s.name + "]";
-        if (const IniField *ctrl = s.Field("ctrlid"))
+        // A BGCtrl3D's ids are the model's; a BGCtrlDef before one has no ids of its own
+        if (const IniField *ctrl = first == "bgctrl" || first == "bgctrldef" ? s.Field("ctrlid") : nullptr)
             for (int id : Ints(ctrl->value))
                 if (id != -1 && !ids.count(id))
                     add(StageFinding::Warning, ctrl->line, what + ": no BG has id " + std::to_string(id));
@@ -285,7 +294,7 @@ std::vector<StageFinding> Stage_Check(const std::string &text, const SffDoc *sff
         if (lower.empty()) add(StageFinding::Warning, s.line, what + " has no type");
         else if (!kCtrlTypes.count(lower))
             add(StageFinding::Warning, type->line, what + ": type " + type->value + " is not one the engine knows");
-        else if (lower == "anim")
+        else if (lower == "anim" && first == "bgctrl") // a BGCtrl3D's value turns an animation on or off
             if (const IniField *v = s.Field("value"); v && !Ints(v->value).empty()) action(Ints(v->value)[0], v->line, what);
     }
 

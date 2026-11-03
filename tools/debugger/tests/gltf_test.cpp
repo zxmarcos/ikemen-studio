@@ -155,6 +155,36 @@ static void TestArena() {
     in.right = 6000, in.place.zFar = 1;
     found = Model_Check(back, world, in);
     CHECK(says(found, "No floor under") && says(found, "is not drawn"));
+
+    // Lights added, in the scene, with a shadow's box as big as was asked; one taken away, the other's
+    // number following
+    float over[3] = {0, 13, 0}, down[4] = {-0.42f, 0, 0, 0.9f};
+    Gltf_AddLight(back, 0, over, down, 3, 40);
+    Gltf_AddLight(back, 2, over, down, 30, 40);
+    CHECK(Gltf_Save(back, &error, false));
+    GltfDoc lit;
+    CHECK(Gltf_Load(lit, tmp));
+    CHECK(lit.lights.size() == 2 && lit.nodes.size() == 5 && lit.nodes[3].light == 0 && lit.nodes[4].light == 1);
+    CHECK(lit.lights[0].type == 0 && lit.lights[0].shadow[4] == -40 && lit.lights[0].shadow[0] == -80);
+    CHECK(lit.lights[1].type == 2 && Near(lit.lights[1].outer, 0.8f) && lit.lights[1].shadow[0] == 0 && lit.lights[1].intensity == 30);
+    CHECK(lit.scenes[0].roots.size() == 5);
+    CHECK(lit.json["extensionsUsed"][(size_t)0].str() == "KHR_lights_punctual");
+    lit.lights[1].shadow[6] = 0.125f;
+    lit.lightsChanged.insert(1);
+    CHECK(Gltf_Save(lit, &error, false));
+    CHECK(Gltf_RemoveLight(lit, 0));
+    CHECK(Gltf_Save(lit, &error, false));
+    GltfDoc gone;
+    CHECK(Gltf_Load(gone, tmp));
+    CHECK(gone.lights.size() == 1 && gone.lights[0].type == 2 && gone.lights[0].shadow[6] == 0.125f);
+    CHECK(gone.nodes[3].light == -1 && gone.nodes[4].light == 0);
+    CHECK(gone.scenes[0].roots.size() == 4);
+    CHECK(gone.nodes[0].mesh == 0); // what is not a light as it was
+    Gltf_SetNodeId(gone, 1, 7);
+    CHECK(Gltf_Save(gone, &error, false));
+    GltfDoc named;
+    CHECK(Gltf_Load(named, tmp));
+    CHECK(named.nodes[1].id == 7 && named.nodes[0].id == 0);
     DeleteFileA(tmp.c_str());
 }
 
