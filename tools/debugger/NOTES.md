@@ -181,9 +181,13 @@ offset moves both on the screen. Only moving the model does, so Put the fight on
 (`PutFightAt`, undoable, through `SendTRS`), and New stage moves them before writing its copy. `posMul`
 is the camera's units of one unit of the stage at the origin, and scale and distance only count together:
 `Model_Fit` keeps the distance at 1 and works the scale out from how tall a fighter is in the model's
-units (100 of 240 of the screen's height). Its limits are where the back of the box still fills the
-screen, at most a screen each way. The pick now keeps where it met the model (`hit`), and `vp`, `w` and `h`
-come with every frame, for the floor's grid.
+units (100 of 240 of the screen's height). Its limits are where the model's edge reaches the screen's at
+the fighters' depth, at most a screen each way: asking the back of the box to fill the screen left stage3d
+with a range of 15, as a model's far scenery widens its box. The fight stays on the surface at the origin
+when there is one (`Model_FloorAtOrigin`), as a model made for a stage has it; else `Model_FloorAt` goes
+down from the middle of the box. v0.1.2 took the lowest surface, which on stage3d is the bottom of its sky:
+a test model with only a floor and a wall had not shown that. The pick now keeps where it met the model
+(`hit`), and `vp`, `w` and `h` come with every frame, for the floor's grid.
 
 What shows nothing: `Parallax_Empty` knows only sprites, so on a model's stage `ParallaxOverlay` and
 `Parallax_Check` stand aside and the game paints it, through the def's own `debugbg`
@@ -857,6 +861,9 @@ push disabled. `develop` mirrors upstream and is not pushed. `main` follows
 upstream `develop`, not `release/1.0`, and takes it by merge: rebasing would
 rewrite all of this history at every sync.
 
+- The root `README.md` is the fork's: `sync_upstream.ps1` keeps it through every merge, so what upstream
+  changes there is not seen. Its pictures are in `tools/debugger/docs/images`, added with `git add -f`
+  as `.gitignore` has `*.png`, and were taken by the debugger itself (`test_ui.ps1`).
 - `scripts/sync_upstream.ps1 [ref]` fetches and merges (default
   `upstream/develop`). Then `scripts/build.ps1`, `scripts/build.ps1 test` and a
   match through `scripts/test_ui.ps1`: the hooks can stop working without any
