@@ -664,7 +664,7 @@ const std::vector<StageFinding> &StageChecks(SourceFile &sf, const IniFile &ini,
         modelVersion = modelNow;
         camera = view;
         found = Stage_Check(sf.text, sff, [&](const std::string &name) { return !StageFile(sf.path, name).empty(); });
-        const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, sffVersion);
+        const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, sff, sffVersion);
         // A model may cover what the BGs leave: the Camera tab's Check the limits sees that
         if (model) {
             ModelChecks(sf, ini, found);

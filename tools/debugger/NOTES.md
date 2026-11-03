@@ -253,8 +253,15 @@ top's multiplied by the widening; the grid laid on the engine's trapezoid agrees
 and at its limits, slanted edge included. `Parallax_FloorDelta` is `1 / (1 + (widen - 1) * t)`, t being
 how far down the floor the ground is, zoffset in the def's y: above, it is -1, and there is no button. The
 corners take the mouse before the limits and the BGs. `xscale` floors (no `width`) are drawn with a shear
-that is not modelled: their bottom row is taken for their top's, and giving one handles writes `width`,
-which the engine then reads instead. Checked on the release's stages (`parallax-test` prints what it
+(`rasterx`): the picture is not widened, so what it covers is not modelled, but its rows scroll as a
+width's do, by the ratio of its two numbers (`ParallaxBg::rate`), so "With the fighters" works on them
+too; only `width` floors get handles. The row under the fighters (`Parallax_GroundDelta`) is shown on the
+BG's line, on the floor's grid (green at 1) and in the depth map, where a floor's bar goes on, thinner,
+to its bottom's delta; the bars are the delta as drawn (a hires def's halved), so the fighters' line is
+right there too. A floor at 1 when a corner drag starts keeps it: the delta is written with the width.
+Measured on kfm with the free camera moved 30 units (the fighters 43.5 px): the row under the feet moved
+42.1 px at Elecbyte's .78 (0.965 said) and 43.7 at .808, the button's. `StageParallaxBgs` parses the text
+it is keyed by: built from the caller's IniFile, an edit made earlier in the frame left it stale. Checked on the release's stages (`parallax-test` prints what it
 says of them): no holes, and one note, kfm's ceiling, 2 units short.
 
 v0.1.2 was published from 3ad5b97c, before the fix of a new stage's floor. `build.yml` replaces a release's

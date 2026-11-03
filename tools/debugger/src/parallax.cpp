@@ -151,8 +151,13 @@ std::vector<ParallaxBg> Parallax_Bgs(const IniFile &ini, const AirFile &air, con
             Numbers(s, "width", width, 2);
             if (width[0] > 0 && width[1] != 0) {
                 b.w = width[0] * std::fabs(scale[0]);
-                b.widen = width[1] / width[0];
+                b.rate = b.widen = width[1] / width[0];
                 b.left = start[0] - b.w / 2; // the engine centres it (xofs)
+            } else if (!s.Field("width")) {
+                // xscale slants the picture by its position (rasterx), so its rows scroll as a width's do
+                float raster[2] = {1, 1};
+                Numbers(s, "xscale", raster, 2);
+                if (raster[0] != 0) b.rate = raster[1] / raster[0];
             }
         }
         b.step[0] = b.w + spacing[0], b.step[1] = b.h + spacing[1];
@@ -242,11 +247,21 @@ ParallaxShape Parallax_Shape(const ParallaxBg &b, const ParallaxView &v, const P
     return s;
 }
 
-float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v) {
+float Parallax_GroundRow(const ParallaxBg &b, const ParallaxView &v) {
     if (b.h <= 0) return -1;
     float t = (v.zoffset - b.top) / b.h;
-    if (t < 0 || t > 1) return -1;
-    return 1 / (1 + (b.widen - 1) * t);
+    return t < 0 || t > 1 ? -1 : t;
+}
+
+// A row of a floor is at its top's place times 1 + (rate - 1) * t (render.go's convergence, or the shear)
+float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v) {
+    float t = Parallax_GroundRow(b, v);
+    return t < 0 ? -1 : 1 / (1 + (b.rate - 1) * t);
+}
+
+float Parallax_GroundDelta(const ParallaxBg &b, const ParallaxView &v) {
+    float t = Parallax_GroundRow(b, v);
+    return t < 0 ? -1 : b.delta[0] * (1 + (b.rate - 1) * t); // as drawn: a hires def's delta is halved
 }
 
 // Two pixels' difference, 0 to 255: a pixel against nothing is the most there is

@@ -106,7 +106,7 @@ ParallaxView StageParallaxView(const IniFile &ini) {
     return view;
 }
 
-const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniFile &ini, const SffDoc *sff, unsigned sprites) {
+const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const SffDoc *sff, unsigned sprites) {
     static std::string text;
     static unsigned version;
     static std::vector<ParallaxBg> bgs;
@@ -115,9 +115,11 @@ const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniF
         text = sf.text, version = sprites, done = true;
         bgs.clear();
         if (sff) {
+            // Parsed from the text it is kept by: an IniFile from before an edit made in this frame
+            // would be kept until the next one
             AirFile air;
             Air_Parse(sf.text, air);
-            bgs = Parallax_Bgs(ini, air, *sff);
+            bgs = Parallax_Bgs(StageIni(sf), air, *sff);
         }
     }
     return bgs;
@@ -127,7 +129,7 @@ void ParallaxSection(const SourceFile &sf, const IniFile &ini) {
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
     unsigned sprites = spr ? spr->version : 0;
-    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, sprites);
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, sff, sprites);
     ParallaxView view = StageParallaxView(ini);
     bool live = StageInMatch() && g_stageView.ok && g_stageView.lim[0] > 0;
     float em = ImGui::GetFontSize();
@@ -245,7 +247,7 @@ bool g_floorHandles; // the selected floor's corners on the Game window
 const ParallaxBg *BgOf(const SourceFile &sf, const IniFile &ini, int index) {
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
-    for (const ParallaxBg &one : StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0))
+    for (const ParallaxBg &one : StageParallaxBgs(sf, sff, spr ? spr->version : 0))
         if (one.index == index) return &one;
     return nullptr;
 }
@@ -382,8 +384,10 @@ bool MotionButton(SourceFile &sf, const IniFile &ini, const IniSection &s) {
 
 // Making a BG a floor, or what a floor can do. True when the text changed.
 bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const ParallaxView &view) {
-    // A parallax BG without a width is a plain picture: making it a floor gives it one
-    bool floor = Ini_BgType(s) == kIniBgParallax && s.Field("width");
+    // A parallax BG without a width is a plain picture, unless its xscale slants it: making it a floor
+    // gives it a width
+    bool widths = Ini_BgType(s) == kIniBgParallax && s.Field("width");
+    bool floor = widths || (Ini_BgType(s) == kIniBgParallax && b.rate != 1);
     bool edited = false;
     if (!floor && Ini_BgType(s) != kIniBgNormal && Ini_BgType(s) != kIniBgParallax) return false;
     if (!floor) {
@@ -404,20 +408,39 @@ bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const P
         ImGui::SetItemTooltip("type = parallax, its bottom wider than its top: it scrolls and widens more the nearer it is.");
         return edited;
     }
-    ImGui::Checkbox("Floor handles", &g_floorHandles);
-    ImGui::SetItemTooltip("On the Game window: this floor's corners and a grid. Drag a corner to change the width of its top or\n"
-                          "its bottom; the lines should run as the picture's own lines do.");
+    if (widths) {
+        ImGui::Checkbox("Floor handles", &g_floorHandles);
+        ImGui::SetItemTooltip("On the Game window: this floor's corners and a grid, and the row the fighters stand on. Drag a\n"
+                              "corner to change the width of its top or its bottom; the lines should run as the picture's own\n"
+                              "lines do. A floor that moves with the fighters keeps doing so.");
+        ImGui::SameLine();
+    }
     float fit = Parallax_FloorDelta(b, view);
-    if (fit < 0) return false;
+    ImGui::AlignTextToFramePadding();
+    if (fit < 0) {
+        ImGui::TextDisabled("The fighters do not stand on it");
+        ImGui::SetItemTooltip("The ground (zoffset) is above or below this floor: no row of it is under their feet.");
+        return false;
+    }
+    float row = Parallax_GroundDelta(b, view);
+    if (std::fabs(row - 1) < 0.002f) {
+        ImGui::TextColored(Ink(kGreen), ICON_CHECK " Moves with the fighters");
+        ImGui::SetItemTooltip("The row under their feet scrolls as they do: the far part and the near part move, they stay on\n"
+                              "the same pixel of it.");
+        return false;
+    }
+    ImGui::TextColored(Ink(kYellow), "Under their feet: %.3g", row);
+    ImGui::SetItemTooltip("How fast the row of the floor under the fighters scrolls: 1 is as they do. Away from 1 they slide\n"
+                          "on it as the camera moves.");
     float value = std::round(fit / b.units * 1000) / 1000;
-    if (std::fabs(value - b.delta[0] / b.units) < 0.0005f) return false;
     SameLineFits(ImGui::CalcTextSize("With the fighters").x + ImGui::GetStyle().FramePadding.x * 2);
     if (ImGui::Button("With the fighters")) {
         float both[2] = {value, b.delta[1] / b.units};
         edited = Ini_SetField(sf.text, s, "delta", Ini_Floats(both, 2));
         if (edited) StageEdited(sf);
     }
-    ImGui::SetItemTooltip("Delta %.3g: the row of the floor at the fighters' feet scrolls as they do, so they do not slide on it.", value);
+    ImGui::SetItemTooltip("Delta %.3g: the row under the fighters' feet scrolls as they do, so they do not slide on it; the\n"
+                          "far part of the floor moves slower and the near part faster.", value);
     return edited;
 }
 
@@ -427,6 +450,7 @@ bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, 
     const StageView &v = g_stageView;
     static int drag = -1; // 0 the top, 1 the bottom
     static float rest;
+    static bool keep; // the floor moved with the fighters when the drag began: its delta follows
     const ParallaxBg *b = g_floorHandles && v.ok && v.lim[0] > 0 ? BgOf(sf, ini, g_stageBg) : nullptr;
     const IniSection *s = nullptr;
     std::vector<int> sections = ini.StageBgs();
@@ -452,6 +476,24 @@ bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, 
     draw->AddLine(tl, tr, edge, 2);
     draw->AddLine(bl, br, edge, 2);
 
+    // The row the fighters stand on, green when it scrolls as they do
+    float ground = Parallax_GroundRow(*b, view);
+    bool withFighters = ground >= 0 && std::fabs(Parallax_GroundDelta(*b, view) - 1) < 0.002f;
+    if (ground >= 0) {
+        float y = shape.top + (shape.bottom - shape.top) * ground;
+        ImVec2 a = point(shape.topLeft + (shape.bottomLeft - shape.topLeft) * ground, y);
+        ImVec2 z = point(shape.topRight + (shape.bottomRight - shape.topRight) * ground, y);
+        ImU32 ink = withFighters ? IM_COL32(120, 255, 200, 255) : IM_COL32(255, 120, 80, 255);
+        draw->AddLine(a, z, ink, 2);
+        // Beside the floor, where there is room: the BG's name is inside, at the left of its top
+        char label[64];
+        snprintf(label, sizeof(label), "under the fighters: %.3g", withFighters ? 1.0f : Parallax_GroundDelta(*b, view));
+        float wide = ImGui::CalcTextSize(label).x, x = z.x + 6;
+        if (x + wide > draw->GetClipRectMax().x) x = a.x - wide - 6;
+        if (x < draw->GetClipRectMin().x) x = std::min(z.x, draw->GetClipRectMax().x) - wide - 4;
+        draw->AddText(ImVec2(std::max(x, draw->GetClipRectMin().x + 4), a.y - ImGui::GetFontSize() / 2), ink, label);
+    }
+
     // The corners: both of a side move together, about the middle
     ImVec2 m = ImGui::GetMousePos();
     float reach = ImGui::GetFontSize() * 0.6f;
@@ -464,7 +506,7 @@ bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, 
     }
     if (over >= 0) {
         ImGui::SetTooltip("Drag: the width of its %s", over < 2 ? "top" : "bottom");
-        if (clicked) drag = over / 2, rest = 0;
+        if (clicked) drag = over / 2, rest = 0, keep = withFighters;
     }
     if (drag >= 0) {
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -479,7 +521,18 @@ bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, 
                 float units = b->units;
                 int width[2] = {(int)std::lround(b->w / units), (int)std::lround(b->w * b->widen / units)};
                 width[drag] = std::max(1, width[drag] + change);
-                if (Ini_SetField(sf.text, *s, "width", std::to_string(width[0]) + ", " + std::to_string(width[1]))) StageEdited(sf);
+                std::string text = sf.text; // both, or nothing
+                bool edited = SetField(text, s->line, "width", std::to_string(width[0]) + ", " + std::to_string(width[1]));
+                // A floor moving with the fighters keeps doing so: its delta follows the widening
+                if (edited && keep) {
+                    float rate = (float)width[1] / width[0];
+                    float both[2] = {std::round(1 / (1 + (rate - 1) * ground) / units * 1000) / 1000, b->delta[1] / units};
+                    edited = SetField(text, s->line, "delta", Ini_Floats(both, 2));
+                }
+                if (edited) {
+                    sf.text = text;
+                    StageEdited(sf);
+                }
             }
         }
     }
@@ -529,7 +582,7 @@ void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini,
     if (!spr || !spr->doc.error.empty()) return;
     ParallaxView view = StageParallaxView(ini);
     // What is hidden here stays in the stage: it still covers what is behind it
-    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, &spr->doc, spr->version);
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, &spr->doc, spr->version);
     const int cols = 96, rows = 54;
     std::vector<char> grid = Parallax_Empty(bgs, view, FreeStop(), cols, rows);
     float l = v.lim[0], w = view.width / cols, h = view.height / rows;
@@ -675,14 +728,15 @@ void SendHiddenBgs(const IniFile *ini) {
     SendRaw("debugStageBgHide('" + list + "')");
 }
 
-// The stage from the side: a layer's bar reaches its delta, the furthest at the top. The line is the
-// fighters, delta 1. A bar dragged changes the delta, and the game follows.
-static void DepthMap(const std::vector<ParallaxBg> &bgs, BgEdit &edit) {
+// The stage from the side: a layer's bar reaches its delta as drawn (a hires def's is halved), the
+// furthest at the top; a floor goes on, thinner, to its bottom's, with a mark where the fighters stand.
+// The line is the fighters, delta 1. A bar dragged changes the delta, and the game follows.
+static void DepthMap(const std::vector<ParallaxBg> &bgs, const ParallaxView &view, BgEdit &edit) {
     std::vector<const ParallaxBg *> rows;
     float biggest = 1;
     for (const ParallaxBg &b : bgs)
-        if (!b.linked) rows.push_back(&b), biggest = std::max(biggest, b.delta[0] / b.units);
-    std::stable_sort(rows.begin(), rows.end(), [](const ParallaxBg *a, const ParallaxBg *b) { return a->delta[0] / a->units < b->delta[0] / b->units; });
+        if (!b.linked) rows.push_back(&b), biggest = std::max(biggest, b.delta[0] * std::max(b.rate, 1.0f));
+    std::stable_sort(rows.begin(), rows.end(), [](const ParallaxBg *a, const ParallaxBg *b) { return a->delta[0] < b->delta[0]; });
     if (rows.empty()) {
         ImGui::TextDisabled("No layer shows a sprite.");
         return;
@@ -699,10 +753,24 @@ static void DepthMap(const std::vector<ParallaxBg> &bgs, BgEdit &edit) {
         ImGui::PushID(b->index);
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImGui::InvisibleButton("##row", ImVec2(width, height));
-        float delta = b->delta[0] / b->units;
+        float delta = b->delta[0] / b->units, drawn = b->delta[0];
         bool active = ImGui::IsItemActive();
-        ImVec2 end(p.x + width * delta / span, p.y + height - 2);
-        draw->AddRectFilled(p, end, active || ImGui::IsItemHovered() ? hot : b->index == g_stageBg ? selected : bar);
+        ImU32 fill = active || ImGui::IsItemHovered() ? hot : b->index == g_stageBg ? selected : bar;
+        ImVec2 end(p.x + width * drawn / span, p.y + height - 2);
+        if (b->rate != 1) {
+            float slow = p.x + width * drawn * std::min(b->rate, 1.0f) / span, fast = p.x + width * drawn * std::max(b->rate, 1.0f) / span;
+            float mid = p.y + (height - 2) / 2, thin = std::max(2.0f, height / 6);
+            draw->AddRectFilled(ImVec2(p.x, p.y), ImVec2(slow, end.y), fill);
+            draw->AddRectFilled(ImVec2(slow, mid - thin), ImVec2(fast, mid + thin), fill);
+            float ground = Parallax_GroundDelta(*b, view);
+            if (ground >= 0) {
+                float x = p.x + width * ground / span;
+                bool with = std::fabs(ground - 1) < 0.002f;
+                draw->AddRectFilled(ImVec2(x - 2, p.y + 1), ImVec2(x + 2, end.y - 1), with ? IM_COL32(120, 255, 200, 255) : IM_COL32(255, 120, 80, 255));
+            }
+        } else {
+            draw->AddRectFilled(p, end, fill);
+        }
         draw->AddText(ImVec2(p.x + 4, p.y + (height - ImGui::GetFontSize()) / 2 - 1), ImGui::GetColorU32(ImGuiCol_Text), b->name.c_str());
         if (ImGui::IsItemActivated()) {
             dragging = b->index;
@@ -710,12 +778,18 @@ static void DepthMap(const std::vector<ParallaxBg> &bgs, BgEdit &edit) {
             ShowStageBg(b->index);
         }
         if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1)) {
-            float now = std::max(0.0f, (ImGui::GetMousePos().x - p.x) / width * span);
+            float now = std::max(0.0f, (ImGui::GetMousePos().x - p.x) / width * span) / b->units;
             now = std::round(now * 100) / 100; // a pixel is about that much
             if (now != delta) edit = LayerDeltaEdit(b->index, now, b->delta[1] / b->units);
         }
         if (ImGui::IsItemDeactivated() && dragging == b->index) dragging = -1;
-        ImGui::SetItemTooltip("[%s]  delta %.3g\nDrag it: 1 scrolls with the fighters, 0 stays still.", b->name.c_str(), delta);
+        float ground = b->rate != 1 ? Parallax_GroundDelta(*b, view) : -1;
+        if (ground >= 0)
+            ImGui::SetItemTooltip("[%s]  delta %.3g\nA floor: the thin part goes from its top row's delta to its bottom row's.\n"
+                                  "The mark is the row under the fighters, %.3g: at the line, they do not slide on it.\n"
+                                  "Drag it: 1 scrolls with the fighters, 0 stays still.", b->name.c_str(), delta, ground);
+        else
+            ImGui::SetItemTooltip("[%s]  delta %.3g\nDrag it: 1 scrolls with the fighters, 0 stays still.", b->name.c_str(), delta);
         ImGui::PopID();
     }
     ImVec2 bottom = ImGui::GetCursorScreenPos();
@@ -729,12 +803,12 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit, float
     std::vector<int> sections = ini.StageBgs();
     const SpriteFile *spr = StageSpriteFile(sf, ini);
     const SffDoc *sff = spr && spr->doc.error.empty() ? &spr->doc : nullptr;
-    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, ini, sff, spr ? spr->version : 0);
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, sff, spr ? spr->version : 0);
     static bool depth;
     ImGui::Checkbox("Depth map", &depth);
     ImGui::SetItemTooltip("The layers by how far back they are, a bar for each delta, to drag.");
     if (depth) {
-        DepthMap(bgs, edit);
+        DepthMap(bgs, StageParallaxView(ini), edit);
         return;
     }
     std::vector<std::string> keys = LayerKeys(ini);
@@ -792,7 +866,13 @@ void LayersSection(const SourceFile &sf, const IniFile &ini, BgEdit &edit, float
             float delta = b->delta[0] / b->units, deltaY = b->delta[1] / b->units;
             ImGui::SetNextItemWidth(em * 3);
             if (ImGui::DragFloat("##delta", &delta, 0.005f, 0, 10, "%.3g")) edit = LayerDeltaEdit(n, delta, deltaY);
-            ImGui::SetItemTooltip("How much of the camera's movement it follows: 1 with the fighters, 0 not at all. Drag it; the game follows.");
+            float ground = b->rate != 1 ? Parallax_GroundDelta(*b, StageParallaxView(ini)) : -1;
+            if (ground >= 0)
+                ImGui::SetItemTooltip("How much of the camera's movement its top row follows: 1 with the fighters, 0 not at all.\n"
+                                      "The row under the fighters follows %.3g of it%s. Drag it; the game follows.", ground,
+                                      std::fabs(ground - 1) < 0.002f ? ", as they do" : ": they slide on it");
+            else
+                ImGui::SetItemTooltip("How much of the camera's movement it follows: 1 with the fighters, 0 not at all. Drag it; the game follows.");
         } else if (b) {
             ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("linked");

@@ -185,6 +185,17 @@ static void TestFloor() {
     NEAR(s.bottomLeft, -450);
     // The ground, at 200, is half way down: the row there is twice the top's, so half the delta
     NEAR(Parallax_FloorDelta(b, p.view), 0.5f);
+    NEAR(Parallax_GroundRow(b, p.view), 0.5f);
+    NEAR(Parallax_GroundDelta(b, p.view), 1); // .5 at its top, twice that half way
+    // xscale slants it instead: not wider, but its rows scroll as a width's do
+    Parsed x(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 180\nxscale = 1, 3\ndelta = .4\n");
+    NEAR(x.bgs[0].widen, 1);
+    NEAR(x.bgs[0].rate, 3);
+    NEAR(Parallax_FloorDelta(x.bgs[0], x.view), 0.5f);
+    NEAR(Parallax_GroundDelta(x.bgs[0], x.view), 0.8f);
+    // A width wins over an xscale, as the engine reads them
+    Parsed w(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nwidth = 200, 400\nxscale = 1, 3\n");
+    NEAR(w.bgs[0].rate, 2);
     Parsed q(std::string(kCamera) + "[BG a]\ntype = parallax\nspriteno = 0, 2\nstart = 0, 300\nwidth = 200, 600\n");
     CHECK(Parallax_FloorDelta(q.bgs[0], q.view) < 0); // the ground is above it
 }

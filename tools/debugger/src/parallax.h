@@ -30,6 +30,7 @@ struct ParallaxBg {
     float delta[2] = {1, 1};
     float zoomDelta[2] = {-1, -1}; // -1: the delta does it
     float widen = 1;               // parallax: the bottom's width over the top's
+    float rate = 1;                // parallax: how many times as fast as its top its bottom scrolls (width or xscale)
     int tile[2] = {0, 0};          // 0 none, 1 for ever, n copies
     float step[2] = {0, 0};        // from a tile to the next
     bool linked = false;           // positionlink: its delta is the one it follows
@@ -66,9 +67,13 @@ struct ParallaxShape {
     float topLeft, topRight, bottomLeft, bottomRight;
 };
 ParallaxShape Parallax_Shape(const ParallaxBg &b, const ParallaxView &v, const ParallaxStop &at);
+// How far down a floor the ground is, 0 its top and 1 its bottom; -1 when the ground is not on it.
+float Parallax_GroundRow(const ParallaxBg &b, const ParallaxView &v);
 // The delta at which the row of a floor the fighters stand on scrolls as they do, -1 when the
 // ground is not on it.
 float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v);
+// How fast that row scrolls now, 1 with the fighters; -1 when the ground is not on the floor.
+float Parallax_GroundDelta(const ParallaxBg &b, const ParallaxView &v);
 
 // Whether a picture of w by h pixels (RGBA, by rows) shows where it repeats, across (axis 0) or down:
 // its opposite edges differ far more than its neighbouring pixels do.

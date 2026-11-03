@@ -753,7 +753,7 @@ void SetFreeCamera(bool on);
 // The parallax tools (app_parallax.cpp): a section of the Stage window, a line under a BG's start,
 // and what shows nothing on the Game window
 ParallaxView StageParallaxView(const IniFile &ini); // the game's screen and camera when the stage is in the match
-const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const IniFile &ini, const SffDoc *sff, unsigned sprites);
+const std::vector<ParallaxBg> &StageParallaxBgs(const SourceFile &sf, const SffDoc *sff, unsigned sprites);
 void ParallaxSection(const SourceFile &sf, const IniFile &ini);
 void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int index);
 void ParallaxOverlay(ImDrawList *draw, const SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen);
