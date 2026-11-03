@@ -477,6 +477,12 @@ the fight screen's Simul, Tag and Turns sections: tested with Simul 4, Turns 4 a
 a side, one after the other from the menus. `[Win Screen]` has one text: "Congratulations!"
 on Results (lost) is the motif's. `test_ui.ps1` got `mark` and
 `until:text`: waits on the log, since a busy machine took a load from 10 s to 32 s.
+The versus screen reached from the select screen held is held as well (`start.f_selectVersus`
+wrapped; Esc there goes back to the select screen, held). Play again (`ikdbg.playAgain`)
+leaves it the way Esc does, through `esc` set after `refresh`, and the wrapper enters it
+again: Esc's way cancels the loading and `clearSelected` drops the stage too, so the stage
+is chosen again (`selectStage`, else `t_selStages[getStageNo()]` is nil and the game
+stops); the characters the screen selects itself.
 
 Whole projects (`app_explorer.cpp`, a def's menu in Explorer; `src/pack.cpp`, tested,
 and read back by Windows): Package as zip takes a def and what it names, defs among

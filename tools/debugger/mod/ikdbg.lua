@@ -867,6 +867,7 @@ ikdbg.going = nil   -- in a match on the way there: what is left to do
 ikdbg.held = nil    -- the screen the game stays on
 ikdbg.leaving = false -- on the way back to the title
 ikdbg.fighting = false -- the match's hook ran last, not a menu's refresh
+ikdbg.again = false -- the versus screen held leaves to come back from its start
 local storyFrames, vsTime = 0, nil
 
 local function report()
@@ -890,13 +891,18 @@ function ikdbg.holdNow(name)
 	hold(name)
 end
 
+-- The versus screen held plays again from its start, still held.
+function ikdbg.playAgain()
+	if ikdbg.held == 'vs' then ikdbg.again = true end
+end
+
 -- The game goes on from the screen held.
 function ikdbg.letGo()
 	if ikdbg.held == 'vs' and vsTime then
 		motif.vs_screen.time = vsTime
 		vsTime = nil
 	end
-	ikdbg.held, ikdbg.going = nil, nil
+	ikdbg.held, ikdbg.going, ikdbg.again = nil, nil, false
 	togglePause(false)
 	report()
 end
@@ -1067,7 +1073,7 @@ function ikdbg.goTo(text)
 		return
 	end
 	if ikdbg.held == 'vs' and vsTime then motif.vs_screen.time, vsTime = vsTime, nil end
-	ikdbg.held, ikdbg.going, ikdbg.goal = nil, nil, g
+	ikdbg.held, ikdbg.going, ikdbg.goal, ikdbg.again = nil, nil, g, false
 	ikdbg.leaving = true
 	togglePause(false)
 	if ikdbg.fighting then
@@ -1190,7 +1196,31 @@ if main and start then
 		end
 		draw(...)
 		-- After it: a frame's input starts with esc off
-		if ikdbg.leaving then esc(true) end
+		if ikdbg.leaving or ikdbg.again then esc(true) end
+	end
+	-- The versus screen after the select screen held is held too. Played again, it is left the way
+	-- Esc leaves it (its loading cancelled, the characters and the stage let go) and entered once
+	-- more, with the stage chosen again: the screen picks the characters itself.
+	local versus = start.f_selectVersus
+	start.f_selectVersus = function(active, ...)
+		local from, stage = ikdbg.held, getStageNo()
+		local selecting = from == 'select' or from == 'teamselect'
+		if active and selecting then hold('vs') end
+		while true do
+			local ok = versus(active, ...)
+			if ok or not ikdbg.again then
+				-- Left with Esc: back on the select screen, held as it was
+				if not ok and selecting and ikdbg.held == 'vs' then
+					if vsTime then motif.vs_screen.time, vsTime = vsTime, nil end
+					hold(from)
+				end
+				return ok
+			end
+			ikdbg.again = false
+			esc(false)
+			clearSelected()
+			selectStage(stage)
+		end
 	end
 	ikdbg.goal = os.getenv('IKDBG_GOTO') and parseGoal(os.getenv('IKDBG_GOTO')) or nil
 end

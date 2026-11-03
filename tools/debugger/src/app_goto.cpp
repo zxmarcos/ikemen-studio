@@ -155,6 +155,11 @@ void GoToLine() {
         SameLineFits(ImGui::CalcTextSize(held.c_str()).x);
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(Ink(kYellow), "%s", held.c_str());
+        if (g_held == "vs") {
+            SameLineFits(ImGui::CalcTextSize(ICON_RESTART " Play again").x + ImGui::GetStyle().FramePadding.x * 2);
+            if (ImGui::Button(ICON_RESTART " Play again")) SendRaw("ikdbg.playAgain()");
+            ImGui::SetItemTooltip("The versus screen starts over, its fade and animations from the start, and stays");
+        }
         SameLineFits(ImGui::CalcTextSize(ICON_PLAY " Let it go on").x + ImGui::GetStyle().FramePadding.x * 2);
         if (ImGui::Button(ICON_PLAY " Let it go on")) SendRaw("ikdbg.letGo()");
         ImGui::SetItemTooltip("The game goes on from this screen");

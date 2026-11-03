@@ -275,7 +275,8 @@ title, options, select, versus, hiscore, storyboards, victory, results, continue
 a moment of a match (round call, Fight!, KO, Double KO, Perfect, Time over, Winner,
 Draw, the pause menu), with the teams chosen for it (Single, Simul, Turns, Tag), so
 the fight screen's team sections can be seen too. **Let it go on** goes on from there.
-The first time, the game starts again in its menus. **Show > Screen shapes** draws what
+The versus screen that follows the select screen held is kept too, and **Play again**
+starts a versus screen over, its fade and animations from the start. The first time, the game starts again in its menus. **Show > Screen shapes** draws what
 16:9 and 4:3 screens show of the picture.
 
 A right click on a def in Explorer gives **Package as zip** (the def and every file it
