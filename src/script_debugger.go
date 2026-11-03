@@ -156,6 +156,13 @@ func debuggerFunctions(l *lua.LState) {
 		dbgTrace.trigVals = dbgTrace.trigVals[:0]
 		return 0
 	})
+	luaRegister(l, "debugEscNext", func(l *lua.LState) int {
+		/*Esc as a key press gives it: the next UI tick sees it (esc(true) from a match's frame hook
+		is cleared by the next frame's events before the pause menu looks).
+		@function debugEscNext*/
+		sys.escPending = true
+		return 0
+	})
 	luaRegister(l, "debugTraceEnable", func(l *lua.LState) int {
 		/*Start or stop recording the state controllers that run.
 		@function debugTraceEnable

@@ -161,6 +161,27 @@ func editorStoryboardSeek(index int, tick int32) error {
 	return nil
 }
 
+// editorStoryboardPaused: a storyboard held by the editor's pause does not step, but its BG steps
+// when drawn (at the UI's rate), and its videos play on: one that does not loop ends and leaves
+// nothing drawn. Before the drawing, the BGs are counted as stepped this frame and the videos wait.
+func editorStoryboardPaused() {
+	s := &sys.storyboard
+	if !debuggerAttached() || !s.active || !sys.paused || sys.frameStepFlag {
+		return
+	}
+	for _, scene := range s.Scene {
+		if scene.Bg.BGDef == nil {
+			continue
+		}
+		scene.Bg.BGDef.lastTick = sys.uiFrameCounter
+		for _, bg := range scene.Bg.BGDef.bg {
+			if bg.video != nil {
+				bg.video.SetPlaying(false)
+			}
+		}
+	}
+}
+
 // editorStoryboardState: the frame geometry's "storyState": the scene, the time in it, paused.
 func editorStoryboardState(b []byte) []byte {
 	s := &sys.storyboard

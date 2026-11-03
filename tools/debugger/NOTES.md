@@ -483,6 +483,16 @@ leaves it the way Esc does, through `esc` set after `refresh`, and the wrapper e
 again: Esc's way cancels the loading and `clearSelected` drops the stage too, so the stage
 is chosen again (`selectStage`, else `t_selStages[getStageNo()]` is nil and the game
 stops); the characters the screen selects itself.
+A storyboard held by the pause still had its BG stepped: `BGDef.draw` steps it at the UI's
+rate, which turns its videos back on, so the logo's video (4 s, no loop) ended and left the
+screen black. `editorStoryboardPaused` (called in `runStoryboard` before the drawing) counts
+the BGs as stepped this frame and stops their videos; Let it go on picks the video up where
+it was. The pause menu never opened: `esc(true)` from the match's frame hook is cleared by
+the next frame's `eventUpdate` before `MotifMenu.init` looks, so the mod calls
+`debugEscNext` (sets `escPending`, as a key press does). A goal that fails (a storyboard the
+motif does not name or that is not there, as `ikemen1`'s intro, game over and ending) now
+holds the title: otherwise its demo started a match. `[Round] dko` shows nothing with the
+release's motif (its action 534 is a dummy), so Double KO holds a screen without it.
 
 Whole projects (`app_explorer.cpp`, a def's menu in Explorer; `src/pack.cpp`, tested,
 and read back by Windows): Package as zip takes a def and what it names, defs among

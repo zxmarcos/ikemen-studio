@@ -5844,6 +5844,7 @@ func systemScriptInit(l *lua.LState) {
 				sys.storyboard.step()
 			}
 		}
+		editorStoryboardPaused()
 		if sys.storyboard.active && !sys.frameSkip {
 			sys.storyboard.draw(0)
 			sys.storyboard.draw(1)

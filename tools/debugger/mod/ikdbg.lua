@@ -1029,7 +1029,7 @@ local function fromTitle()
 	elseif storyboardOf(s) ~= nil then
 		local path = storyboardOf(s)
 		if path == '' then
-			ikdbg.goal = nil
+			hold('title')
 			send('@IKRES', {ok = false, r = 'the motif names no storyboard for ' .. s})
 			return
 		end
@@ -1038,9 +1038,8 @@ local function fromTitle()
 		main.menu.f = function()
 			main.f_storyboard(path)
 			if ikdbg.goal == g then -- over before it was held: a file that is not there
-				ikdbg.goal = nil
+				hold('title')
 				send('@IKRES', {ok = false, r = 'the storyboard ' .. path .. ' could not be shown'})
-				report()
 			end
 		end
 	elseif s == 'vs' then
@@ -1056,7 +1055,7 @@ local function fromTitle()
 		main.menu.f = fight(g, {})
 		ikdbg.goal = nil
 	else
-		ikdbg.goal = nil
+		hold('title')
 		send('@IKRES', {ok = false, r = 'no screen called ' .. s})
 	end
 end
@@ -1116,7 +1115,8 @@ function ikdbg.goalTick()
 		end
 		if p.time then setTime(1) end
 		if p.menu then
-			esc(true)
+			-- As a key press: esc(true) here is cleared before the pause menu looks
+			if debugEscNext then debugEscNext() else esc(true) end
 			hold(p.screen)
 			return
 		end
@@ -1157,7 +1157,7 @@ if main and start then
 		end
 		local ok, err = pcall(fromTitle)
 		if not ok then
-			ikdbg.goal = nil
+			hold('title')
 			send('@IKRES', {ok = false, r = 'going to a screen: ' .. tostring(err)})
 		end
 		report()
