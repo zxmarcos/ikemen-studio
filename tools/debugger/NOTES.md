@@ -288,8 +288,10 @@ gives a width floor's top the width that spaces its two as the upper one's are, 
 speed is set as the automatic one sets it. On stage0, the wall's lines 969 and 1069 picked with the
 floor's 951 and 1096 gave what the automatic one does.
 
-v0.1.2 was published from 3ad5b97c, before the fix of a new stage's floor. `build.yml` replaces a release's
-files when its tag is pushed again.
+v0.1.3 was published from the commit that adds this line: the floor's row under the fighters and the
+joins of two planes, lined up automatically or by hand. v0.1.2 was first published from 3ad5b97c, before
+the fix of a new stage's floor, and its tag was moved to cf0eef28. `build.yml` replaces a release's files
+when its tag is pushed again.
 
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
