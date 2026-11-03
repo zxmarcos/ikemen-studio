@@ -293,6 +293,25 @@ static void TestLineUp() {
     CHECK(u.done);
     CHECK(u.match > 0.9f);
 
+    // By hand: the pixels under a point, and where they meet the join
+    int copy = -1, column = -1;
+    CHECK(Parallax_PixelUnder(p.bgs[0], 50, 184, 30, &copy, &column) && copy == 0 && column == 30);
+    CHECK(Parallax_PixelUnder(p.bgs[2], 35, 185, 60, &copy, &column) && copy == 1 && column == 7);
+    CHECK(Parallax_PixelUnder(p.bgs[0], 50, 184, -30, &copy, &column) && copy == -1 && column == 20);
+    NEAR(Parallax_PixelX(p.bgs[0], 50, 185, 0, 24), 24.5f);
+    NEAR(Parallax_PixelX(p.bgs[2], 35, 185, 1, 34), 87);
+    NEAR(Parallax_PixelX(p.bgs[2], 35, 185 + 57, 1, 34), 174); // twice as far from the middle at its bottom
+    // One pair: the floor's line at 52 meets the wall's at 24.5, so the wall moves 27.5 across
+    float upX[2] = {24.5f, 49.5f}, lowX[2] = {52, 87};
+    u = Parallax_LineUpBy(p.bgs[0], p.bgs[2], p.view, upX, lowX, 1);
+    CHECK(u.upperFollows && u.width[0] == 0);
+    NEAR(u.delta[0][0], 0.919f);
+    NEAR(u.shift[0], 27.5f);
+    // Two: the floor's lines 35 apart meet the wall's 25 apart, so its top is 25 wide about its middle, 35
+    u = Parallax_LineUpBy(p.bgs[0], p.bgs[2], p.view, upX, lowX, 2);
+    CHECK(u.width[0] == 25 && u.width[1] == 50);
+    NEAR(u.shift[0], 47.14f - 24.5f);
+
     // A plain floor: nothing shows the join slide
     u = Parallax_LineUp(p.bgs[0], up, p.bgs[2], flat, p.view);
     CHECK(u.done && u.match < 0 && u.width[0] == 0 && u.delta[0][0] < 0);

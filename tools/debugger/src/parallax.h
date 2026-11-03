@@ -110,6 +110,16 @@ struct ParallaxLineUp {
     bool done = false;                        // already lined up
 };
 ParallaxLineUp Parallax_LineUp(const ParallaxBg &upper, const ParallaxPicture &up, const ParallaxBg &lower, const ParallaxPicture &low, const ParallaxView &v);
+// The same, by points said to meet: upX[i] of the upper one's on lowX[i] of the lower one's, where each
+// is along the join with the camera at its start. One pair moves the one that follows; a second one
+// also gives a width floor's top the width that spaces its two as the upper one's are.
+ParallaxLineUp Parallax_LineUpBy(const ParallaxBg &upper, const ParallaxBg &lower, const ParallaxView &v, const float *upX, const float *lowX, int pairs);
+
+// The pixel of a BG's picture (spriteW wide) on its row at y under x, with the camera at its start:
+// which copy across and which column. False where it draws nothing.
+bool Parallax_PixelUnder(const ParallaxBg &b, int spriteW, float y, float x, int *copy, int *column);
+// Where the middle of that pixel's column is on the BG's row at y.
+float Parallax_PixelX(const ParallaxBg &b, int spriteW, float y, int copy, int column);
 
 // Whether a picture of w by h pixels (RGBA, by rows) shows where it repeats, across (axis 0) or down:
 // its opposite edges differ far more than its neighbouring pixels do.

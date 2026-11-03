@@ -280,7 +280,13 @@ limits of the free camera, the bright columns three rows below the join are thos
 floor's spreading alone (0 in the middle, 8 px at the edges). The search takes tens
 of milliseconds, so while the mouse is down it waits for the def to stay as it is for a quarter of a
 second; the button works it out again. "Look" draws both from their sprites at the camera's left limit,
-start and right limit, as `Parallax_Shape` places them (no zoom).
+start and right limit, as `Parallax_Shape` places them (no zoom). "By hand" (`Parallax_LineUpBy`) draws
+the join with the camera at its start, enlarged and scrolled, and takes pairs of pixels: a click finds
+the picture's column under it (`Parallax_PixelUnder`) and keeps where that column meets the join
+(`Parallax_PixelX`), a floor's slanted column included. One pair moves the one that follows; a second
+gives a width floor's top the width that spaces its two as the upper one's are, about its middle; the
+speed is set as the automatic one sets it. On stage0, the wall's lines 969 and 1069 picked with the
+floor's 951 and 1096 gave what the automatic one does.
 
 v0.1.2 was published from 3ad5b97c, before the fix of a new stage's floor. `build.yml` replaces a release's
 files when its tag is pushed again.

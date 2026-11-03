@@ -394,6 +394,8 @@ float Alike(const float *a, const float *b, int n) {
     return aa < 0.25 * n || bb < 0.25 * n ? 0 : (float)(ab / std::sqrt(aa * bb));
 }
 
+void Settle(ParallaxLineUp &out, const ParallaxBg &up, const ParallaxBg &low, const ParallaxView &v, int width, int top, float r);
+
 } // namespace
 
 std::vector<ParallaxMeeting> Parallax_Meetings(const std::vector<ParallaxBg> &bgs, int at, const ParallaxView &v) {
@@ -418,8 +420,7 @@ ParallaxLineUp Parallax_LineUp(const ParallaxBg &up, const ParallaxPicture &upPi
     float y = low.top;
     // The fighters' floor stays as it is
     out.upperFollows = Parallax_GroundRow(low, v) >= 0 || Parallax_GroundRow(up, v) < 0;
-    const ParallaxBg &lead = out.upperFollows ? low : up, &follow = out.upperFollows ? up : low;
-    int fi = out.upperFollows ? 0 : 1;
+    const ParallaxBg &lead = out.upperFollows ? low : up;
     out.slide = std::fabs(Parallax_RowSpeed(up, y) - Parallax_RowSpeed(low, y)) * std::max(0.0f, v.right - v.left);
 
     // The lines, over all the camera shows of the join once it scrolls as the lead does
@@ -480,7 +481,61 @@ ParallaxLineUp Parallax_LineUp(const ParallaxBg &up, const ParallaxPicture &upPi
             if (s > out.match) out.match = s, r = at;
         }
     }
+    Settle(out, up, low, v, width, top, r);
+    return out;
+}
 
+ParallaxLineUp Parallax_LineUpBy(const ParallaxBg &up, const ParallaxBg &low, const ParallaxView &v, const float *upX, const float *lowX, int pairs) {
+    ParallaxLineUp out;
+    out.upperFollows = Parallax_GroundRow(low, v) >= 0 || Parallax_GroundRow(up, v) < 0;
+    out.slide = std::fabs(Parallax_RowSpeed(up, low.top) - Parallax_RowSpeed(low, low.top)) * std::max(0.0f, v.right - v.left);
+    out.match = 1;
+    int width = (int)std::lround(low.w / low.units), top = width;
+    if (pairs <= 0) {
+        Settle(out, up, low, v, width, top, 0);
+        return out;
+    }
+    // A width floor's points spread from its middle as its top widens: the two pairs say how much
+    float scale = 1;
+    if (pairs >= 2 && low.widths && std::fabs(lowX[1] - lowX[0]) > 0.5f && (upX[1] - upX[0]) / (lowX[1] - lowX[0]) > 0) {
+        top = std::max(1, (int)std::lround(width * (upX[1] - upX[0]) / (lowX[1] - lowX[0])));
+        scale = (float)top / width;
+    }
+    float middle = low.left + low.w / 2;
+    Settle(out, up, low, v, width, top, upX[0] - (middle + (lowX[0] - middle) * scale));
+    return out;
+}
+
+bool Parallax_PixelUnder(const ParallaxBg &b, int spriteW, float y, float x, int *copy, int *column) {
+    float at = InCopy(b, y);
+    if (b.h <= 0 || spriteW <= 0 || at < 0 || b.step[0] <= 0) return false;
+    float t = at / b.h, f = 1 + (b.rate - 1) * t, g = 1 + (b.widen - 1) * t;
+    float nearest = std::floor((x / f - b.left) / b.step[0]);
+    for (float k = nearest - 1; k <= nearest + 1; k++) {
+        if (b.tile[0] != 1 && (k < 0 || k >= std::max(b.tile[0], 1))) continue;
+        float u = (x - (b.left + k * b.step[0]) * f) / (b.w * g);
+        if (u < 0 || u >= 1) continue;
+        *copy = (int)k, *column = std::min(spriteW - 1, (int)(u * spriteW));
+        return true;
+    }
+    return false;
+}
+
+float Parallax_PixelX(const ParallaxBg &b, int spriteW, float y, int copy, int column) {
+    float at = b.h > 0 ? std::min(std::max(y - b.top, 0.0f), b.h) : 0;
+    if (b.tile[1] && b.step[1] > 0 && InCopy(b, y) >= 0) at = InCopy(b, y);
+    float t = b.h > 0 ? at / b.h : 0, f = 1 + (b.rate - 1) * t, g = 1 + (b.widen - 1) * t;
+    return (b.left + copy * b.step[0]) * f + (column + 0.5f) / std::max(spriteW, 1) * b.w * g;
+}
+
+namespace {
+
+// The rest of a line up, once the lower one's top width and how far the lower one moves against the
+// upper one are known
+void Settle(ParallaxLineUp &out, const ParallaxBg &up, const ParallaxBg &low, const ParallaxView &v, int width, int top, float r) {
+    float y = low.top;
+    const ParallaxBg &lead = out.upperFollows ? low : up, &follow = out.upperFollows ? up : low;
+    int fi = out.upperFollows ? 0 : 1;
     // The lower one's top, and its bottom as much wider as it was
     float lowDelta = low.delta[0];
     if (top != width) {
@@ -502,8 +557,9 @@ ParallaxLineUp Parallax_LineUp(const ParallaxBg &up, const ParallaxPicture &upPi
     out.shift[fi] = out.upperFollows ? -r : r;
     out.done = top == width && std::fabs(r) < 0.25f && out.delta[0][0] < 0 && out.delta[0][1] < 0 && out.delta[1][0] < 0 &&
                out.delta[1][1] < 0;
-    return out;
 }
+
+} // namespace
 
 // Two pixels' difference, 0 to 255: a pixel against nothing is the most there is
 static float PixelDiff(const unsigned char *a, const unsigned char *b) {

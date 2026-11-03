@@ -609,6 +609,96 @@ void MeetingPreview(const SourceFile &sf, const IniFile &ini, const std::vector<
     ImGui::TextDisabled("The whole screen, %g times as large; the marks show the join.", zoom);
 }
 
+// Pixels said to meet, by the meeting they were said of: where each is along the join
+struct HandPoints {
+    int upper = -1, lower = -1;
+    float up[2] = {0, 0}, low[2] = {0, 0};
+    int ups = 0, lows = 0;
+};
+HandPoints g_hand;
+
+// Lining up by hand: the join enlarged with the camera at its start, a pixel picked above it and the
+// one below it that should meet it. True when the text changed.
+bool HandLineUp(SourceFile &sf, const IniFile &ini, const std::vector<ParallaxBg> &bgs, const Meeting &mt, const ParallaxView &view) {
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
+    if (!spr) return false;
+    if (g_hand.upper != mt.m.upper || g_hand.lower != mt.m.lower) g_hand = HandPoints(), g_hand.upper = mt.m.upper, g_hand.lower = mt.m.lower;
+    const ParallaxBg &up = bgs[mt.m.upper], &low = bgs[mt.m.lower];
+    int upW = spr->doc.sprites[up.sprite].w, lowW = spr->doc.sprites[low.sprite].w;
+    GLuint upTex = SpriteTexture(const_cast<SpriteFile &>(*spr), up.sprite), lowTex = SpriteTexture(const_cast<SpriteFile &>(*spr), low.sprite);
+    float em = ImGui::GetFontSize();
+    static float zoom = 4;
+
+    ImGui::TextDisabled("Click a pixel of [%s] above the join, then the pixel of [%s] below it that should meet it.\n"
+                        "A second pair also sets how wide [%s]'s top is. A right click starts again.",
+                        up.name.c_str(), low.name.c_str(), low.name.c_str());
+    ImGui::SetNextItemWidth(em * 8);
+    ImGui::SliderFloat("Zoom", &zoom, 2, 10, "%.0f");
+    float y = low.top, around = 8, half = view.width / 2;
+    ImVec2 size(view.width * zoom, 2 * around * zoom);
+    ImGui::BeginChild("strip", ImVec2(em * 44, size.y + ImGui::GetStyle().ScrollbarSize + 4), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
+    if (ImGui::IsWindowAppearing()) ImGui::SetScrollX((size.x - em * 44) / 2);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos(), mid(p.x + size.x / 2, p.y);
+    float seam = p.y + around * zoom;
+    auto sx = [&](float x) { return mid.x + x * zoom; };
+    Checkerboard(draw, p, ImVec2(p.x + size.x, p.y + size.y));
+    DrawRows(draw, up, upTex, 0, y - around, y + around, mid, zoom, half);
+    DrawRows(draw, low, lowTex, 0, y - around, y + around, mid, zoom, half);
+    ImGui::InvisibleButton("join", size);
+    draw->AddLine(ImVec2(p.x, seam), ImVec2(p.x + size.x, seam), IM_COL32(255, 220, 60, 90));
+    if (ImGui::IsItemHovered()) {
+        ImVec2 m = ImGui::GetMousePos();
+        float x = (m.x - mid.x) / zoom, at = y - around + (m.y - p.y) / zoom;
+        bool above = at < y;
+        const ParallaxBg &b = above ? up : low;
+        int w = above ? upW : lowW, copy, column;
+        if (Parallax_PixelUnder(b, w, at, x, &copy, &column)) {
+            // That column, from where the mouse is to the join: a floor's slants
+            float here = Parallax_PixelX(b, w, at, copy, column), join = Parallax_PixelX(b, w, y, copy, column);
+            draw->AddLine(ImVec2(sx(here), m.y), ImVec2(sx(join), seam), IM_COL32_WHITE, std::max(1.0f, b.w / w * zoom * 0.5f));
+            ImGui::SetTooltip("[%s], column %d of its picture", b.name.c_str(), column);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                float *points = above ? g_hand.up : g_hand.low;
+                int &count = above ? g_hand.ups : g_hand.lows;
+                if (count == 2) count = 0; // a third starts that side again
+                points[count++] = join;
+            }
+        }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) g_hand.ups = g_hand.lows = 0;
+    }
+    // Each pair in its colour, joined along the join
+    const ImU32 colours[2] = {IM_COL32(255, 220, 60, 255), IM_COL32(80, 220, 255, 255)};
+    for (int i = 0; i < g_hand.ups; i++) {
+        draw->AddLine(ImVec2(sx(g_hand.up[i]), p.y), ImVec2(sx(g_hand.up[i]), seam), colours[i], 2);
+        draw->AddText(ImVec2(sx(g_hand.up[i]) + 3, p.y), colours[i], i ? "2" : "1");
+    }
+    for (int i = 0; i < g_hand.lows; i++) {
+        draw->AddLine(ImVec2(sx(g_hand.low[i]), seam), ImVec2(sx(g_hand.low[i]), p.y + size.y), colours[i], 2);
+        draw->AddText(ImVec2(sx(g_hand.low[i]) + 3, p.y + size.y - em), colours[i], i ? "2" : "1");
+    }
+    int pairs = std::min(g_hand.ups, g_hand.lows);
+    for (int i = 0; i < pairs; i++) draw->AddLine(ImVec2(sx(g_hand.up[i]), seam), ImVec2(sx(g_hand.low[i]), seam), colours[i], 3);
+    ImGui::EndChild();
+
+    if (pairs >= 2 && !low.widths) ImGui::TextColored(Ink(kYellow), "[%s] has no width: the second pair only shows.", low.name.c_str());
+    bool edited = false;
+    ImGui::BeginDisabled(pairs == 0);
+    if (ImGui::Button("Line up")) {
+        Meeting by{mt.m, Parallax_LineUpBy(up, low, view, g_hand.up, g_hand.low, pairs)};
+        if (LineUp(sf, bgs, by)) g_hand.ups = g_hand.lows = 0, edited = true;
+    }
+    if (pairs > 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("The pairs meet; the one the fighters stand on keeps its speed.%s",
+                          LineUpText(bgs, {mt.m, Parallax_LineUpBy(up, low, view, g_hand.up, g_hand.low, pairs)}).c_str());
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(g_hand.ups + g_hand.lows == 0);
+    if (ImGui::Button("Clear")) g_hand.ups = g_hand.lows = 0;
+    ImGui::EndDisabled();
+    return edited;
+}
+
 // Each plane this BG meets: whether their join slides or their lines miss, and what lines them up
 bool MeetingLines(SourceFile &sf, const IniFile &ini, const ParallaxBg &b, const ParallaxView &view) {
     const SpriteFile *spr = StageSpriteFile(sf, ini);
@@ -660,6 +750,18 @@ bool MeetingLines(SourceFile &sf, const IniFile &ini, const ParallaxBg &b, const
         if (ImGui::BeginPopup("meeting")) {
             MeetingPreview(sf, ini, bgs, mt, view);
             ImGui::EndPopup();
+        }
+        SameLineFits(ImGui::CalcTextSize(ICON_PEN " By hand").x + ImGui::GetStyle().FramePadding.x * 2);
+        if (ImGui::Button(ICON_PEN " By hand")) ImGui::OpenPopup("hand");
+        ImGui::SetItemTooltip("Line them up by the pixels you pick: which of [%s]'s meets which of [%s]'s.", bgs[mt.m.upper].name.c_str(),
+                              bgs[mt.m.lower].name.c_str());
+        if (ImGui::BeginPopup("hand")) {
+            bool edited = HandLineUp(sf, ini, bgs, mt, view);
+            ImGui::EndPopup();
+            if (edited) {
+                ImGui::PopID();
+                return true;
+            }
         }
         ImGui::PopID();
     }
