@@ -257,6 +257,9 @@ that is not modelled: their bottom row is taken for their top's, and giving one 
 which the engine then reads instead. Checked on the release's stages (`parallax-test` prints what it
 says of them): no holes, and one note, kfm's ceiling, 2 units short.
 
+v0.1.2 was published from 3ad5b97c, before the fix of a new stage's floor. `build.yml` replaces a release's
+files when its tag is pushed again.
+
 v0.1.1 was published the same day from 41cf6bb6, so the work under "After v0.1.1's tag" waits for the
 next tag. Its zip was tried unzipped as it ships: with no settings it opens on the start page, it plays
 kfm against kfm (`-nosound`), and the processes' modules come only from the package and Windows.
