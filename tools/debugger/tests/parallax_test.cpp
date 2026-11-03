@@ -34,6 +34,8 @@ static SffDoc Sprites() {
     add(0, 0, 640, 240, 320, 0); // wide, its axis in the middle
     add(0, 1, 100, 240, 0, 0);   // a narrow one, its axis on its left
     add(0, 2, 200, 40, 100, 0);  // a floor
+    add(0, 3, 50, 240, 0, 25);   // stage0's wall
+    add(0, 4, 35, 57, 0, 0);     // and its floor
     return doc;
 }
 
@@ -239,6 +241,72 @@ static void TestSeam() {
     CHECK(!Parallax_Seam(img.data(), 2, h, 0));
 }
 
+// stage0's two planes: a wall with a line every 25, a floor with one every 35 at its top
+static void TestLineUp() {
+    auto picture = [](int w, int h, auto colour) {
+        std::vector<unsigned char> img((size_t)w * h * 4);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                unsigned char *p = &img[((size_t)y * w + x) * 4];
+                p[0] = p[1] = 0, p[2] = (unsigned char)colour(x, y), p[3] = 255;
+            }
+        return img;
+    };
+    std::vector<unsigned char> wall = picture(50, 240, [](int x, int) { return x == 24 || x == 49 ? 239 : 198; });
+    std::vector<unsigned char> floor = picture(35, 57, [](int x, int y) { return y == 0 || x == 34 ? 156 : 117; });
+    std::vector<unsigned char> plain = picture(35, 57, [](int, int) { return 117; });
+    ParallaxPicture up{wall.data(), 50, 240}, low{floor.data(), 35, 57}, flat{plain.data(), 35, 57};
+    std::string camera = "[StageInfo]\nlocalcoord = 320, 240\nzoffset = 190\n[Camera]\nboundleft = -125\nboundright = 125\n";
+    std::string def = camera + "[BG wall]\ntype = normal\nspriteno = 0, 3\ntile = 1, 0\n"
+                               "[BG lamp]\ntype = normal\nspriteno = 0, 1\nstart = 0, 150\n"
+                               "[BG floor]\ntype = parallax\nspriteno = 0, 4\nstart = 35, 185\ndelta = .919\ntile = 1, 0\nwidth = 35, 70\n";
+    Parsed p(def);
+    CHECK(p.bgs.size() == 3);
+    if (p.bgs.size() != 3) return;
+    // Each meets the other; the lamp, narrower than the screen, is no plane
+    std::vector<ParallaxMeeting> m = Parallax_Meetings(p.bgs, 2, p.view);
+    CHECK(m.size() == 1 && m[0].upper == 0 && m[0].lower == 2);
+    m = Parallax_Meetings(p.bgs, 0, p.view);
+    CHECK(m.size() == 1 && m[0].upper == 0 && m[0].lower == 2);
+    CHECK(Parallax_Meetings(p.bgs, 1, p.view).empty());
+    NEAR(Parallax_RowSpeed(p.bgs[2], 185), 0.919f);
+    NEAR(Parallax_RowSpeed(p.bgs[2], 185 + 57), 1.838f);
+
+    // The wall takes the floor's speed (the fighters stand on the floor), the floor's top is 25 wide
+    // and its bottom as much wider, and the wall moves to its lines: theirs are at 22.14 + 25k
+    ParallaxLineUp u = Parallax_LineUp(p.bgs[0], up, p.bgs[2], low, p.view);
+    CHECK(u.upperFollows && !u.done);
+    NEAR(u.slide, 0.081f * 250);
+    NEAR(u.delta[0][0], 0.919f);
+    CHECK(u.delta[0][1] < 0 && u.delta[1][0] < 0); // nothing up high; the floor keeps its own
+    CHECK(u.width[0] == 25 && u.width[1] == 50);
+    CHECK(u.match > 0.9f);
+    CHECK(std::fabs(u.shift[0] + 2.36f) < 0.15f);
+    NEAR(u.shift[1], 0);
+
+    // Done, it is done
+    std::string fixed = def;
+    fixed.replace(fixed.find("tile = 1, 0\n"), 12, "tile = 1, 0\ndelta = .919\nstart = -2.36, 0\n");
+    fixed.replace(fixed.find("width = 35, 70"), 14, "width = 25, 50");
+    Parsed q(fixed);
+    u = Parallax_LineUp(q.bgs[0], up, q.bgs[2], low, q.view);
+    CHECK(u.done);
+    CHECK(u.match > 0.9f);
+
+    // A plain floor: nothing shows the join slide
+    u = Parallax_LineUp(p.bgs[0], up, p.bgs[2], flat, p.view);
+    CHECK(u.done && u.match < 0 && u.width[0] == 0 && u.delta[0][0] < 0);
+    NEAR(u.shift[0], 0);
+
+    // The fighters on the upper one: the lower one follows it
+    Parsed s(camera + "[BG floor]\ntype = normal\nspriteno = 0, 3\ntile = 1, 0\n"
+                      "[BG ledge]\ntype = parallax\nspriteno = 0, 4\nstart = 35, 200\ndelta = .5\ntile = 1, 0\nwidth = 35, 70\n");
+    u = Parallax_LineUp(s.bgs[0], up, s.bgs[1], low, s.view);
+    CHECK(!u.upperFollows);
+    NEAR(u.delta[1][0], 1);
+    CHECK(u.delta[0][0] < 0);
+}
+
 static void TestStops() {
     Parsed p(std::string(kCamera) + "boundhigh = -40\nzoomout = 0.5\n");
     std::vector<ParallaxStop> stops = Parallax_Stops(p.view);
@@ -305,6 +373,23 @@ static void TestRelease() {
         printf("%s: %zu BGs measured, camera %.0f to %.0f\n", def.c_str(), bgs.size(), view.left, view.right);
         for (const StageFinding &f : found) printf("  %d: %s\n", f.line, f.text.c_str());
         for (const StageFinding &f : Parallax_Seams(bgs, sff)) printf("  %d: %s\n", f.line, f.text.c_str());
+        // Where planes meet, and what would line them up
+        std::vector<std::vector<unsigned char>> rgba(bgs.size());
+        auto picture = [&](int i) {
+            const SffSprite &s = sff.sprites[bgs[i].sprite];
+            std::vector<unsigned char> px;
+            int bpp = 0;
+            if (rgba[i].empty() && Sff_Decode(s, px, &bpp)) Sff_ToRgba(sff, s, px, bpp, rgba[i]);
+            return ParallaxPicture{rgba[i].empty() ? nullptr : rgba[i].data(), s.w, s.h};
+        };
+        for (int i = 0; i < (int)bgs.size(); i++)
+            for (const ParallaxMeeting &m : Parallax_Meetings(bgs, i, view)) {
+                if (m.lower != i) continue; // each once
+                ParallaxLineUp u = Parallax_LineUp(bgs[m.upper], picture(m.upper), bgs[m.lower], picture(m.lower), view);
+                printf("  [%s] on [%s]: %s, slides %.1f, lines %.2f, delta %.3g / %.3g, width %d, %d, moved %.2f / %.2f\n",
+                       bgs[m.lower].name.c_str(), bgs[m.upper].name.c_str(), u.done ? "lined up" : "not lined up", u.slide, u.match,
+                       u.delta[0][0], u.delta[1][0], u.width[0], u.width[1], u.shift[0], u.shift[1]);
+            }
     }
 }
 
@@ -316,6 +401,7 @@ int main() {
     TestFit();
     TestFloor();
     TestSeam();
+    TestLineUp();
     TestStops();
     TestCheck();
     if (g_failed) {

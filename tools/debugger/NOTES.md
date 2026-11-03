@@ -264,6 +264,24 @@ Measured on kfm with the free camera moved 30 units (the fighters 43.5 px): the 
 it is keyed by: built from the caller's IniFile, an edit made earlier in the frame left it stale. Checked on the release's stages (`parallax-test` prints what it
 says of them): no holes, and one note, kfm's ceiling, 2 units short.
 
+Joins (`Parallax_Meetings`, `Parallax_LineUp`; the BG line's "Line up" and "Look"): two planes meet where
+the lower one's top is on the upper one, which is drawn before it (layerno, then the def's order); a plane
+is as wide as the screen with no gap between its copies, so pillars and lamps are not. Lining up gives
+the one that follows the other's speed along the join (`Parallax_RowSpeed`); the upper one follows unless
+the ground is on it and not on the lower one. The lines are each picture's rows as their distance from
+the row's mean brightness, three rows on each side of the join, all placed as the join's row is: a
+floor's lines spread from its top edge, so placed as their own rows they miss by up to 12 units at
+stage0's limits. They are compared (normalised correlation) over all the camera shows of the join, every
+half unit, for each top width from half to twice the floor's (a `width` floor that repeats across), then
+the one that follows is moved to a twentieth of a unit. Below 0.5 alike, only the speed changes; a plain
+colour on either side shows nothing and is not listed. stage0: the wall (lines every 25) takes the
+floor's .919, the floor's top 25 wide (its bottom 50), the wall 2.3 to the left. In the game, at both
+limits of the free camera, the bright columns three rows below the join are those above it moved by the
+floor's spreading alone (0 in the middle, 8 px at the edges). The search takes tens
+of milliseconds, so while the mouse is down it waits for the def to stay as it is for a quarter of a
+second; the button works it out again. "Look" draws both from their sprites at the camera's left limit,
+start and right limit, as `Parallax_Shape` places them (no zoom).
+
 v0.1.2 was published from 3ad5b97c, before the fix of a new stage's floor. `build.yml` replaces a release's
 files when its tag is pushed again.
 

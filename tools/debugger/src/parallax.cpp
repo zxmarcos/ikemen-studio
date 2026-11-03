@@ -133,6 +133,9 @@ std::vector<ParallaxBg> Parallax_Bgs(const IniFile &ini, const AirFile &air, con
 
         ParallaxBg b;
         b.index = n, b.line = s.line, b.name = s.name, b.linked = linked != 0, b.sprite = found;
+        float layer = 0;
+        Numbers(s, "layerno", &layer, 1);
+        b.layer = (int)layer;
         float scale[2] = {1, 1}, width[2] = {0, 0};
         Numbers(s, "scalestart", scale, 2);
         b.delta[0] = delta[0], b.delta[1] = delta[1];
@@ -152,6 +155,7 @@ std::vector<ParallaxBg> Parallax_Bgs(const IniFile &ini, const AirFile &air, con
             if (width[0] > 0 && width[1] != 0) {
                 b.w = width[0] * std::fabs(scale[0]);
                 b.rate = b.widen = width[1] / width[0];
+                b.widths = true;
                 b.left = start[0] - b.w / 2; // the engine centres it (xofs)
             } else if (!s.Field("width")) {
                 // xscale slants the picture by its position (rasterx), so its rows scroll as a width's do
@@ -262,6 +266,243 @@ float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v) {
 float Parallax_GroundDelta(const ParallaxBg &b, const ParallaxView &v) {
     float t = Parallax_GroundRow(b, v);
     return t < 0 ? -1 : b.delta[0] * (1 + (b.rate - 1) * t); // as drawn: a hires def's delta is halved
+}
+
+float Parallax_RowSpeed(const ParallaxBg &b, float y) {
+    if (b.h <= 0) return b.delta[0];
+    float t = std::min(1.0f, std::max(0.0f, (y - b.top) / b.h));
+    return b.delta[0] * (1 + (b.rate - 1) * t);
+}
+
+namespace {
+
+// Drawn first: layer 0 before layer 1, each in the order of the def
+bool Before(const std::vector<ParallaxBg> &bgs, int i, int j) {
+    return bgs[i].layer < bgs[j].layer || (bgs[i].layer == bgs[j].layer && i < j);
+}
+
+// As wide as the screen with no gap: a plane, not pillars
+bool Wide(const ParallaxBg &b, const ParallaxView &v) {
+    float half = v.width / 2;
+    if (b.tile[0] && b.step[0] > b.w + 0.5f) return false;
+    return b.tile[0] == 1 || (b.left <= -half && b.left + b.w + (std::max(b.tile[0], 1) - 1) * b.step[0] >= half);
+}
+
+// Whether a BG draws on the row at y, below its top
+bool OnRow(const ParallaxBg &b, float y) {
+    if (b.tile[1] == 1) return true;
+    float last = b.top + b.h + (std::max(b.tile[1], 1) - 1) * b.step[1];
+    return y > b.top + 0.5f && y <= last + 0.5f;
+}
+
+float Brightness(const unsigned char *p) { return 0.299f * p[0] + 0.587f * p[1] + 0.114f * p[2]; }
+
+// A picture's rows as how far each pixel is from its row's mean brightness: its lines stand out, -1
+// where it shows nothing
+struct Lines {
+    int w = 0, h = 0;
+    std::vector<float> v;
+};
+
+Lines LinesOf(const ParallaxPicture &p) {
+    Lines l;
+    if (!p.rgba || p.w <= 0 || p.h <= 0) return l;
+    l.w = p.w, l.h = p.h;
+    l.v.assign((size_t)p.w * p.h, -1);
+    for (int y = 0; y < p.h; y++) {
+        const unsigned char *row = p.rgba + (size_t)y * p.w * 4;
+        float sum = 0;
+        int seen = 0;
+        for (int x = 0; x < p.w; x++)
+            if (row[x * 4 + 3] >= 128) sum += Brightness(row + x * 4), seen++;
+        if (!seen) continue;
+        for (int x = 0; x < p.w; x++)
+            if (row[x * 4 + 3] >= 128) l.v[(size_t)y * p.w + x] = std::fabs(Brightness(row + x * 4) - sum / seen);
+    }
+    return l;
+}
+
+// Where in its copy down a BG's row at y is, -1 off it
+float InCopy(const ParallaxBg &b, float y) {
+    float ry = y - b.top;
+    if (b.tile[1] && b.step[1] > 0) {
+        float copy = std::floor(ry / b.step[1]);
+        if (b.tile[1] == 1 || (copy >= 0 && copy < b.tile[1])) ry -= copy * b.step[1];
+    }
+    return ry < 0 || ry >= b.h ? -1 : ry;
+}
+
+// What a BG shows of its row at pick, placed as its row at y is, with the camera at its start: at
+// points step apart from x0, added to out. Moved across by shift, its top w wide (a width floor stays
+// centred on its start). A floor's lines spread from its top edge: the rows by it, placed as the
+// edge is, show where they start.
+void Sample(const ParallaxBg &b, const Lines &l, float w, float shift, float y, float pick, float x0, float step, std::vector<float> &out) {
+    if (b.h <= 0 || w <= 0 || l.w <= 0) return;
+    float ry = InCopy(b, pick), at = InCopy(b, y);
+    if (ry < 0) return;
+    if (at < 0) at = std::min(std::max(y - b.top, 0.0f), b.h);
+    int row = std::min(l.h - 1, (int)(ry / b.h * l.h));
+    // A floor's row is its top's place times f (render.go's convergence, or the slant), its copies' width times g
+    float t = at / b.h, f = 1 + (b.rate - 1) * t, g = 1 + (b.widen - 1) * t;
+    float left = b.left + (b.w - w) / 2 + shift, across = b.step[0] - b.w + w;
+    if (across <= 0) return;
+    const float *pixels = &l.v[(size_t)row * l.w];
+    for (size_t i = 0; i < out.size(); i++) {
+        float x = x0 + i * step, nearest = std::floor((x / f - left) / across);
+        for (float k = nearest - 1; k <= nearest + 1; k++) {
+            if (b.tile[0] != 1 && (k < 0 || k >= std::max(b.tile[0], 1))) continue;
+            float u = (x - (left + k * across) * f) / (w * g);
+            if (u < 0 || u >= 1) continue;
+            float p = pixels[std::min(l.w - 1, (int)(u * l.w))];
+            if (p > 0) out[i] += p;
+            break;
+        }
+    }
+}
+
+// Three rows of a BG along y, above it (way -1) or below, smoothed: a line a pixel wide meets one
+// beside it
+std::vector<float> Band(const ParallaxBg &b, const Lines &l, float w, float shift, float y, int way, float x0, float step, int n) {
+    std::vector<float> rows(n, 0), out(n, 0);
+    for (int r = 0; r < 3; r++) Sample(b, l, w, shift, y, y + way * (r + 0.5f), x0, step, rows);
+    for (int i = 0; i < n; i++) {
+        int from = std::max(0, i - 1), to = std::min(n - 1, i + 1);
+        for (int j = from; j <= to; j++) out[i] += rows[j];
+        out[i] /= to - from + 1;
+    }
+    return out;
+}
+
+bool Flat(const std::vector<float> &a) {
+    double mean = 0, var = 0;
+    for (float x : a) mean += x;
+    mean /= std::max<size_t>(a.size(), 1);
+    for (float x : a) var += (x - mean) * (x - mean);
+    return var / std::max<size_t>(a.size(), 1) < 0.25;
+}
+
+// How alike two runs are, -1 to 1, by how they change about their means; 0 when either is flat
+float Alike(const float *a, const float *b, int n) {
+    double ma = 0, mb = 0;
+    for (int i = 0; i < n; i++) ma += a[i], mb += b[i];
+    ma /= n, mb /= n;
+    double ab = 0, aa = 0, bb = 0;
+    for (int i = 0; i < n; i++) {
+        double da = a[i] - ma, db = b[i] - mb;
+        ab += da * db, aa += da * da, bb += db * db;
+    }
+    return aa < 0.25 * n || bb < 0.25 * n ? 0 : (float)(ab / std::sqrt(aa * bb));
+}
+
+} // namespace
+
+std::vector<ParallaxMeeting> Parallax_Meetings(const std::vector<ParallaxBg> &bgs, int at, const ParallaxView &v) {
+    std::vector<ParallaxMeeting> out;
+    int n = (int)bgs.size();
+    if (at < 0 || at >= n || !Wide(bgs[at], v)) return out;
+    // Its top on the plane drawn last before it
+    int found = -1;
+    for (int i = 0; i < n; i++)
+        if (i != at && Before(bgs, i, at) && Wide(bgs[i], v) && OnRow(bgs[i], bgs[at].top) && (found < 0 || Before(bgs, found, i))) found = i;
+    if (found >= 0) out.push_back({found, at});
+    // The top of the first plane drawn after it, on it
+    found = -1;
+    for (int i = 0; i < n; i++)
+        if (i != at && Before(bgs, at, i) && Wide(bgs[i], v) && OnRow(bgs[at], bgs[i].top) && (found < 0 || Before(bgs, i, found))) found = i;
+    if (found >= 0) out.push_back({at, found});
+    return out;
+}
+
+ParallaxLineUp Parallax_LineUp(const ParallaxBg &up, const ParallaxPicture &upPic, const ParallaxBg &low, const ParallaxPicture &lowPic, const ParallaxView &v) {
+    ParallaxLineUp out;
+    float y = low.top;
+    // The fighters' floor stays as it is
+    out.upperFollows = Parallax_GroundRow(low, v) >= 0 || Parallax_GroundRow(up, v) < 0;
+    const ParallaxBg &lead = out.upperFollows ? low : up, &follow = out.upperFollows ? up : low;
+    int fi = out.upperFollows ? 0 : 1;
+    out.slide = std::fabs(Parallax_RowSpeed(up, y) - Parallax_RowSpeed(low, y)) * std::max(0.0f, v.right - v.left);
+
+    // The lines, over all the camera shows of the join once it scrolls as the lead does
+    int width = (int)std::lround(low.w / low.units), top = width;
+    float r = 0;
+    Lines lu = LinesOf(upPic), ll = LinesOf(lowPic);
+    float speed = std::max(0.0f, Parallax_RowSpeed(lead, y));
+    float lo = -v.width / 2 + std::min(0.0f, v.left) * speed, hi = std::min(v.width / 2 + std::max(0.0f, v.right) * speed, lo + 4000);
+    // Roughly first, every half unit: the lower one against the upper one moved along by up to half
+    // of what repeats
+    const float coarse = 0.5f;
+    int n = (int)((hi - lo) / coarse) + 1;
+    bool sized = low.widths && low.tile[0] != 0;
+    int fewest = sized ? std::max(2, width / 2) : width, most = sized ? width * 2 : width;
+    float spacing = low.step[0] - low.w;
+    float reach = std::min(512.0f, std::max(up.step[0], spacing + most * low.units));
+    int m = (int)(reach / coarse) + 1;
+    std::vector<float> upper = Band(up, lu, up.w, 0, y, -1, lo - m * coarse, coarse, n + 2 * m);
+    // A plain colour on either side: nothing shows the join move
+    if (lu.w <= 0 || ll.w <= 0 || Flat(upper) || Flat(Band(low, ll, low.w, 0, y, 1, lo, coarse, n))) {
+        out.done = true;
+        return out;
+    }
+    struct Try {
+        float score = -2;
+        int j = 0;
+    };
+    std::vector<Try> tries(most + 1);
+    float best = -2;
+    for (int w = fewest; w <= most; w++) {
+        std::vector<float> lower = Band(low, ll, w * low.units, 0, y, 1, lo, coarse, n);
+        float period = std::max(up.step[0], spacing + w * low.units);
+        int half = std::min(m, (int)(period / 2 / coarse) + 1);
+        Try &t = tries[w];
+        for (int j = -half; j <= half; j++) {
+            // lower(x) like upper(x + j): the lower one moved j along lines up
+            float s = Alike(lower.data(), upper.data() + m + j, n);
+            if (s > t.score + 1e-3f || (std::fabs(s - t.score) <= 1e-3f && std::abs(j) < std::abs(t.j))) t.score = s, t.j = j;
+        }
+        best = std::max(best, t.score);
+    }
+    out.match = std::max(0.0f, best);
+    if (best >= 0.5f) {
+        // Of those about as good, the width nearest the one it has
+        top = -1;
+        for (int w = fewest; w <= most; w++)
+            if (tries[w].score >= best - 0.02f && (top < 0 || std::abs(w - width) < std::abs(top - width))) top = w;
+        // Then to a twentieth of a unit, the one that follows moved
+        const float fine = 0.1f;
+        int n2 = (int)((hi - lo) / fine) + 1;
+        float w0 = top * low.units, around = tries[top].j * coarse;
+        std::vector<float> still = out.upperFollows ? Band(low, ll, w0, 0, y, 1, lo, fine, n2) : Band(up, lu, up.w, 0, y, -1, lo, fine, n2);
+        out.match = -2;
+        for (int i = -10; i <= 10; i++) {
+            float at = around + i * 0.05f;
+            std::vector<float> moved = out.upperFollows ? Band(up, lu, up.w, -at, y, -1, lo, fine, n2) : Band(low, ll, w0, at, y, 1, lo, fine, n2);
+            float s = Alike(still.data(), moved.data(), n2);
+            if (s > out.match) out.match = s, r = at;
+        }
+    }
+
+    // The lower one's top, and its bottom as much wider as it was
+    float lowDelta = low.delta[0];
+    if (top != width) {
+        out.width[0] = top, out.width[1] = std::max(1, (int)std::lround(top * low.widen));
+        // A floor moving with the fighters keeps doing so
+        float ground = Parallax_GroundRow(low, v);
+        if (ground >= 0 && std::fabs(Parallax_GroundDelta(low, v) - 1) < 0.002f) {
+            float rate = (float)out.width[1] / out.width[0];
+            lowDelta = 1 / (1 + (rate - 1) * ground);
+            if (std::fabs(lowDelta - low.delta[0]) > 0.0005f) out.delta[1][0] = lowDelta;
+        }
+    }
+    // The speed of the lead's row along the join, for the one that follows: its row there
+    float leadSpeed = out.upperFollows ? lowDelta : Parallax_RowSpeed(up, y);
+    float t = follow.h > 0 ? std::min(1.0f, std::max(0.0f, (y - follow.top) / follow.h)) : 0;
+    float wanted = leadSpeed / (1 + (follow.rate - 1) * t);
+    if (std::fabs(wanted - follow.delta[0]) > 0.0005f) out.delta[fi][0] = wanted;
+    if (v.high < 0 && std::fabs(lead.delta[1] - follow.delta[1]) > 0.0005f) out.delta[fi][1] = lead.delta[1];
+    out.shift[fi] = out.upperFollows ? -r : r;
+    out.done = top == width && std::fabs(r) < 0.25f && out.delta[0][0] < 0 && out.delta[0][1] < 0 && out.delta[1][0] < 0 &&
+               out.delta[1][1] < 0;
+    return out;
 }
 
 // Two pixels' difference, 0 to 255: a pixel against nothing is the most there is

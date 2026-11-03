@@ -36,6 +36,8 @@ struct ParallaxBg {
     bool linked = false;           // positionlink: its delta is the one it follows
     bool solid = true;             // hides what is behind: not blended, windowed or turned
     float units = 1;               // of the def's, in these numbers: 0.5 on a hires stage
+    int layer = 0;                 // layerno: 1 is drawn after the fighters
+    bool widths = false;           // parallax: width sets its top's and its bottom's
 };
 
 struct ParallaxStop {
@@ -74,6 +76,40 @@ float Parallax_GroundRow(const ParallaxBg &b, const ParallaxView &v);
 float Parallax_FloorDelta(const ParallaxBg &b, const ParallaxView &v);
 // How fast that row scrolls now, 1 with the fighters; -1 when the ground is not on the floor.
 float Parallax_GroundDelta(const ParallaxBg &b, const ParallaxView &v);
+
+// How fast a BG's row at y scrolls, as drawn: a floor's lower rows faster.
+float Parallax_RowSpeed(const ParallaxBg &b, float y);
+
+// Two planes that meet, as a floor's top edge on the wall behind it: each as wide as the screen, the
+// lower one drawn over the upper one, whose rows go on at least to the lower one's top. By their place
+// in bgs: those a BG meets, the one its top is on first, then the one whose top is on it.
+struct ParallaxMeeting {
+    int upper = -1, lower = -1;
+};
+std::vector<ParallaxMeeting> Parallax_Meetings(const std::vector<ParallaxBg> &bgs, int at, const ParallaxView &v);
+
+struct ParallaxPicture {
+    const unsigned char *rgba = nullptr; // by rows
+    int w = 0, h = 0;
+};
+
+// What makes the lines of two planes meet where they meet, wherever the camera is: one takes the
+// other's speed there, the lower one's top the width that repeats as the upper one's lines do (a
+// width floor that repeats across), and the one that follows moves across to line up. The one that
+// follows is the upper one unless the fighters stand on it and not on the lower one. A floor that
+// moves with the fighters keeps doing so.
+struct ParallaxLineUp {
+    bool upperFollows = true;
+    float slide = 0;  // how far the join slides now from one limit of the camera to the other
+    float match = -1; // how alike their lines are once lined up, 0 to 1; -1 when either side is plain,
+                      // and nothing shows the join: nothing is changed
+    // What lines them up, as drawn: -1 keeps a delta; the widths are the def's, 0 keeps them
+    float delta[2][2] = {{-1, -1}, {-1, -1}}; // the upper one's, the lower one's
+    int width[2] = {0, 0};                    // the lower one's top and bottom
+    float shift[2] = {0, 0};                  // how far each moves across
+    bool done = false;                        // already lined up
+};
+ParallaxLineUp Parallax_LineUp(const ParallaxBg &upper, const ParallaxPicture &up, const ParallaxBg &lower, const ParallaxPicture &low, const ParallaxView &v);
 
 // Whether a picture of w by h pixels (RGBA, by rows) shows where it repeats, across (axis 0) or down:
 // its opposite edges differ far more than its neighbouring pixels do.

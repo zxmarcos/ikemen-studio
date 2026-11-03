@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <set>
 
 #include "air.h"
@@ -444,6 +445,227 @@ bool FloorLine(SourceFile &sf, const IniSection &s, const ParallaxBg &b, const P
     return edited;
 }
 
+// ---------------------------------------------------------------------------
+// Two planes where they meet (a floor's top on the wall behind it): their join lined up
+// ---------------------------------------------------------------------------
+
+struct Meeting {
+    ParallaxMeeting m;
+    ParallaxLineUp u;
+};
+
+// Those a BG meets and what lines each up. Not those a BG that follows another's place
+// (positionlink) would have to change: the engine gives it the other's delta.
+std::vector<Meeting> MeetingsOf(const std::vector<ParallaxBg> &bgs, int at, const SffDoc &sff, const ParallaxView &view) {
+    std::vector<Meeting> out;
+    std::map<int, std::vector<unsigned char>> rgba;
+    auto picture = [&](int i) {
+        const SffSprite &s = sff.sprites[bgs[i].sprite];
+        std::vector<unsigned char> &own = rgba[i];
+        std::vector<unsigned char> px;
+        int bpp = 0;
+        if (own.empty() && Sff_Decode(s, px, &bpp)) Sff_ToRgba(sff, s, px, bpp, own);
+        return ParallaxPicture{own.empty() ? nullptr : own.data(), s.w, s.h};
+    };
+    for (const ParallaxMeeting &m : Parallax_Meetings(bgs, at, view)) {
+        Meeting one{m, Parallax_LineUp(bgs[m.upper], picture(m.upper), bgs[m.lower], picture(m.lower), view)};
+        if (!bgs[one.u.upperFollows ? m.upper : m.lower].linked) out.push_back(one);
+    }
+    return out;
+}
+
+// Worked out again at once, or while dragging once the def has stayed as it is for a moment: a drag
+// changes it every frame
+const std::vector<Meeting> &MeetingsShown(const SourceFile &sf, const std::vector<ParallaxBg> &bgs, int at, const SffDoc &sff,
+                                          unsigned sprites, const ParallaxView &view) {
+    static std::string text, seen;
+    static unsigned version;
+    static int forAt = -1;
+    static ParallaxView forView;
+    static std::vector<Meeting> found;
+    static double changed;
+    double now = ImGui::GetTime();
+    if (seen != sf.text) seen = sf.text, changed = now;
+    bool stale = text != sf.text || version != sprites || forAt != at || memcmp(&forView, &view, sizeof(view)) != 0;
+    if (stale && (forAt != at || !ImGui::IsMouseDown(ImGuiMouseButton_Left) || now - changed > 0.25)) {
+        text = sf.text, version = sprites, forAt = at, forView = view;
+        found = MeetingsOf(bgs, at, sff, view);
+    }
+    return found;
+}
+
+bool LineUp(SourceFile &sf, const std::vector<ParallaxBg> &bgs, const Meeting &mt) {
+    const IniFile &ini = StageIni(sf);
+    auto section = [&](int line) -> const IniSection * {
+        for (const IniSection &s : ini.sections)
+            if (s.line == line) return &s;
+        return nullptr;
+    };
+    std::string text = sf.text; // all of it, or nothing
+    bool ok = true;
+    for (int i = 0; i < 2 && ok; i++) {
+        const ParallaxBg &b = bgs[i ? mt.m.lower : mt.m.upper];
+        const IniSection *s = section(b.line);
+        if (!s) return false;
+        if (mt.u.delta[i][0] >= 0 || mt.u.delta[i][1] >= 0) {
+            float both[2];
+            for (int a = 0; a < 2; a++) both[a] = std::round((mt.u.delta[i][a] >= 0 ? mt.u.delta[i][a] : b.delta[a]) / b.units * 1000) / 1000;
+            ok = SetField(text, b.line, "delta", Ini_Floats(both, 2));
+        }
+        if (ok && std::fabs(mt.u.shift[i]) >= 0.05f) {
+            float start[2] = {0, 0};
+            s->Floats("start", start, 2);
+            start[0] = std::round((start[0] + mt.u.shift[i] / b.units) * 10) / 10;
+            ok = SetField(text, b.line, "start", Ini_Floats(start, 2));
+        }
+    }
+    if (ok && mt.u.width[0] > 0)
+        ok = SetField(text, bgs[mt.m.lower].line, "width", std::to_string(mt.u.width[0]) + ", " + std::to_string(mt.u.width[1]));
+    if (!ok) return false;
+    sf.text = text;
+    StageEdited(sf);
+    return true;
+}
+
+// What a line up writes, for its button's tooltip
+std::string LineUpText(const std::vector<ParallaxBg> &bgs, const Meeting &mt) {
+    std::string out;
+    char line[128];
+    for (int i = 0; i < 2; i++) {
+        const ParallaxBg &b = bgs[i ? mt.m.lower : mt.m.upper];
+        if (mt.u.delta[i][0] >= 0 || mt.u.delta[i][1] >= 0) {
+            float x = (mt.u.delta[i][0] >= 0 ? mt.u.delta[i][0] : b.delta[0]) / b.units, y = (mt.u.delta[i][1] >= 0 ? mt.u.delta[i][1] : b.delta[1]) / b.units;
+            snprintf(line, sizeof(line), "\n[%s]: delta %.3g, %.3g", b.name.c_str(), x, y);
+            out += line;
+        }
+        if (i == 1 && mt.u.width[0] > 0) {
+            snprintf(line, sizeof(line), "\n[%s]: width %d, %d (its bottom as much wider as it was)", b.name.c_str(), mt.u.width[0], mt.u.width[1]);
+            out += line;
+        }
+        if (std::fabs(mt.u.shift[i]) >= 0.05f) {
+            snprintf(line, sizeof(line), "\n[%s]: %.1f units %s", b.name.c_str(), std::fabs(mt.u.shift[i] / b.units), mt.u.shift[i] < 0 ? "to the left" : "to the right");
+            out += line;
+        }
+    }
+    if (mt.u.match >= 0 && mt.u.match < 0.5f) out += "\nTheir lines are too unlike to line up: only their speed.";
+    return out;
+}
+
+// A BG's rows from y0 to y1 as the game draws them with the camera at x: x from the screen's middle
+// at mid, y from y0 at mid's, zoom times as large
+void DrawRows(ImDrawList *draw, const ParallaxBg &b, GLuint tex, float x, float y0, float y1, ImVec2 mid, float zoom, float half) {
+    if (b.h <= 0 || !tex) return;
+    auto at = [&](float px, float py) { return ImVec2(mid.x + px * zoom, mid.y + (py - y0) * zoom); };
+    int first = 0, last = 0;
+    if (b.tile[1] && b.step[1] > 0) {
+        first = (int)std::floor((y0 - b.top) / b.step[1]), last = (int)std::floor((y1 - b.top) / b.step[1]);
+        if (b.tile[1] != 1) first = std::max(first, 0), last = std::min(last, b.tile[1] - 1);
+    }
+    float across = b.step[0] > 0 ? b.step[0] : b.w;
+    for (int c = first; c <= last; c++) {
+        float top = b.top + c * b.step[1], a = std::max(y0, top), z = std::min(y1, top + b.h);
+        if (a >= z) continue;
+        float ta = (a - top) / b.h, tz = (z - top) / b.h;
+        float fa = 1 + (b.rate - 1) * ta, fz = 1 + (b.rate - 1) * tz, ga = 1 + (b.widen - 1) * ta, gz = 1 + (b.widen - 1) * tz;
+        float left = b.left - x * b.delta[0], slow = std::max(0.01f, std::min(fa, fz));
+        int k0 = (int)std::floor((-half / slow - left) / across) - 1, k1 = (int)std::ceil((half / slow - left) / across) + 1;
+        if (b.tile[0] != 1) k0 = std::max(k0, 0), k1 = std::min(k1, std::max(b.tile[0], 1) - 1);
+        for (int k = k0; k <= k1 && k - k0 < 400; k++) {
+            float o = left + k * across;
+            draw->AddImageQuad(TexRef(tex), at(o * fa, a), at(o * fa + b.w * ga, a), at(o * fz + b.w * gz, z), at(o * fz, z), ImVec2(0, ta),
+                               ImVec2(1, ta), ImVec2(1, tz), ImVec2(0, tz));
+        }
+    }
+}
+
+// The join at the camera's left limit, its start and its right limit, as the game will draw it
+void MeetingPreview(const SourceFile &sf, const IniFile &ini, const std::vector<ParallaxBg> &bgs, const Meeting &mt, const ParallaxView &view) {
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
+    if (!spr) return;
+    const ParallaxBg &up = bgs[mt.m.upper], &low = bgs[mt.m.lower];
+    GLuint upTex = SpriteTexture(const_cast<SpriteFile &>(*spr), up.sprite), lowTex = SpriteTexture(const_cast<SpriteFile &>(*spr), low.sprite);
+    float em = ImGui::GetFontSize();
+    float zoom = std::max(1.0f, std::floor(em * 44 / std::max(1.0f, view.width) * 2) / 2), half = view.width / 2;
+    float around = 10, y = low.top; // units above and below
+    std::vector<ParallaxStop> stops = Parallax_Stops(view);
+    const ParallaxStop *shown[3] = {&stops[std::min<size_t>(1, stops.size() - 1)], &stops[0], &stops[std::min<size_t>(2, stops.size() - 1)]};
+    const char *names[3] = {"Left", "Start", "Right"};
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 3; i++) {
+        ImGui::TextDisabled("%s", names[i]);
+        ImVec2 p = ImGui::GetCursorScreenPos(), size(view.width * zoom, 2 * around * zoom);
+        ImVec2 mid(p.x + size.x / 2, p.y);
+        draw->PushClipRect(p, ImVec2(p.x + size.x, p.y + size.y), true);
+        Checkerboard(draw, p, ImVec2(p.x + size.x, p.y + size.y));
+        DrawRows(draw, up, upTex, shown[i]->x, y - around, y + around, mid, zoom, half);
+        DrawRows(draw, low, lowTex, shown[i]->x, y - around, y + around, mid, zoom, half);
+        draw->PopClipRect();
+        // The join, marked at the sides
+        ImU32 mark = IM_COL32(255, 220, 60, 255);
+        draw->AddLine(ImVec2(p.x - em * 0.5f, p.y + around * zoom), ImVec2(p.x - 2, p.y + around * zoom), mark, 2);
+        draw->AddLine(ImVec2(p.x + size.x + 2, p.y + around * zoom), ImVec2(p.x + size.x + em * 0.5f, p.y + around * zoom), mark, 2);
+        ImGui::Dummy(size);
+    }
+    ImGui::TextDisabled("The whole screen, %g times as large; the marks show the join.", zoom);
+}
+
+// Each plane this BG meets: whether their join slides or their lines miss, and what lines them up
+bool MeetingLines(SourceFile &sf, const IniFile &ini, const ParallaxBg &b, const ParallaxView &view) {
+    const SpriteFile *spr = StageSpriteFile(sf, ini);
+    if (!spr || !spr->doc.error.empty()) return false;
+    const std::vector<ParallaxBg> &bgs = StageParallaxBgs(sf, &spr->doc, spr->version);
+    int at = (int)(&b - bgs.data());
+    if (at < 0 || at >= (int)bgs.size()) return false;
+    const std::vector<Meeting> &meetings = MeetingsShown(sf, bgs, at, spr->doc, spr->version, view);
+    for (size_t n = 0; n < meetings.size(); n++) {
+        const Meeting &mt = meetings[n];
+        if (mt.u.match < 0) continue; // a plain colour: nothing shows the join
+        const ParallaxBg &other = bgs[mt.m.upper == at ? mt.m.lower : mt.m.upper];
+        std::string where = mt.m.lower == at ? "Its top meets [" + other.name + "] behind it" : "[" + other.name + "]'s top meets it";
+        ImGui::PushID((int)n);
+        ImGui::AlignTextToFramePadding();
+        if (mt.u.done) {
+            ImGui::TextColored(Ink(kGreen), ICON_CHECK " Lined up with [%s]", other.name.c_str());
+            ImGui::SetItemTooltip("%s: the two scroll together there and their lines meet, wherever the camera is.", where.c_str());
+        } else {
+            bool lines = mt.u.width[0] > 0 || std::fabs(mt.u.shift[0]) >= 0.25f || std::fabs(mt.u.shift[1]) >= 0.25f;
+            if (mt.u.slide >= 0.5f) {
+                ImGui::TextColored(Ink(kYellow), "Slides %.0f along [%s]", mt.u.slide, other.name.c_str());
+                ImGui::SetItemTooltip("%s, and the two scroll at different speeds there: their join slides this many units\n"
+                                      "from one limit of the camera to the other.",
+                                      where.c_str());
+            } else if (lines) {
+                ImGui::TextColored(Ink(kYellow), "Its lines miss [%s]'s", other.name.c_str());
+                ImGui::SetItemTooltip("%s: the two scroll together there, but their lines do not meet.", where.c_str());
+            } else {
+                ImGui::TextColored(Ink(kYellow), "Opens from [%s] up high", other.name.c_str());
+                ImGui::SetItemTooltip("%s: their vertical deltas differ, and the camera goes up.", where.c_str());
+            }
+            SameLineFits(ImGui::CalcTextSize("Line up").x + ImGui::GetStyle().FramePadding.x * 2);
+            if (ImGui::Button("Line up")) {
+                // From the def as it is now: what is shown may be from before a drag
+                std::vector<Meeting> now = MeetingsOf(bgs, at, spr->doc, view);
+                for (const Meeting &fresh : now)
+                    if (fresh.m.upper == mt.m.upper && fresh.m.lower == mt.m.lower && LineUp(sf, bgs, fresh)) {
+                        ImGui::PopID();
+                        return true;
+                    }
+            }
+            ImGui::SetItemTooltip("Their join scrolls as one and their lines meet. The one the fighters stand on keeps its speed.%s",
+                                  LineUpText(bgs, mt).c_str());
+        }
+        SameLineFits(ImGui::CalcTextSize(ICON_SEARCH " Look").x + ImGui::GetStyle().FramePadding.x * 2);
+        if (ImGui::Button(ICON_SEARCH " Look")) ImGui::OpenPopup("meeting");
+        ImGui::SetItemTooltip("Their join at the camera's left limit, its start and its right limit, as the game will draw it.");
+        if (ImGui::BeginPopup("meeting")) {
+            MeetingPreview(sf, ini, bgs, mt, view);
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
+    return false;
+}
+
 } // namespace
 
 bool FloorOverlay(ImDrawList *draw, bool hovered, bool clicked, SourceFile &sf, const IniFile &ini, const std::function<ImVec2(float, float)> &toScreen) {
@@ -547,6 +769,7 @@ void ParallaxBgLine(SourceFile &sf, const IniFile &ini, const IniSection &s, int
     if (b) {
         SameLineFits(ImGui::CalcTextSize(ICON_SEARCH " See the join").x + ImGui::GetStyle().FramePadding.x * 2);
         JoinButton(sf, ini, *b);
+        if (MeetingLines(sf, ini, *b, view)) return;
     }
     if (!b || view.right <= view.left) return;
     ImGui::AlignTextToFramePadding();
